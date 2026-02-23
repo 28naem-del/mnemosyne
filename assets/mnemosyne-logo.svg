@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a78bfa;stop-opacity:0.6" />
+      <stop offset="100%" style="stop-color:#c4b5fd;stop-opacity:0.3" />
+    </linearGradient>
+  </defs>
+  <!-- Outer circle -->
+  <circle cx="90" cy="90" r="85" fill="none" stroke="url(#g1)" stroke-width="3"/>
+  <!-- Brain-inspired network nodes -->
+  <circle cx="90" cy="50" r="8" fill="url(#g1)"/>
+  <circle cx="55" cy="80" r="6" fill="url(#g1)"/>
+  <circle cx="125" cy="80" r="6" fill="url(#g1)"/>
+  <circle cx="65" cy="115" r="7" fill="url(#g1)"/>
+  <circle cx="115" cy="115" r="7" fill="url(#g1)"/>
+  <circle cx="90" cy="135" r="5" fill="url(#g1)"/>
+  <!-- Connections -->
+  <line x1="90" y1="50" x2="55" y2="80" stroke="url(#g2)" stroke-width="2"/>
+  <line x1="90" y1="50" x2="125" y2="80" stroke="url(#g2)" stroke-width="2"/>
+  <line x1="55" y1="80" x2="65" y2="115" stroke="url(#g2)" stroke-width="2"/>
+  <line x1="125" y1="80" x2="115" y2="115" stroke="url(#g2)" stroke-width="2"/>
+  <line x1="65" y1="115" x2="90" y2="135" stroke="url(#g2)" stroke-width="2"/>
+  <line x1="115" y1="115" x2="90" y2="135" stroke="url(#g2)" stroke-width="2"/>
+  <line x1="55" y1="80" x2="125" y2="80" stroke="url(#g2)" stroke-width="1.5"/>
+  <line x1="65" y1="115" x2="115" y2="115" stroke="url(#g2)" stroke-width="1.5"/>
+  <line x1="90" y1="50" x2="65" y2="115" stroke="url(#g2)" stroke-width="1"/>
+  <line x1="90" y1="50" x2="115" y2="115" stroke="url(#g2)" stroke-width="1"/>
+  <!-- Center glow -->
+  <circle cx="90" cy="90" r="12" fill="url(#g1)" opacity="0.15"/>
+  <circle cx="90" cy="90" r="4" fill="url(#g1)"/>
+</svg>
