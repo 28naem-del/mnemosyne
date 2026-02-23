@@ -1,0 +1,38 @@
+# Source
+src/
+
+# Tests
+tests/
+coverage/
+.nyc_output/
+jest.config.*
+vitest.config.*
+
+# Docs
+docs/
+examples/
+launch/
+*.md
+!README.md
+!LICENSE
+
+# GitHub
+.github/
+
+# Config
+.eslintrc.json
+.prettierrc
+tsconfig.json
+.editorconfig
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dev
+.env*
+*.log
