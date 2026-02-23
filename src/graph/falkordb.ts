@@ -30,11 +30,11 @@ export class FalkorDBClient {
   async connect(): Promise<void> {
     if (this.redis) return;
     const Redis = (await import("ioredis")).default;
-    this.redis = new Redis(this.redisUrl, {
+    this.redis = new (Redis as any)(this.redisUrl, {
       lazyConnect: true,
       connectTimeout: 5000,
-    });
-    await this.redis.connect();
+    }) as import("ioredis").default;
+    await this.redis!.connect();
 
     // Create indexes on first connect
     await this.query(

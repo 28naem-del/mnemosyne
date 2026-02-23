@@ -27,12 +27,12 @@ export class MemoryPublisher {
   async connect(): Promise<void> {
     if (this.redis) return;
     const Redis = (await import("ioredis")).default;
-    this.redis = new Redis(this.redisUrl, {
+    this.redis = new (Redis as any)(this.redisUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: 3,
       connectTimeout: 5000,
-    });
-    await this.redis.connect();
+    }) as import("ioredis").default;
+    await this.redis!.connect();
   }
 
   async publish(msg: BroadcastMessage): Promise<number> {

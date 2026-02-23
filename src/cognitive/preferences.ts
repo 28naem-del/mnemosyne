@@ -221,13 +221,13 @@ export async function loadUserModel(
   // L2: Redis
   try {
     const Redis = (await import("ioredis")).default;
-    const redis = new Redis(redisUrl, {
+    const redis = new (Redis as any)(redisUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
       connectTimeout: 2000,
       commandTimeout: 3000,
       enableReadyCheck: false,
-    });
+    }) as import("ioredis").default;
     await redis.connect();
     const raw = await redis.get(`user_model:${userId}:${agentId}`);
     await redis.quit();
@@ -412,13 +412,13 @@ export async function saveUserModel(
   // Redis (fast, non-fatal)
   try {
     const Redis = (await import("ioredis")).default;
-    const redis = new Redis(redisUrl, {
+    const redis = new (Redis as any)(redisUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
       connectTimeout: 2000,
       commandTimeout: 3000,
       enableReadyCheck: false,
-    });
+    }) as import("ioredis").default;
     await redis.connect();
     // 24h TTL -- model gets rebuilt from Qdrant if Redis expires
     await redis.setex(`user_model:${model.userId}:${model.agentId}`, 86400, serialized);
@@ -605,13 +605,13 @@ export async function resetUserModel(
   // Clear Redis
   try {
     const Redis = (await import("ioredis")).default;
-    const redis = new Redis(redisUrl, {
+    const redis = new (Redis as any)(redisUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
       connectTimeout: 2000,
       commandTimeout: 3000,
       enableReadyCheck: false,
-    });
+    }) as import("ioredis").default;
     await redis.connect();
     await redis.del(`user_model:${userId}:${agentId}`);
     await redis.quit();

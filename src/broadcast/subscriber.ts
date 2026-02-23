@@ -25,12 +25,12 @@ export class MemorySubscriber {
 
   async start(): Promise<void> {
     const Redis = (await import("ioredis")).default;
-    this.redis = new Redis(this.redisUrl, {
+    this.redis = new (Redis as any)(this.redisUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: null, // Subscriber should keep retrying
       connectTimeout: 5000,
-    });
-    await this.redis.connect();
+    }) as import("ioredis").default;
+    await this.redis!.connect();
 
     const channels = [
       CHANNELS.PUBLIC,
@@ -39,9 +39,9 @@ export class MemorySubscriber {
       CHANNELS.INVALIDATE,
     ];
 
-    await this.redis.subscribe(...channels);
+    await this.redis!.subscribe(...channels);
 
-    this.redis.on("message", async (_channel: string, message: string) => {
+    this.redis!.on("message", async (_channel: string, message: string) => {
       try {
         const parsed = JSON.parse(message) as BroadcastMessage;
         for (const handler of this.handlers) {

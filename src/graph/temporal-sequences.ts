@@ -16,7 +16,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { COLLECTIONS as DEFAULT_COLLECTIONS } from "../core/types.js";
+import { DEFAULT_COLLECTIONS } from "../core/types.js";
 import type { FalkorDBClient } from "./falkordb.js";
 
 // ============================================================================

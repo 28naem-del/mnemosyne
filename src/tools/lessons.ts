@@ -10,9 +10,9 @@ import {
   storeLessons as persistLessons,
   listLessons as getAllLessons,
   findRelevantLessons as searchLessons,
-  type Lesson,
   type LessonExtractionResult,
 } from "../cognitive/lesson-extractor.js";
+import type { MemCellSearchResult } from "../core/types.js";
 
 export interface LessonContext {
   qdrantUrl: string;
@@ -26,21 +26,21 @@ export async function lessons(
 ): Promise<LessonExtractionResult> {
   const detected = detectStandaloneLessons(text);
   if (detected.lessons.length > 0) {
-    await persistLessons(ctx.qdrantUrl, ctx.embedUrl, detected.lessons, ctx.agentId);
+    await persistLessons(detected.lessons, ctx.qdrantUrl, ctx.embedUrl, ctx.agentId);
   }
   return detected;
 }
 
 export async function listAllLessons(
   ctx: LessonContext,
-): Promise<Lesson[]> {
-  return getAllLessons(ctx.qdrantUrl, ctx.agentId);
+): Promise<MemCellSearchResult[]> {
+  return getAllLessons(ctx.qdrantUrl);
 }
 
 export async function findLessons(
   ctx: LessonContext,
-  query: string,
+  queryVector: number[],
   limit?: number,
-): Promise<Lesson[]> {
-  return searchLessons(ctx.qdrantUrl, ctx.embedUrl, query, ctx.agentId, limit);
+): Promise<MemCellSearchResult[]> {
+  return searchLessons(ctx.qdrantUrl, queryVector, limit);
 }

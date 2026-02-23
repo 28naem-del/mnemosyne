@@ -322,7 +322,7 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
     const domain = classifyDomain(text);
     const priorityScore = cfg.enablePriorityScoring ? computePriorityScore(urgency, domain) : 0.5;
     const { score: confidence, tag: confidenceTag } = cfg.enableConfidenceTags
-      ? computeConfidence(0.7, 1.0, cfg.agentId)
+      ? computeConfidence(0.7, 1.0, 0.8)
       : { score: 0.7, tag: "grounded" as const };
 
     const cell = await db.store(text, vector, {
@@ -550,7 +550,7 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
     },
 
     async dream() {
-      return runDreamConsolidation(cfg.vectorDbUrl, cfg.embeddingUrl, cfg.agentId, {});
+      return runDreamConsolidation(cfg.vectorDbUrl, cfg.agentId, {});
     },
 
     async feedback(userResponse) {

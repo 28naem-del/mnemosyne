@@ -82,13 +82,13 @@ export class L2Cache {
   async connect(): Promise<boolean> {
     try {
       const Redis = (await import("ioredis")).default;
-      this.redis = new Redis(this.redisUrl, {
+      this.redis = new (Redis as any)(this.redisUrl, {
         lazyConnect: true,
         maxRetriesPerRequest: 2,
         connectTimeout: 3000,
-        retryStrategy: (times) => (times > 3 ? null : Math.min(times * 500, 2000)),
-      });
-      await this.redis.connect();
+        retryStrategy: (times: number) => (times > 3 ? null : Math.min(times * 500, 2000)),
+      }) as import("ioredis").default;
+      await this.redis!.connect();
       this.available = true;
       return true;
     } catch {
@@ -185,15 +185,15 @@ export class LayerCache {
     // Subscribe to memory:invalidate for cache eviction
     try {
       const Redis = (await import("ioredis")).default;
-      this.invalidationSub = new Redis(this.redisUrl, {
+      this.invalidationSub = new (Redis as any)(this.redisUrl, {
         lazyConnect: true,
         maxRetriesPerRequest: null,
         connectTimeout: 3000,
-      });
-      await this.invalidationSub.connect();
-      await this.invalidationSub.subscribe("memory:invalidate");
+      }) as import("ioredis").default;
+      await this.invalidationSub!.connect();
+      await this.invalidationSub!.subscribe("memory:invalidate");
 
-      this.invalidationSub.on("message", (_channel: string, message: string) => {
+      this.invalidationSub!.on("message", (_channel: string, message: string) => {
         try {
           const data = JSON.parse(message) as { key?: string; memoryId?: string };
           // Invalidate both L1 and L2 -- broad flush since we can't map memoryId to query keys

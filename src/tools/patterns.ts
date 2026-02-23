@@ -10,13 +10,14 @@ import {
   loadPatterns,
   type MiningReport,
   type Pattern,
+  type GraphClient,
 } from "../cognitive/pattern-miner.js";
 
 export interface PatternContext {
   qdrantUrl: string;
   embedUrl: string;
   agentId: string;
-  graphClient?: unknown;
+  graphClient?: GraphClient | null;
 }
 
 export interface PatternOptions {
