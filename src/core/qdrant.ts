@@ -12,10 +12,43 @@ import { DEFAULT_COLLECTIONS } from "./types.js";
 export class QdrantDB {
   private readonly baseUrl: string;
   private readonly agentId: string;
+  private readonly collections: {
+    shared: string;
+    private: string;
+    profiles: string;
+    skills: string;
+  };
 
-  constructor(qdrantUrl: string, agentId: string) {
+  constructor(qdrantUrl: string, agentId: string, collections?: {
+    shared?: string;
+    private?: string;
+    profiles?: string;
+    skills?: string;
+  }) {
     this.baseUrl = qdrantUrl;
     this.agentId = agentId;
+    this.collections = {
+      shared: collections?.shared ?? DEFAULT_COLLECTIONS.SHARED,
+      private: collections?.private ?? DEFAULT_COLLECTIONS.PRIVATE,
+      profiles: collections?.profiles ?? DEFAULT_COLLECTIONS.PROFILES,
+      skills: collections?.skills ?? DEFAULT_COLLECTIONS.SKILLS,
+    };
+  }
+
+  /** Create a collection if it doesn't already exist. */
+  async ensureCollection(name: string, vectorSize: number = 768): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/collections/${name}`, { method: "GET" });
+    if (res.status === 404) {
+      const createRes = await fetch(`${this.baseUrl}/collections/${name}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vectors: { size: vectorSize, distance: "Cosine" } }),
+      });
+      if (!createRes.ok) {
+        const body = await createRes.text().catch(() => "");
+        throw new Error(`Failed to create collection ${name}: ${createRes.status} ${body}`);
+      }
+    }
   }
 
   private async request(path: string, options: RequestInit = {}): Promise<Response> {
@@ -34,8 +67,8 @@ export class QdrantDB {
   /** Determine which collection to use based on classification. */
   private collectionFor(classification: Classification): string {
     switch (classification) {
-      case "private": return DEFAULT_COLLECTIONS.PRIVATE;
-      case "public": return DEFAULT_COLLECTIONS.SHARED;
+      case "private": return this.collections.private;
+      case "public": return this.collections.shared;
       case "secret": throw new Error("SECRET memories must never be stored in Qdrant");
     }
   }
@@ -122,7 +155,7 @@ export class QdrantDB {
       }
     }
 
-    if (collection === DEFAULT_COLLECTIONS.PRIVATE && !filters?.agent_id) {
+    if (collection === this.collections.private && !filters?.agent_id) {
       must.push({ key: "agent_id", match: { value: this.agentId } });
     }
 
@@ -156,8 +189,8 @@ export class QdrantDB {
     minScore = 0.3,
   ): Promise<MemCellSearchResult[]> {
     const [shared, priv] = await Promise.all([
-      this.search(DEFAULT_COLLECTIONS.SHARED, vector, limit, minScore),
-      this.search(DEFAULT_COLLECTIONS.PRIVATE, vector, limit, minScore),
+      this.search(this.collections.shared, vector, limit, minScore),
+      this.search(this.collections.private, vector, limit, minScore),
     ]);
 
     return [...shared, ...priv]

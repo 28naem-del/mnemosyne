@@ -89,7 +89,7 @@ import {
   bootstrapBM25Index,
   createQdrantTextIndex,
 } from "./core/bm25.js";
-import { DEFAULT_COLLECTIONS, type MemCell, type MemCellSearchResult, type BroadcastMessage } from "./core/types.js";
+import { DEFAULT_COLLECTIONS, configureCollections, type MemCell, type MemCellSearchResult, type BroadcastMessage } from "./core/types.js";
 import {
   classifyMemoryType,
   classifyUrgency,
@@ -213,8 +213,29 @@ export interface Mnemosyne {
 export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnemosyne> {
   const cfg = resolveConfig(userConfig);
 
-  const db = new QdrantDB(cfg.vectorDbUrl, cfg.agentId);
+  // Override global DEFAULT_COLLECTIONS so all modules see user's names
+  configureCollections({
+    shared: cfg.sharedCollection,
+    private: cfg.privateCollection,
+    profiles: cfg.profilesCollection,
+    skills: cfg.skillsCollection,
+  });
+
+  const db = new QdrantDB(cfg.vectorDbUrl, cfg.agentId, {
+    shared: cfg.sharedCollection,
+    private: cfg.privateCollection,
+    profiles: cfg.profilesCollection,
+    skills: cfg.skillsCollection,
+  });
   const embeddings = new EmbeddingsClient(cfg.embeddingUrl, cfg.embeddingModel);
+
+  // Auto-create collections if they don't exist
+  await Promise.all([
+    db.ensureCollection(cfg.sharedCollection),
+    db.ensureCollection(cfg.privateCollection),
+    db.ensureCollection(cfg.profilesCollection),
+    db.ensureCollection(cfg.skillsCollection),
+  ]);
 
   let extraction: ExtractionClient | null = null;
   let falkordb: FalkorDBClient | null = null;

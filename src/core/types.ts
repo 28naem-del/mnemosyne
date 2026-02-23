@@ -28,12 +28,33 @@ export type ConfidenceTag = (typeof CONFIDENCE_TAGS)[number];
 export const CLASSIFICATIONS = ["public", "private", "secret"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
 
-export const DEFAULT_COLLECTIONS = {
+export const DEFAULT_COLLECTIONS: {
+  SHARED: string;
+  PRIVATE: string;
+  PROFILES: string;
+  SKILLS: string;
+} = {
   SHARED: "memory_shared",
   PRIVATE: "memory_private",
   PROFILES: "agent_profiles",
   SKILLS: "skill_library",
-} as const;
+};
+
+/**
+ * Override default collection names globally.
+ * Called during createMnemosyne() with resolved config.
+ */
+export function configureCollections(collections: {
+  shared?: string;
+  private?: string;
+  profiles?: string;
+  skills?: string;
+}): void {
+  if (collections.shared) DEFAULT_COLLECTIONS.SHARED = collections.shared;
+  if (collections.private) DEFAULT_COLLECTIONS.PRIVATE = collections.private;
+  if (collections.profiles) DEFAULT_COLLECTIONS.PROFILES = collections.profiles;
+  if (collections.skills) DEFAULT_COLLECTIONS.SKILLS = collections.skills;
+}
 
 export type MemCell = {
   id: string;
