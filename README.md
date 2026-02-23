@@ -520,5 +520,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ---
 
 <p align="center">
+  <a href="https://mnemosy.ai">Website</a> &bull;
+  <a href="mailto:team@mnemosy.ai">Contact</a> &bull;
+  <a href="https://github.com/28naem-del/mnemosyne/issues">Issues</a>
+</p>
+
+<p align="center">
   <strong>Mnemosyne</strong> &mdash; Because intelligence without memory isn't intelligence.
 </p>
