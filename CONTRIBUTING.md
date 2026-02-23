@@ -28,7 +28,7 @@ docker compose up -d
 ### Install & Build
 
 ```bash
-git clone https://github.com/mnemosyne-ai/mnemosyne.git
+git clone https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm install
 npm run build
@@ -134,13 +134,13 @@ docs(readme): add multi-agent configuration example
 
 ## Reporting Issues
 
-- Use the [Bug Report](https://github.com/mnemosyne-ai/mnemosyne/issues/new?template=bug_report.md) template
-- Use the [Feature Request](https://github.com/mnemosyne-ai/mnemosyne/issues/new?template=feature_request.md) template
+- Use the [Bug Report](https://github.com/28naem-del/mnemosyne/issues/new?template=bug_report.md) template
+- Use the [Feature Request](https://github.com/28naem-del/mnemosyne/issues/new?template=feature_request.md) template
 - Search existing issues before creating new ones
 
 ## Getting Help
 
-- Open a [Discussion](https://github.com/mnemosyne-ai/mnemosyne/discussions) for questions
+- Open a [Discussion](https://github.com/28naem-del/mnemosyne/discussions) for questions
 - Tag issues with `good first issue` for newcomer-friendly tasks
 - Read the architecture doc before diving into code
 

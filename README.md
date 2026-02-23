@@ -15,9 +15,9 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/mnemosy-ai"><img src="https://img.shields.io/npm/v/mnemosy-ai?color=blue&label=npm" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/mnemosy-ai"><img src="https://img.shields.io/npm/dm/mnemosy-ai?color=green" alt="downloads" /></a>
-  <a href="https://github.com/mnemosyne-ai/mnemosyne/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license" /></a>
+  <a href="https://github.com/28naem-del/mnemosyne/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-100%25-blue?logo=typescript&logoColor=white" alt="TypeScript" /></a>
-  <a href="https://github.com/mnemosyne-ai/mnemosyne"><img src="https://img.shields.io/github/stars/mnemosyne-ai/mnemosyne?style=social" alt="GitHub stars" /></a>
+  <a href="https://github.com/28naem-del/mnemosyne"><img src="https://img.shields.io/github/stars/28naem-del/mnemosyne?style=social" alt="GitHub stars" /></a>
 </p>
 
 <p align="center">
@@ -503,7 +503,7 @@ Hierarchical memory (episode &rarr; semantic &rarr; schema), multi-modal embeddi
 We welcome contributions.
 
 ```bash
-git clone https://github.com/mnemosyne-ai/mnemosyne.git
+git clone https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm install
 npm test

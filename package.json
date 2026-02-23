@@ -73,10 +73,10 @@
   "homepage": "https://mnemosy.ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mnemosy/mnemosy-ai"
+    "url": "https://github.com/28naem-del/mnemosyne"
   },
   "bugs": {
-    "url": "https://github.com/mnemosy/mnemosy-ai/issues"
+    "url": "https://github.com/28naem-del/mnemosyne/issues"
   },
   "dependencies": {
     "uuid": "^13.0.0"
@@ -91,8 +91,10 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "ioredis": "^5.9.3",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=18.0.0"

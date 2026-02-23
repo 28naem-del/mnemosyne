@@ -1,0 +1,91 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Mnemosyne
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make Mnemosyne better? We'd love to hear it!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Is your feature request related to a problem? Describe it clearly.
+      placeholder: "I'm frustrated when I try to do X because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the feature you'd like and how it would work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any alternative solutions or workarounds you've considered.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature area
+      multiple: true
+      options:
+        - Core memory API
+        - Vector search / recall
+        - Knowledge graph (FalkorDB)
+        - Redis broadcasting
+        - Embedding backends
+        - Dream / consolidation
+        - Pattern mining
+        - TOMA / cross-agent
+        - Docker / deployment
+        - Developer experience
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this to you?
+      options:
+        - Nice to have
+        - Important for my use case
+        - Blocking — I can't use Mnemosyne without this
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Your use case
+      description: >
+        Briefly describe your project and how this feature would help.
+        This helps us prioritize and design the right API.
+
+  - type: textarea
+    id: api-sketch
+    attributes:
+      label: Proposed API sketch (optional)
+      description: If you have ideas for the API, show a code snippet.
+      render: typescript
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have searched existing issues and this has not been requested before
+          required: true
+        - label: I am willing to submit a pull request to implement this feature
+          required: false

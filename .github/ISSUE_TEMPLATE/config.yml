@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/28naem-del/mnemosyne#readme
+    about: Read the full README and API reference before opening an issue.
+
+  - name: 💬 Discord Community
+    url: https://discord.gg/mnemosyne
+    about: Ask questions and get help from the community on Discord.
+
+  - name: 🔒 Security Vulnerability
+    url: mailto:team@mnemosy.ai
+    about: Please report security vulnerabilities privately via email — do NOT open a public issue.

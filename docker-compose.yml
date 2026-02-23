@@ -1,0 +1,100 @@
+version: "3.9"
+
+services:
+  # ── Mnemosyne ────────────────────────────────────────────────────────────────
+  mnemosyne:
+    build:
+      context: .
+      target: production
+    container_name: mnemosyne
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      QDRANT_URL: http://qdrant:6333
+      EMBEDDING_URL: ${EMBEDDING_URL:-http://host.docker.internal:11434}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      AGENT_ID: ${AGENT_ID:-mnemosyne-agent}
+      COLLECTION_NAME: ${COLLECTION_NAME:-memories}
+      REDIS_URL: redis://redis:6379
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6380
+      MONGODB_URL: mongodb://mongo:27017
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      falkordb:
+        condition: service_started
+    networks:
+      - mnemosyne-net
+
+  # ── Qdrant (vector store) ─────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: mnemosyne-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mnemosyne-net
+
+  # ── Redis (pub/sub broadcast) ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mnemosyne-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mnemosyne-net
+
+  # ── FalkorDB (knowledge graph) ────────────────────────────────────────────────
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: mnemosyne-falkordb
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - falkordb-data:/data
+    networks:
+      - mnemosyne-net
+
+  # ── MongoDB (optional document store) ────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: mnemosyne-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - mnemosyne-net
+
+volumes:
+  qdrant-data:
+  redis-data:
+  falkordb-data:
+  mongo-data:
+
+networks:
+  mnemosyne-net:
+    driver: bridge
