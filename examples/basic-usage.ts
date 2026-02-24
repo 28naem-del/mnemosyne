@@ -18,7 +18,7 @@ async function main() {
   //    qdrantUrl is an alias for vectorDbUrl, collectionName for collections.shared
   const memory = await createMnemosyne({
     qdrantUrl: process.env.QDRANT_URL ?? 'http://localhost:6333',
-    embeddingUrl: process.env.EMBEDDING_URL ?? 'http://localhost:11434',
+    embeddingUrl: process.env.EMBEDDING_URL ?? 'http://localhost:11434/v1/embeddings',
     embeddingModel: process.env.EMBEDDING_MODEL ?? 'nomic-embed-text',
     agentId: process.env.AGENT_ID ?? 'demo-agent',
     collectionName: process.env.COLLECTION_NAME ?? 'memories',
