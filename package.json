@@ -1,6 +1,6 @@
 {
   "name": "mnemosy-ai",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cognitive Memory OS for AI Agents — persistent, self-improving, multi-agent memory",
   "type": "module",
   "main": "./dist/index.js",
