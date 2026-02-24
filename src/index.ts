@@ -13,8 +13,8 @@
  *   agentId: 'my-agent',
  * })
  *
- * await memory.store("User prefers dark mode", { importance: 0.8 })
- * const results = await memory.recall("user preferences")
+ * await memory.store({ text: "User prefers dark mode", importance: 0.8 })
+ * const results = await memory.recall({ query: "user preferences" })
  * ```
  */
 
@@ -165,36 +165,59 @@ function detectCategory(text: string): MemoryCategory {
 
 /** Options for storing a memory */
 export type StoreOptions = {
+  /** Text content of the memory */
+  text?: string;
+  /** Overall importance (0-1) */
   importance?: number;
+  /** Categorize the memory */
   category?: MemoryCategory;
+  /** Memory type override */
   memoryType?: string;
 };
 
 /** Options for recalling memories */
 export type RecallOptions = {
+  /** Query text to search for */
+  query?: string;
+  /** Maximum results to return */
   limit?: number;
+  /** Minimum score threshold (0-1) */
   minScore?: number;
 };
 
 /** Options for forgetting a memory */
 export type ForgetOptions = {
+  /** Query text to find and forget memories */
   query?: string;
+  /** Memory ID to delete */
   id?: string;
 };
 
 /** The Mnemosyne instance — your memory API */
 export interface Mnemosyne {
-  store(text: string, options?: StoreOptions): Promise<{ action: string; cell?: MemCell }>;
-  recall(query: string, options?: RecallOptions): Promise<MemCellSearchResult[]>;
-  forget(options: ForgetOptions): Promise<boolean>;
+  /** Store a memory, returns ID string on success, null if blocked/duplicate */
+  store(options: StoreOptions): Promise<string | null>;
+  /** Recall memories matching a query */
+  recall(options: RecallOptions): Promise<MemCellSearchResult[]>;
+  /** Forget memory by ID or query */
+  forget(options: ForgetOptions | string): Promise<boolean>;
+  /** Update a memory's metadata */
   update(id: string, payload: { importance?: number; category?: string }): Promise<boolean>;
+  /** Search with filters */
   search(query: string, filters?: Record<string, unknown>): Promise<MemCellSearchResult[]>;
+  /** Get collection statistics */
   stats(): Promise<{ total: number }>;
+  /** Consolidate memories */
   consolidate(options?: { dryRun?: boolean }): Promise<unknown>;
+  /** Run dream consolidation */
   dream(): Promise<unknown>;
+  /** Provide feedback on recalled results */
   feedback(userResponse: string): Promise<unknown>;
+  /** Database instance */
   readonly db: QdrantDB;
+  /** Embeddings client */
   readonly embeddings: EmbeddingsClient;
+  /** Configuration */
   readonly config: ReturnType<typeof resolveConfig>;
 }
 
@@ -510,11 +533,16 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
   }
 
   const mnemosyne: Mnemosyne = {
-    async store(text, options = {}) {
-      return fullStorePipeline(text, options);
+    async store(options: StoreOptions) {
+      const text = options.text;
+      if (!text) return null;
+      const result = await fullStorePipeline(text, options);
+      if (result.action === "created" && result.cell) return result.cell.id;
+      return null;
     },
 
-    async recall(query, options = {}) {
+    async recall(options: RecallOptions) {
+      const query = options.query ?? "";
       const limit = options.limit ?? 5;
       const minScore = options.minScore ?? 0.3;
 
@@ -525,14 +553,15 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
       return enhancedSearch(query, limit, minScore);
     },
 
-    async forget(options) {
-      if (options.id) {
-        await db.softDelete(cfg.sharedCollection, options.id);
-        await db.softDelete(cfg.privateCollection, options.id).catch(() => {});
+    async forget(options: ForgetOptions | string) {
+      const opts: ForgetOptions = typeof options === "string" ? { id: options } : options;
+      if (opts.id) {
+        await db.softDelete(cfg.sharedCollection, opts.id);
+        await db.softDelete(cfg.privateCollection, opts.id).catch(() => {});
         return true;
       }
-      if (options.query) {
-        const results = await enhancedSearch(options.query, 1, 0.7);
+      if (opts.query) {
+        const results = await enhancedSearch(opts.query, 1, 0.7);
         if (results.length > 0) {
           const col = results[0].entry.classification === "private" ? cfg.privateCollection : cfg.sharedCollection;
           await db.softDelete(col, results[0].entry.id);

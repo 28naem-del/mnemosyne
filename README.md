@@ -76,8 +76,8 @@ const m = await createMnemosyne({
   agentId: 'my-agent'
 })
 
-await m.store("User prefers dark mode and TypeScript")  // 12-step pipeline, <50ms
-const memories = await m.recall("user preferences")      // multi-signal ranked
+await m.store({ text: "User prefers dark mode and TypeScript" })  // 12-step pipeline, <50ms
+const memories = await m.recall({ query: "user preferences" })    // multi-signal ranked
 await m.feedback("positive")                              // memories learn from use
 ```
 
@@ -334,15 +334,15 @@ Final Results (ranked, diverse, enriched, with reasoning context)
 | **`before_agent_start`** | Automatic hook: session recovery, proactive recall, context injection |
 
 ```typescript
-// Store with full pipeline
-const result = await m.store("Deployment requires Redis 7+", {
+// Store with full pipeline — returns memory ID string
+const id = await m.store({
+  text: "Deployment requires Redis 7+",
   importance: 0.9,
-  eventTime: "2024-01-15T10:30:00Z"
 })
-// -> { status: "created", linkedCount: 3 }
+// -> "abc123-..." (string ID, or null if blocked/duplicate)
 
 // Recall with multi-signal ranking
-const memories = await m.recall("deployment requirements", { limit: 5 })
+const memories = await m.recall({ query: "deployment requirements", limit: 5 })
 // -> ranked results with scores, confidence tags, reasoning chains
 
 // Theory of Mind
