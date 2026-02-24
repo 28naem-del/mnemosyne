@@ -11,15 +11,17 @@
  *   npx ts-node examples/basic-usage.ts
  */
 
-import { createMnemosyne } from '../src/index';
+import createMnemosyne from '../src/index';
 
 async function main() {
   // 1. Create and configure a Mnemosyne instance
+  //    qdrantUrl is an alias for vectorDbUrl, collectionName for collections.shared
   const memory = await createMnemosyne({
-    vectorDbUrl: process.env.QDRANT_URL ?? 'http://localhost:6333',
+    qdrantUrl: process.env.QDRANT_URL ?? 'http://localhost:6333',
     embeddingUrl: process.env.EMBEDDING_URL ?? 'http://localhost:11434',
     embeddingModel: process.env.EMBEDDING_MODEL ?? 'nomic-embed-text',
     agentId: process.env.AGENT_ID ?? 'demo-agent',
+    collectionName: process.env.COLLECTION_NAME ?? 'memories',
   });
 
   console.log('✅ Mnemosyne initialized');
@@ -29,6 +31,7 @@ async function main() {
     text: 'The Eiffel Tower is located in Paris, France, and was completed in 1889.',
     category: 'fact',
     importance: 0.8,
+    metadata: { source: 'basic-usage-example' },
   });
 
   console.log(`📝 Stored memory with id: ${memoryId}`);
@@ -38,6 +41,7 @@ async function main() {
     text: 'The Louvre Museum in Paris houses over 35,000 works of art.',
     category: 'fact',
     importance: 0.7,
+    metadata: { source: 'basic-usage-example' },
   });
 
   // 4. Recall memories related to a query

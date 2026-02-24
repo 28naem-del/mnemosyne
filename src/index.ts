@@ -165,61 +165,50 @@ function detectCategory(text: string): MemoryCategory {
 
 /** Options for storing a memory */
 export type StoreOptions = {
-  /** Text content of the memory */
   text?: string;
-  /** Overall importance (0-1) */
   importance?: number;
-  /** Categorize the memory */
   category?: MemoryCategory;
-  /** Memory type override */
   memoryType?: string;
+  metadata?: Record<string, unknown>;
 };
 
 /** Options for recalling memories */
 export type RecallOptions = {
-  /** Query text to search for */
   query?: string;
-  /** Maximum results to return */
   limit?: number;
-  /** Minimum score threshold (0-1) */
   minScore?: number;
 };
 
 /** Options for forgetting a memory */
 export type ForgetOptions = {
-  /** Query text to find and forget memories */
   query?: string;
-  /** Memory ID to delete */
   id?: string;
 };
 
 /** The Mnemosyne instance — your memory API */
 export interface Mnemosyne {
-  /** Store a memory, returns ID string on success, null if blocked/duplicate */
-  store(options: StoreOptions): Promise<string | null>;
-  /** Recall memories matching a query */
-  recall(options: RecallOptions): Promise<MemCellSearchResult[]>;
-  /** Forget memory by ID or query */
-  forget(options: ForgetOptions | string): Promise<boolean>;
-  /** Update a memory's metadata */
+  store(textOrInput: string | (StoreOptions & { text: string }), options?: StoreOptions): Promise<string | null>;
+  recall(queryOrInput: string | (RecallOptions & { query: string }), options?: RecallOptions): Promise<MemCellSearchResult[]>;
+  forget(idOrOptions: string | ForgetOptions): Promise<boolean>;
   update(id: string, payload: { importance?: number; category?: string }): Promise<boolean>;
-  /** Search with filters */
   search(query: string, filters?: Record<string, unknown>): Promise<MemCellSearchResult[]>;
-  /** Get collection statistics */
   stats(): Promise<{ total: number }>;
-  /** Consolidate memories */
   consolidate(options?: { dryRun?: boolean }): Promise<unknown>;
-  /** Run dream consolidation */
   dream(): Promise<unknown>;
-  /** Provide feedback on recalled results */
   feedback(userResponse: string): Promise<unknown>;
-  /** Database instance */
   readonly db: QdrantDB;
-  /** Embeddings client */
   readonly embeddings: EmbeddingsClient;
-  /** Configuration */
   readonly config: ReturnType<typeof resolveConfig>;
 }
+
+/** Config input with convenience aliases */
+export type MnemosyneConfigInput = Omit<MnemosyneConfig, 'vectorDbUrl'> & {
+  vectorDbUrl?: string;
+  /** Alias for vectorDbUrl */
+  qdrantUrl?: string;
+  /** Alias for collections.shared */
+  collectionName?: string;
+};
 
 /**
  * Create a Mnemosyne memory instance.
@@ -227,14 +216,20 @@ export interface Mnemosyne {
  * @example
  * ```typescript
  * const memory = await createMnemosyne({
- *   vectorDbUrl: 'http://localhost:6333',
+ *   qdrantUrl: 'http://localhost:6333',
  *   embeddingUrl: 'http://localhost:11434/v1/embeddings',
  *   agentId: 'my-agent',
  * })
  * ```
  */
-export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnemosyne> {
-  const cfg = resolveConfig(userConfig);
+export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise<Mnemosyne> {
+  const { qdrantUrl, collectionName, ...rest } = userConfig;
+  const normalizedConfig: MnemosyneConfig = {
+    ...rest,
+    vectorDbUrl: rest.vectorDbUrl ?? qdrantUrl ?? "",
+    ...(collectionName ? { collections: { ...rest.collections, shared: collectionName } } : {}),
+  };
+  const cfg = resolveConfig(normalizedConfig);
 
   // Override global DEFAULT_COLLECTIONS so all modules see user's names
   configureCollections({
@@ -377,7 +372,7 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
       importance: mergedImportance ?? (options.importance ?? 0.7),
       accessCount: mergedAccessCount,
       linkedMemories: mergedLinkedMemories,
-      metadata: Object.keys(mergedMeta).length > 0 ? mergedMeta : undefined,
+      metadata: Object.keys(mergedMeta).length > 0 ? mergedMeta : options.metadata,
       urgency,
       domain,
       priorityScore,
@@ -533,18 +528,33 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
   }
 
   const mnemosyne: Mnemosyne = {
-    async store(options: StoreOptions) {
-      const text = options.text;
-      if (!text) return null;
-      const result = await fullStorePipeline(text, options);
+    async store(textOrInput, options = {}) {
+      let text: string;
+      let opts: StoreOptions;
+      if (typeof textOrInput === "string") {
+        text = textOrInput;
+        opts = options;
+      } else {
+        text = textOrInput.text;
+        opts = textOrInput;
+      }
+      const result = await fullStorePipeline(text, opts);
       if (result.action === "created" && result.cell) return result.cell.id;
       return null;
     },
 
-    async recall(options: RecallOptions) {
-      const query = options.query ?? "";
-      const limit = options.limit ?? 5;
-      const minScore = options.minScore ?? 0.3;
+    async recall(queryOrInput, options = {}) {
+      let query: string;
+      let opts: RecallOptions;
+      if (typeof queryOrInput === "string") {
+        query = queryOrInput;
+        opts = options;
+      } else {
+        query = queryOrInput.query;
+        opts = queryOrInput;
+      }
+      const limit = opts.limit ?? 5;
+      const minScore = opts.minScore ?? 0.3;
 
       if (cfg.enableSentimentTracking) {
         const adaptation = computeAdaptation(frustrationState);
@@ -553,8 +563,8 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
       return enhancedSearch(query, limit, minScore);
     },
 
-    async forget(options: ForgetOptions | string) {
-      const opts: ForgetOptions = typeof options === "string" ? { id: options } : options;
+    async forget(idOrOptions) {
+      const opts: ForgetOptions = typeof idOrOptions === "string" ? { id: idOrOptions } : idOrOptions;
       if (opts.id) {
         await db.softDelete(cfg.sharedCollection, opts.id);
         await db.softDelete(cfg.privateCollection, opts.id).catch(() => {});
@@ -615,3 +625,5 @@ export async function createMnemosyne(userConfig: MnemosyneConfig): Promise<Mnem
 
   return mnemosyne;
 }
+
+export default createMnemosyne;
