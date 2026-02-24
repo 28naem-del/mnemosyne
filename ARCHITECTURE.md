@@ -933,7 +933,7 @@ docker run -d -p 6379:6379 redis
 docker run -d -p 6380:6379 falkordb/falkordb
 
 # 2. Install Mnemosyne
-npm install @mnemosyne/memory-os
+npm install mnemosy-ai
 
 # 3. Configure
 export MNEMOSYNE_VECTOR_DB=http://localhost:6333
@@ -943,7 +943,7 @@ export MNEMOSYNE_GRAPH_URL=redis://localhost:6380
 export MNEMOSYNE_AGENT_ID=my-agent
 
 # 4. Integrate with your agent framework
-import { Mnemosyne } from '@mnemosyne/memory-os'
+import { Mnemosyne } from 'mnemosy-ai'
 ```
 
 ### Minimal Configuration (Vector-Only)

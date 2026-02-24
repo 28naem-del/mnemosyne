@@ -88,7 +88,7 @@ const memories = await m.recall("user preferences");
 
 ```typescript
 // Broadcast happens automatically during store/forget/consolidate
-await m.store("CRITICAL: Production database is down on db-03", {
+await m.store("CRITICAL: Production database is down on example-db", {
   importance: 1.0
 });
 // This triggers:
@@ -123,15 +123,15 @@ m.on('memory:stored', (event) => {
 
 ```typescript
 // Graph grows automatically as memories are stored
-await m.store("Alice deployed the new auth service to server-1 on February 20th");
+await m.store("Alice deployed the new auth service to my-host on February 20th");
 // Graph ingestion creates:
 // (Memory) --MENTIONS--> (Alice)
 // (Memory) --MENTIONS--> (auth service)
-// (Memory) --MENTIONS--> (server-1)
+// (Memory) --MENTIONS--> (my-host)
 // (Memory) --MENTIONS--> (February 20th)
 // (Alice) --RELATES_TO--> (auth service)     [since: 2026-02-20]
-// (Alice) --RELATES_TO--> (server-1)         [since: 2026-02-20]
-// (auth service) --RELATES_TO--> (server-1)  [since: 2026-02-20]
+// (Alice) --RELATES_TO--> (my-host)         [since: 2026-02-20]
+// (auth service) --RELATES_TO--> (my-host)  [since: 2026-02-20]
 
 // Graph schema:
 // (Memory) --MENTIONS--> (Entity)
@@ -379,14 +379,14 @@ await m.store("Redis uses the RESP protocol");
 
 The precision-first approach means the system may miss some entities (lower recall) but rarely produces false extractions (high precision). A missed entity can be caught on the next memory that mentions it, but a false entity pollutes the knowledge graph with noise.
 
-**Why it matters:** Extracted entities are the atoms of the knowledge graph. Without entity extraction, the graph would be empty -- no nodes to connect, no relationships to traverse, no timelines to reconstruct. Every entity that is correctly extracted becomes a queryable node in the graph, linkable to other entities and traversable by the flash reasoning engine. The entities also enrich the memory's metadata payload, enabling filtered searches like "find all memories mentioning server-1" without requiring semantic similarity.
+**Why it matters:** Extracted entities are the atoms of the knowledge graph. Without entity extraction, the graph would be empty -- no nodes to connect, no relationships to traverse, no timelines to reconstruct. Every entity that is correctly extracted becomes a queryable node in the graph, linkable to other entities and traversable by the flash reasoning engine. The entities also enrich the memory's metadata payload, enabling filtered searches like "find all memories mentioning my-host" without requiring semantic similarity.
 
 **Code example:**
 
 ```typescript
-await m.store("server-1 (192.168.1.50) is running Qdrant on port 6333 since February");
+await m.store("my-host (192.168.1.50) is running Qdrant on port 6333 since February");
 // Extracted entities:
-// - "server-1" (machine name)
+// - "my-host" (machine name)
 // - "192.168.1.50" (IP address, validated by network context)
 // - "Qdrant" (technology, from dictionary)
 // - "6333" (port number, near "port" keyword)
@@ -451,18 +451,18 @@ The knowledge graph layer builds a temporal entity network on top of the flat me
 
 ```typescript
 // The graph grows automatically as memories are stored
-await m.store("server-1 hosts Qdrant since January 2026");
-await m.store("server-1 also runs Redis since February 2026");
+await m.store("my-host hosts Qdrant since January 2026");
+await m.store("my-host also runs Redis since February 2026");
 
-// Temporal graph query: What was running on server-1 as of January 15th?
-// Cypher: MATCH (e:Entity {name:'server-1'})-[r:RELATES_TO]->(s:Entity)
+// Temporal graph query: What was running on my-host as of January 15th?
+// Cypher: MATCH (e:Entity {name:'my-host'})-[r:RELATES_TO]->(s:Entity)
 //         WHERE r.since <= '2026-01-15' RETURN s
 // Result: [Qdrant] -- Redis hadn't been deployed yet
 
-// Current state query: What is running on server-1 now?
+// Current state query: What is running on my-host now?
 // Result: [Qdrant, Redis]
 
-// Change detection: What changed on server-1 in February?
+// Change detection: What changed on my-host in February?
 // Result: [Redis was added]
 ```
 
@@ -480,15 +480,15 @@ await m.store("server-1 also runs Redis since February 2026");
 
 ```typescript
 await m.store("Qdrant is our vector database");
-await m.store("Qdrant runs on port 6333 on server-1");
-await m.store("server-1 is a dedicated host at 192.168.1.50");
+await m.store("Qdrant runs on port 6333 on my-host");
+await m.store("my-host is a dedicated host at 192.168.1.50");
 
 // These three memories are now bidirectionally linked:
-// "Qdrant is our vector database" <-> "Qdrant runs on port 6333 on server-1"
-// "Qdrant runs on port 6333 on server-1" <-> "server-1 is a dedicated host..."
+// "Qdrant is our vector database" <-> "Qdrant runs on port 6333 on my-host"
+// "Qdrant runs on port 6333 on my-host" <-> "my-host is a dedicated host..."
 
 // Flash reasoning can now traverse:
-// Qdrant -> runs on server-1 -> is at 192.168.1.50
+// Qdrant -> runs on my-host -> is at 192.168.1.50
 
 // The 0.70 threshold is configurable:
 // Lower (0.60) = denser links, more tangential connections
@@ -533,13 +533,13 @@ const paths = await m.findPath("Redis", "auth-service", { maxDepth: 3 });
 
 ```typescript
 // Reconstruct the timeline for an entity
-const timeline = await m.timeline("production-db");
+const timeline = await m.timeline("my-database");
 // Returns chronologically ordered:
-// 2026-01-15: "Migrated production-db from PostgreSQL 14 to 16"
-// 2026-01-20: "production-db replication lag increased to 500ms"
+// 2026-01-15: "Migrated my-database from PostgreSQL 14 to 16"
+// 2026-01-20: "my-database replication lag increased to 500ms"
 // 2026-02-01: "Resolved replication lag by upgrading instance size"
-// 2026-02-15: "production-db backup schedule changed to every 6 hours"
-// 2026-02-22: "production-db connection pool increased to 200"
+// 2026-02-15: "my-database backup schedule changed to every 6 hours"
+// 2026-02-22: "my-database connection pool increased to 200"
 ```
 
 ---
@@ -556,16 +556,16 @@ const timeline = await m.timeline("production-db");
 
 ```typescript
 // Depth 1: Only direct connections
-const direct = await m.graphExpand("server-1", { maxDepth: 1 });
-// Returns: [Qdrant, Redis, Alice] -- only entities directly related to server-1
+const direct = await m.graphExpand("my-host", { maxDepth: 1 });
+// Returns: [Qdrant, Redis, Alice] -- only entities directly related to my-host
 
 // Depth 2: One hop removed
-const nearby = await m.graphExpand("server-1", { maxDepth: 2 });
+const nearby = await m.graphExpand("my-host", { maxDepth: 2 });
 // Returns: [Qdrant, Redis, Alice, auth-service, PostgreSQL, ...]
-// Now includes entities related to server-1's direct connections
+// Now includes entities related to my-host's direct connections
 
 // Depth 3 (default for path finding)
-const extended = await m.graphExpand("server-1", { maxDepth: 3 });
+const extended = await m.graphExpand("my-host", { maxDepth: 3 });
 // Returns a much larger set -- use with caution on dense graphs
 ```
 
@@ -615,7 +615,7 @@ const results = await m.recall("deployment rules");
 // The "never deploy on Friday" memory is accessed -> activation refreshed to baseline +2.0
 
 // Core and procedural types are IMMUNE
-await m.store("To restart auth: ssh lb-01, systemctl restart auth-svc");
+await m.store("To restart auth: ssh my-server, systemctl restart my-auth");
 // Type: procedural -- activation permanently Active, never decays
 ```
 
@@ -760,7 +760,7 @@ The composite score maps to tiers:
 const memories = await m.recall("what is the database port");
 // Each result includes confidence:
 // {
-//   text: "PostgreSQL runs on port 5432 on db-01",
+//   text: "PostgreSQL runs on port 5432 on example-db",
 //   confidenceScore: 0.88,
 //   confidenceTag: "Mesh Fact",     // 3+ agents corroborated this
 // }
@@ -793,7 +793,7 @@ Priority scoring runs at pipeline step 7, after urgency (step 5) and domain (ste
 **Code example:**
 
 ```typescript
-await m.store("CRITICAL: Production database is down on db-03");
+await m.store("CRITICAL: Production database is down on example-db");
 // Urgency: critical, Domain: technical -> Priority: 1.0
 
 await m.store("User mentioned they like dark mode");
@@ -961,13 +961,13 @@ const results = await m.recall("what does the monitoring agent know about alerts
 **Code example:**
 
 ```typescript
-// Agent A stores: "PostgreSQL is on port 5432 on db-01"
-// Agent B stores: "The database server db-01 runs PostgreSQL on 5432"
-// Agent C stores: "db-01 hosts PostgreSQL, port 5432"
+// Agent A stores: "PostgreSQL is on port 5432 on example-db"
+// Agent B stores: "The database server example-db runs PostgreSQL on 5432"
+// Agent C stores: "example-db hosts PostgreSQL, port 5432"
 
 // 3 agents agree -> Cross-agent synthesis fires
 // Synthesized memory created:
-// text: "PostgreSQL runs on port 5432 on db-01"
+// text: "PostgreSQL runs on port 5432 on example-db"
 // confidenceTag: "Mesh Fact"
 // confidenceScore: 0.92
 // source: "cross-agent-synthesis"
@@ -986,7 +986,7 @@ const results = await m.recall("what does the monitoring agent know about alerts
 2. **Speculative Query Generation:** Analyzes the incoming user prompt and generates 1-3 speculative queries that might be relevant. For "deploy the auth service", it generates: "auth service deployment procedure", "recent auth service issues", "auth service configuration".
 3. **Context Injection:** Recalled memories from speculative queries, plus any recovered session state, are prepended to the agent's context.
 
-**Why it matters:** The difference between a stateless agent and a Mnemosyne-equipped agent is the difference between "I don't have context about your nginx setup" and "Based on the current nginx config on lb-01 and the issue we had last time with the upstream timeout, here's what I recommend..." Proactive recall makes agents appear to have continuous awareness, even though they are technically stateless between invocations.
+**Why it matters:** The difference between a stateless agent and a Mnemosyne-equipped agent is the difference between "I don't have context about your nginx setup" and "Based on the current nginx config on my-server and the issue we had last time with the upstream timeout, here's what I recommend..." Proactive recall makes agents appear to have continuous awareness, even though they are technically stateless between invocations.
 
 **Code example:**
 
@@ -1074,7 +1074,7 @@ Each captured observation passes through the full 12-step pipeline, receiving pr
 ```typescript
 // Procedural detection happens automatically
 await m.store(
-  "To rotate the SSL certificate on lb-01: " +
+  "To rotate the SSL certificate on my-server: " +
   "1. Generate new cert with certbot " +
   "2. Copy to /etc/nginx/ssl/ " +
   "3. Run nginx -t to validate " +

@@ -782,7 +782,7 @@ docker compose up -d
 docker exec mnemosyne-ollama ollama pull nomic-embed-text
 ```
 
-Replace `INFRA_HOST` in the examples below with the hostname or IP address of the machine running these services (e.g., `192.168.1.100`, `infra.internal`, or a VPN IP).
+Replace `INFRA_HOST` in the examples below with the hostname or IP address of the machine running these services (e.g., `192.168.1.100`, `my-server.local`, or a VPN IP).
 
 ### Per-Agent Configuration
 

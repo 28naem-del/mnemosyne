@@ -339,7 +339,7 @@ Naming conventions are up to you. Some common patterns:
 ```typescript
 agentId: 'research-assistant'         // Role-based
 agentId: 'agent-node-03'              // Numbered
-agentId: 'server-1-devops'            // Machine + role
+agentId: 'my-host-devops'            // Machine + role
 agentId: 'customer-support-tier-2'    // Function + tier
 ```
 
