@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-02-24
+
+### Security
+
+- **Docker Compose hardened** — All service ports now bind to `127.0.0.1` instead of `0.0.0.0`, preventing accidental public exposure of Qdrant, Redis, FalkorDB, and MongoDB on cloud deployments
+- **CI security audit enforced** — Replaced permissive `npm audit || true` with strict `npm audit --omit=dev --audit-level=high` in both CI and publish workflows; builds now fail on high/critical vulnerabilities
+- **Dependency scripts disabled in CI** — Added `--ignore-scripts` to `npm ci` in CI workflow to prevent supply-chain attacks via malicious postinstall scripts
+- **Dependabot enabled** — Automated weekly dependency updates for both npm packages and GitHub Actions, with separate labels for triage
+
+### Fixed
+
+- **Git history cleaned** — Removed internal configuration files from git history that were already deleted from HEAD but remained accessible in prior commits
+
 ## [1.0.0] — 2026-02-23
 
 ### Added
@@ -42,4 +55,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Anomaly detection** — Identify statistically unusual memory entries or patterns that deviate significantly from established knowledge
 - **Correlation analysis** — Compute and store pairwise correlation between memory topics and entities to reveal hidden relationships
 
+[1.0.1]: https://github.com/28naem-del/mnemosyne/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/28naem-del/mnemosyne/releases/tag/v1.0.0
