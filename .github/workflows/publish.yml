@@ -39,7 +39,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Security audit
-        run: npm audit --omit=dev || true
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Publish with provenance
         run: npm publish --access public --provenance
