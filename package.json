@@ -90,7 +90,7 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^25.3.0",
     "@vitest/coverage-v8": "^4.0.18",
     "ioredis": "^5.9.3",
     "typescript": "^5.4.0",
