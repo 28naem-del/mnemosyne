@@ -19,6 +19,9 @@
  */
 
 export type { MnemosyneConfig } from "./config.js";
+export { LocalMemory, createLocalMemory } from "./local/index.js";
+export type { MemoryRecord, ContextPacket, MemorySnapshot } from "./local/types.js";
+export { reflect, commitVerifiedLesson } from "./reflection/index.js";
 export { resolveConfig } from "./config.js";
 export type { MemoryCategory } from "./config.js";
 
@@ -58,6 +61,7 @@ export { computeMultiSignalScore, applyDiversityReranking, detectQueryIntent } f
 export { routeQuery, classifyExtendedIntent } from "./cognitive/intent.js";
 export { computeConfidence, confidenceLabel } from "./cognitive/confidence.js";
 export { runConsolidation } from "./cognitive/consolidation.js";
+export { maintainMemory } from "./cognitive/maintenance.js";
 export { runDreamConsolidation } from "./cognitive/dream.js";
 export { runPatternMining } from "./cognitive/pattern-miner.js";
 export { memoryFeedback, detectFeedbackSignal } from "./cognitive/feedback.js";
@@ -74,22 +78,21 @@ export { SharedBlockManager } from "./broadcast/shared-blocks.js";
 
 // Config + factory
 import { resolveConfig, type MnemosyneConfig, type MemoryCategory } from "./config.js";
+import { createHash } from "node:crypto";
 import { QdrantDB } from "./core/qdrant.js";
 import { EmbeddingsClient } from "./core/embeddings.js";
 import { classifyMemory as classifySecurity } from "./core/security.js";
 import {
   isDuplicate,
   detectConflict,
-  shouldSemanticMerge,
-  buildMergedPayload,
 } from "./core/dedup.js";
 import {
   BM25Index,
   hybridSearch as doHybridSearch,
   bootstrapBM25Index,
-  createQdrantTextIndex,
+  type BM25BootstrapStatus,
 } from "./core/bm25.js";
-import { DEFAULT_COLLECTIONS, configureCollections, type MemCell, type MemCellSearchResult, type BroadcastMessage } from "./core/types.js";
+import { type MemCell, type MemCellSearchResult, type BroadcastMessage } from "./core/types.js";
 import {
   classifyMemoryType,
   classifyUrgency,
@@ -119,7 +122,8 @@ import {
   type QueryContext,
 } from "./cognitive/retrieval.js";
 import { enrichWithChains, formatChainContext } from "./cognitive/chains.js";
-import { memoryFeedback, detectFeedbackSignal } from "./cognitive/feedback.js";
+import { computeFeedback, buildFeedbackPayload, detectFeedbackSignal } from "./cognitive/feedback.js";
+import { maintainMemory } from "./cognitive/maintenance.js";
 import {
   analyzeSentiment,
   newFrustrationState,
@@ -181,8 +185,10 @@ export type RecallOptions = {
 
 /** Options for forgetting a memory */
 export type ForgetOptions = {
+  /** @deprecated Query-based erasure is disabled. Recall, then select an explicit ID. */
   query?: string;
   id?: string;
+  collection?: string;
 };
 
 /** The Mnemosyne instance — your memory API */
@@ -199,6 +205,8 @@ export interface Mnemosyne {
   readonly db: QdrantDB;
   readonly embeddings: EmbeddingsClient;
   readonly config: ReturnType<typeof resolveConfig>;
+  /** The factory awaits keyword indexing; this reports startup coverage. */
+  readonly bm25Status: Readonly<{ enabled: boolean; ready: boolean; collections: readonly BM25BootstrapStatus[] }>;
 }
 
 /** Config input with convenience aliases */
@@ -231,28 +239,29 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
   };
   const cfg = resolveConfig(normalizedConfig);
 
-  // Override global DEFAULT_COLLECTIONS so all modules see user's names
-  configureCollections({
-    shared: cfg.sharedCollection,
-    private: cfg.privateCollection,
-    profiles: cfg.profilesCollection,
-    skills: cfg.skillsCollection,
-  });
-
+  const httpOptions = { apiKey: cfg.qdrantApiKey, timeoutMs: cfg.requestTimeoutMs };
   const db = new QdrantDB(cfg.vectorDbUrl, cfg.agentId, {
     shared: cfg.sharedCollection,
     private: cfg.privateCollection,
     profiles: cfg.profilesCollection,
     skills: cfg.skillsCollection,
+  }, httpOptions);
+  const embeddings = new EmbeddingsClient(cfg.embeddingUrl, cfg.embeddingModel, {
+    apiKey: cfg.embeddingApiKey,
+    timeoutMs: cfg.requestTimeoutMs,
+    dimensions: cfg.embeddingDimensions,
   });
-  const embeddings = new EmbeddingsClient(cfg.embeddingUrl, cfg.embeddingModel);
+
+  // Verify the actual provider output before creating or using collections.
+  const probe = await embeddings.embed("Mnemosyne embedding dimension check");
+  const vectorSize = probe.length;
 
   // Auto-create collections if they don't exist
   await Promise.all([
-    db.ensureCollection(cfg.sharedCollection),
-    db.ensureCollection(cfg.privateCollection),
-    db.ensureCollection(cfg.profilesCollection),
-    db.ensureCollection(cfg.skillsCollection),
+    db.ensureCollection(cfg.sharedCollection, vectorSize),
+    db.ensureCollection(cfg.privateCollection, vectorSize),
+    db.ensureCollection(cfg.profilesCollection, vectorSize),
+    db.ensureCollection(cfg.skillsCollection, vectorSize),
   ]);
 
   let extraction: ExtractionClient | null = null;
@@ -260,7 +269,9 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
   let publisher: MemoryPublisher | null = null;
   let skills: SkillLibrary | null = null;
   let bm25Index: BM25Index | null = null;
-  const layerCache = new LayerCache(cfg.redisUrl);
+  const bm25Collections: BM25BootstrapStatus[] = [];
+  const cacheNamespace = createHash("sha256").update(JSON.stringify(cfg)).digest("hex");
+  const layerCache = new LayerCache(cfg.redisUrl, cacheNamespace);
 
   if (cfg.enableExtraction && cfg.extractionUrl) {
     extraction = new ExtractionClient(cfg.extractionUrl);
@@ -275,9 +286,15 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
 
   if (cfg.enableBM25) {
     bm25Index = new BM25Index();
-    // Bootstrap asynchronously
-    createQdrantTextIndex(cfg.vectorDbUrl, cfg.sharedCollection).catch(() => {});
-    bootstrapBM25Index(cfg.vectorDbUrl, cfg.sharedCollection, bm25Index, 5000, 100).catch(() => {});
+    // In-memory BM25 does not require a Qdrant payload index. Await both scoped
+    // corpora so the first recall has the same keyword coverage as later calls.
+    for (const collection of [cfg.sharedCollection, cfg.privateCollection]) {
+      bm25Collections.push(await bootstrapBM25Index(
+        cfg.vectorDbUrl, collection, bm25Index, cfg.bm25MaxDocs, cfg.bm25BatchSize,
+        undefined,
+        { ...httpOptions, filters: collection === cfg.privateCollection ? { agent_id: cfg.agentId } : undefined },
+      ));
+    }
   }
 
   // Connect optional services
@@ -293,6 +310,7 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
   let frustrationState: FrustrationState = newFrustrationState();
   const recentTopics: string[] = [];
   const MAX_RECENT_TOPICS = 20;
+  const forgottenIds = new Set<string>();
 
   function trackQueryTopics(query: string) {
     const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 3);
@@ -316,29 +334,19 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
     const collection = classification === "private" ? cfg.privateCollection : cfg.sharedCollection;
     const existing = await db.search(collection, vector, 1, 0.85);
 
-    let mergedMeta: Record<string, unknown> = {};
-    let mergedImportance: number | undefined;
-    let mergedAccessCount: number | undefined;
-    let mergedLinkedMemories: string[] | undefined;
-
     if (existing.length > 0) {
       const conflict = detectConflict(existing[0].entry.text, text, existing[0].score);
       if (conflict.isConflict && publisher) {
         await publisher.publishConflict(existing[0].entry.id, "pending", conflict.reason || "");
       }
-      if (isDuplicate(existing[0].score)) {
-        const earlyType = options.memoryType || classifyMemoryType(text);
-        const merge = shouldSemanticMerge(existing[0], text, earlyType);
-        if (merge.shouldMerge) {
-          const merged = buildMergedPayload(existing[0].entry, options.importance ?? 0.7, merge);
-          mergedMeta = merged.metadata;
-          mergedImportance = merged.importance;
-          mergedAccessCount = merged.accessCount;
-          mergedLinkedMemories = merged.linkedMemories;
-          await db.softDelete(collection, existing[0].entry.id);
-        } else {
-          return { action: "duplicate" };
-        }
+      // Similarity alone cannot establish equivalence: changed numbers and
+      // negations often have almost identical embeddings. Retain both facts.
+      if (isDuplicate(existing[0].score) && existing[0].entry.text === text
+          && JSON.stringify(existing[0].entry.metadata ?? {}) === JSON.stringify(options.metadata ?? {})
+          && (options.importance === undefined || options.importance === existing[0].entry.importance)
+          && (options.category === undefined || options.category === existing[0].entry.category)
+          && (options.memoryType === undefined || options.memoryType === existing[0].entry.memoryType)) {
+        return { action: "duplicate" };
       }
     }
 
@@ -369,10 +377,8 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
       classification,
       scope: classification === "private" ? "private" : "public",
       category: options.category || detectCategory(text),
-      importance: mergedImportance ?? (options.importance ?? 0.7),
-      accessCount: mergedAccessCount,
-      linkedMemories: mergedLinkedMemories,
-      metadata: Object.keys(mergedMeta).length > 0 ? mergedMeta : options.metadata,
+      importance: options.importance ?? 0.7,
+      metadata: options.metadata,
       urgency,
       domain,
       priorityScore,
@@ -383,9 +389,11 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
     // Auto-link
     if (cfg.enableAutoLink) {
       try {
-        const links = await findAutoLinks(cfg.vectorDbUrl, collection, vector, cell.id, cfg.autoLinkThreshold);
+        const links = await findAutoLinks(cfg.vectorDbUrl, collection, vector, cell.id, cfg.autoLinkThreshold, 5, {
+          ...httpOptions, agentId: classification === "private" ? cfg.agentId : undefined,
+        });
         if (links.linkedIds.length > 0) {
-          await createBidirectionalLinks(cfg.vectorDbUrl, collection, cell.id, links.linkedIds);
+          await createBidirectionalLinks(cfg.vectorDbUrl, collection, cell.id, links.linkedIds, httpOptions);
           cell.linkedMemories = links.linkedIds;
         }
       } catch { /* non-fatal */ }
@@ -430,9 +438,30 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
   ): Promise<MemCellSearchResult[]> {
     const cached = await layerCache.get(query, limit, minScore);
     if (cached) {
+      // A different instance may have changed or deleted a point. Cached text
+      // is never authority: hydrate live scoped records and fail closed on
+      // transport errors instead of returning stale or unauthorized content.
+      const checked = await Promise.all(cached.map(async result => {
+        if (forgottenIds.has(result.entry.id)) return null;
+        const collection = result.entry.classification === "private" ? cfg.privateCollection : cfg.sharedCollection;
+        const current = await db.getScopedPoint(result.entry.id, collection);
+        if (!current) {
+          bm25Index?.removeDocument(result.entry.id);
+          return null;
+        }
+        return { ...result, entry: current.cell };
+      })).catch(async error => {
+        for (const result of cached) bm25Index?.removeDocument(result.entry.id);
+        lastRecalledResults = [];
+        embeddings.clearCache();
+        await layerCache.invalidateAll();
+        throw error;
+      });
+      const visible = checked.filter((result): result is MemCellSearchResult => result !== null);
+      await layerCache.set(query, limit, minScore, visible);
       trackQueryTopics(query);
-      lastRecalledResults = cached;
-      return cached;
+      lastRecalledResults = visible;
+      return visible;
     }
 
     const vector = await embeddings.embed(query);
@@ -482,30 +511,12 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
         });
         for (const gm of graphMemories) {
           if (results.some(r => r.entry.id === gm.memoryId)) continue;
-          const now = new Date().toISOString();
+          // The graph supplies candidate IDs only; its text and ownership
+          // cannot override the authoritative scoped Qdrant record.
+          const stored = await db.getScopedPoint(gm.memoryId);
+          if (!stored || gm.activationScore * 0.7 < minScore) continue;
           results.push({
-            entry: {
-              id: gm.memoryId,
-              text: gm.text || `[Graph activation] via ${gm.sourceEntity}`,
-              memoryType: "semantic",
-              classification: "public",
-              agentId: cfg.agentId,
-              scope: "public",
-              urgency: "reference",
-              domain: "knowledge",
-              confidence: 0.8,
-              confidenceTag: "grounded",
-              priorityScore: gm.activationScore * 0.7,
-              importance: gm.activationScore * 0.8,
-              linkedMemories: [],
-              accessTimes: [],
-              accessCount: 0,
-              eventTime: "",
-              ingestedAt: "",
-              createdAt: now,
-              updatedAt: now,
-              deleted: false,
-            },
+            entry: stored.cell,
             score: gm.activationScore * 0.7,
             source: "graph_activation",
           });
@@ -520,11 +531,15 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
       db.updateAccessTime(col, r.entry.id).catch(() => {});
     }
 
-    const finalResults = results.slice(0, limit);
+    const finalResults = results.filter(result => !forgottenIds.has(result.entry.id)).slice(0, limit);
     layerCache.set(query, limit, minScore, finalResults).catch(() => {});
     lastRecalledResults = finalResults;
 
     return finalResults;
+  }
+
+  async function findStoredMemory(id: string): Promise<{ collection: string; cell: MemCell } | null> {
+    return db.getScopedPoint(id);
   }
 
   const mnemosyne: Mnemosyne = {
@@ -558,27 +573,31 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
 
       if (cfg.enableSentimentTracking) {
         const adaptation = computeAdaptation(frustrationState);
-        return enhancedSearch(query, Math.min(limit, adaptation.resultLimit), adaptation.minScore);
+        return enhancedSearch(query, Math.min(limit, adaptation.resultLimit), opts.minScore ?? adaptation.minScore);
       }
       return enhancedSearch(query, limit, minScore);
     },
 
     async forget(idOrOptions) {
       const opts: ForgetOptions = typeof idOrOptions === "string" ? { id: idOrOptions } : idOrOptions;
-      if (opts.id) {
-        await db.softDelete(cfg.sharedCollection, opts.id);
-        await db.softDelete(cfg.privateCollection, opts.id).catch(() => {});
-        return true;
+      if (!opts.id?.trim()) {
+        throw new Error("Forget requires an explicit memory ID. Query-based erasure is disabled; recall and review candidates first. No deletion was attempted.");
       }
-      if (opts.query) {
-        const results = await enhancedSearch(opts.query, 1, 0.7);
-        if (results.length > 0) {
-          const col = results[0].entry.classification === "private" ? cfg.privateCollection : cfg.sharedCollection;
-          await db.softDelete(col, results[0].entry.id);
-          return true;
-        }
+      if (falkordb || publisher) {
+        throw new Error("Forget with graph or broadcast replicas is not supported by this backend; no deletion was attempted. Disable those integrations only after separately removing their copies.");
       }
-      return false;
+      if (cfg.redisUrl && !layerCache.l2.isAvailable) {
+        throw new Error("Redis cache is unavailable; cached-copy erasure cannot be verified. No deletion was attempted.");
+      }
+      const id = opts.id;
+      if (!await db.deleteScopedPoint(id, opts.collection)) return false;
+      forgottenIds.add(id);
+      bm25Index?.removeDocument(id);
+      embeddings.clearCache();
+      recentTopics.length = 0;
+      lastRecalledResults = lastRecalledResults.filter(result => result.entry.id !== id);
+      await layerCache.invalidateAll(true);
+      return true;
     },
 
     async update(id, payload) {
@@ -586,11 +605,10 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
         const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
         if (payload.importance !== undefined) update.importance = payload.importance;
         if (payload.category) update.category = payload.category;
-        await fetch(`${cfg.vectorDbUrl}/collections/${cfg.sharedCollection}/points/payload`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wait: true, points: [id], payload: update }),
-        });
+        const stored = await findStoredMemory(id);
+        if (!stored || stored.cell.deleted) return false;
+        await db.updatePayload(stored.collection, id, update);
+        await layerCache.invalidateAll();
         return true;
       } catch { return false; }
     },
@@ -606,21 +624,46 @@ export async function createMnemosyne(userConfig: MnemosyneConfigInput): Promise
     },
 
     async consolidate(options = {}) {
-      return runConsolidation(cfg.vectorDbUrl, cfg.sharedCollection);
+      const report = await maintainMemory(db, options);
+      if (!options.dryRun) await layerCache.invalidateAll();
+      return report;
     },
 
     async dream() {
-      return runDreamConsolidation(cfg.vectorDbUrl, cfg.agentId, {});
+      const started = Date.now();
+      const report = await maintainMemory(db);
+      await layerCache.invalidateAll();
+      return {
+        phase: "complete", startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
+        durationMs: Date.now() - started, errors: [], maintenance: report,
+        stats: {
+          memoriesScanned: report.analyzed, duplicatesMerged: 0, staleArchived: 0, contradictionsResolved: 0,
+          promoted: 0, demoted: report.staleDemoted, strengthened: report.strengthened,
+          patternsDiscovered: 0, lessonsAbstracted: 0, spaceSavedBytes: 0,
+        },
+      };
     },
 
     async feedback(userResponse) {
       if (lastRecalledResults.length === 0) return [];
-      return memoryFeedback(cfg.vectorDbUrl, cfg.sharedCollection, lastRecalledResults, userResponse);
+      const signal = detectFeedbackSignal(userResponse);
+      const applied = [];
+      for (const recalled of lastRecalledResults) {
+        if (forgottenIds.has(recalled.entry.id)) continue;
+        const stored = await findStoredMemory(recalled.entry.id);
+        if (!stored || stored.cell.deleted) continue;
+        const feedback = computeFeedback(stored.cell, signal);
+        await db.updatePayload(stored.collection, stored.cell.id, buildFeedbackPayload(feedback, stored.cell.metadata));
+        applied.push(feedback);
+      }
+      await layerCache.invalidateAll();
+      return applied;
     },
 
     db,
     embeddings,
     config: cfg,
+    bm25Status: Object.freeze({ enabled: cfg.enableBM25, ready: true, collections: Object.freeze(bm25Collections.map(status => Object.freeze(status))) }),
   };
 
   return mnemosyne;

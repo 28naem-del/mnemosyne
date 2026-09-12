@@ -1,149 +1,35 @@
 # Contributing to Mnemosyne
 
-Thank you for your interest in contributing to Mnemosyne! This guide will help you get started.
+Use Node >=22.16; Node 24 is recommended. Local development and the default test suite need no external services or model API keys.
 
-## Development Setup
-
-### Prerequisites
-
-- Node.js 18+
-- npm 9+
-- Docker (for running infrastructure locally)
-- TypeScript knowledge
-
-### Infrastructure
-
-Mnemosyne requires the following services for development:
-
-```bash
-# Start all services with Docker Compose
-docker compose up -d
-
-# Services started:
-# - Qdrant (vector DB) on :6333
-# - Redis (cache + pub/sub) on :6379
-# - FalkorDB (knowledge graph) on :6380
+```sh
+npm ci
+npm run check
+npm run demo
+npm run benchmark -- --count 10000 --queries 100
 ```
 
-### Install & Build
+`npm test` builds the CLI before running Vitest. `npm run test:watch` starts the watcher after an initial build; rebuild when changing subprocess CLI code. `npm run test:coverage` collects coverage. No lint or formatter command is currently configured.
 
-```bash
-git clone https://github.com/28naem-del/mnemosyne.git
-cd mnemosyne
-npm install
-npm run build
-```
+## Where to work
 
-### Running Tests
+- `src/local`: SQLite lifecycle, scope, provenance, retrieval, snapshots.
+- `src/reflection`: bounded proposer and controller commitment.
+- `src/mcp` and `src/cli`: actual protocol and command interfaces.
+- `src/evaluation`: isolated executable demonstrations and synthetic scale probes.
+- `src/core`, `cognitive`, `graph`, `cache`, `broadcast`, `pipeline`, `tools`, and root factory: Qdrant compatibility path and existing helpers.
+- `site`: static public-site candidate; `docs`: maintained contracts and research evidence.
 
-```bash
-# Unit tests
-npm test
+Read [architecture](ARCHITECTURE.md), [security boundaries](SECURITY.md), and [migration](docs/MIGRATION-v2.md) before modifying lifecycle or public behavior.
 
-# Watch mode
-npm run test:watch
+## Changes and review
 
-# With coverage
-npm run test:coverage
-```
+Use strict TypeScript, bounded input, parameterized database queries, explicit network timeouts, and meaningful errors. Add regression tests for real bugs and tests for meaningful new behavior. Do not write a test that merely repeats an implementation detail. Validate the actual built CLI/MCP when changing a transport or package entry point.
 
-## Project Structure
+Keep independent sources and conflicting facts intact. Do not merge facts solely because their embeddings are similar. Preserve explicit identity and source authority. Changes that alter erasure, scopes, trust, or provenance need independent review.
 
-```
-src/
-├── index.ts              # Public API entry point
-├── core/                 # Core memory engine
-├── pipeline/             # 12-step zero-LLM ingestion pipeline
-├── layers/
-│   ├── infrastructure/   # L1: Qdrant, Redis, FalkorDB clients
-│   ├── pipeline/         # L2: Ingestion pipeline steps
-│   ├── graph/            # L3: Knowledge graph operations
-│   ├── cognitive/        # L4: Decay, confidence, priority, diversity
-│   └── improvement/      # L5: Reinforcement, consolidation, reasoning
-├── tools/                # 9 tool implementations
-├── types/                # TypeScript type definitions
-└── utils/                # Shared utilities
-```
+Run `npm run check`, inspect `npm pack --dry-run`, and explain the problem, resulting behavior, validation, and remaining limits in your pull request. Conventional Commits are welcome. Document breaking API/schema changes. Never use production databases for tests or publish private memory fixtures.
 
-## Architecture
+Performance claims need a reproducible workload and environment. Agent-improvement claims need held-out tasks, matched compute, and a meaningful baseline. Label demonstrations, mock-based integration tests, synthetic benchmarks, and real model evaluations separately. Cite primary sources when a mechanism draws on research.
 
-Mnemosyne uses a 5-layer cognitive architecture. Before contributing, please read the [Architecture Document](./MNEMOSYNE-PUBLIC-ARCHITECTURE.md) to understand which layer your change affects.
-
-| Layer | Purpose | Key Concern |
-|-------|---------|-------------|
-| L1 | Infrastructure | Connection management, retries, timeouts |
-| L2 | Pipeline | Zero-LLM processing, deterministic behavior |
-| L3 | Knowledge Graph | Entity extraction, relationship modeling |
-| L4 | Cognitive | Decay math, scoring algorithms |
-| L5 | Self-Improvement | Feedback loops, consolidation safety |
-
-## Making Changes
-
-### Branch Naming
-
-- `feat/description` for features
-- `fix/description` for bug fixes
-- `perf/description` for performance improvements
-- `docs/description` for documentation
-- `refactor/description` for refactoring
-
-### Commit Messages
-
-We follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-feat(pipeline): add security filter for credential detection
-fix(decay): correct activation calculation for core memories
-perf(recall): add LRU cache for embedding generation
-docs(readme): add multi-agent configuration example
-```
-
-### Code Style
-
-- TypeScript strict mode — no `any` types without justification
-- All public functions need JSDoc comments
-- Error handling on all external calls (network, DB)
-- Timeouts on all network operations
-- Run `npm run lint` and `npm run format` before committing
-
-### Testing Requirements
-
-- All new features need unit tests
-- Bug fixes need a regression test
-- Performance-sensitive code needs benchmark tests
-- Integration tests for cross-layer interactions
-
-### Pull Request Process
-
-1. Fork the repository
-2. Create your feature branch from `main`
-3. Make your changes with tests
-4. Run the full test suite: `npm test`
-5. Run lint and type checks: `npm run lint && npm run typecheck`
-6. Open a PR against `main`
-7. Fill in the PR template completely
-8. Wait for CI to pass and a maintainer review
-
-## Key Design Principles
-
-1. **Zero-LLM Pipeline**: The ingestion pipeline must never call an LLM. Classification, extraction, and scoring must be algorithmic.
-2. **Deterministic Behavior**: Same input must produce same output. No randomness in the pipeline.
-3. **Graceful Degradation**: If Redis is down, use in-memory cache. If FalkorDB is unavailable, skip graph enrichment. Never fail hard.
-4. **Sub-50ms Store**: The full 12-step pipeline must complete in under 50ms.
-5. **Backward Compatibility**: Changes to the memory schema must include migration logic.
-
-## Reporting Issues
-
-- Use the [Bug Report](https://github.com/28naem-del/mnemosyne/issues/new?template=bug_report.md) template
-- Use the [Feature Request](https://github.com/28naem-del/mnemosyne/issues/new?template=feature_request.md) template
-- Search existing issues before creating new ones
-
-## Getting Help
-
-- Open a [Discussion](https://github.com/28naem-del/mnemosyne/discussions) for questions
-- Tag issues with `good first issue` for newcomer-friendly tasks
-- Read the architecture doc before diving into code
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Contributions are MIT licensed. Report reproducible non-sensitive bugs through [GitHub issues](https://github.com/28naem-del/mnemosyne/issues); use the private contact in [SECURITY.md](SECURITY.md) for vulnerabilities.

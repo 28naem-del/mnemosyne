@@ -75,7 +75,7 @@ export class L2Cache {
   private readonly redisUrl: string;
   private available = false;
 
-  constructor(redisUrl: string) {
+  constructor(redisUrl: string, private readonly namespace = "default") {
     this.redisUrl = redisUrl;
   }
 
@@ -100,7 +100,7 @@ export class L2Cache {
   async get(key: string): Promise<MemCellSearchResult[] | null> {
     if (!this.available || !this.redis) return null;
     try {
-      const raw = await this.redis.get(`${L2_PREFIX}${key}`);
+      const raw = await this.redis.get(`${L2_PREFIX}${this.namespace}:${key}`);
       if (!raw) return null;
       const cached = JSON.parse(raw) as CachedResult;
       return cached.results;
@@ -113,20 +113,20 @@ export class L2Cache {
     if (!this.available || !this.redis) return;
     try {
       const cached: CachedResult = { results, cachedAt: Date.now() };
-      await this.redis.setex(`${L2_PREFIX}${key}`, L2_TTL_SECONDS, JSON.stringify(cached));
+      await this.redis.setex(`${L2_PREFIX}${this.namespace}:${key}`, L2_TTL_SECONDS, JSON.stringify(cached));
     } catch {
       // Non-fatal
     }
   }
 
-  async invalidate(pattern?: string): Promise<void> {
+  async invalidate(pattern?: string, strict = false): Promise<void> {
     if (!this.available || !this.redis) return;
     try {
       if (!pattern) {
         // Scan and delete all cache keys
         let cursor = "0";
         do {
-          const [next, keys] = await this.redis.scan(cursor, "MATCH", `${L2_PREFIX}*`, "COUNT", 100);
+          const [next, keys] = await this.redis.scan(cursor, "MATCH", `${L2_PREFIX}${this.namespace}:*`, "COUNT", 100);
           cursor = next;
           if (keys.length > 0) {
             await this.redis.del(...keys);
@@ -136,15 +136,15 @@ export class L2Cache {
         // Scan for matching keys
         let cursor = "0";
         do {
-          const [next, keys] = await this.redis.scan(cursor, "MATCH", `${L2_PREFIX}*${pattern}*`, "COUNT", 100);
+          const [next, keys] = await this.redis.scan(cursor, "MATCH", `${L2_PREFIX}${this.namespace}:*${pattern}*`, "COUNT", 100);
           cursor = next;
           if (keys.length > 0) {
             await this.redis.del(...keys);
           }
         } while (cursor !== "0");
       }
-    } catch {
-      // Non-fatal
+    } catch (error) {
+      if (strict) throw error;
     }
   }
 
@@ -171,9 +171,9 @@ export class LayerCache {
   private invalidationSub: import("ioredis").default | null = null;
   private readonly redisUrl: string;
 
-  constructor(redisUrl: string) {
+  constructor(redisUrl: string, namespace = "default") {
     this.l1 = new L1Cache();
-    this.l2 = new L2Cache(redisUrl);
+    this.l2 = new L2Cache(redisUrl, namespace);
     this.redisUrl = redisUrl;
   }
 
@@ -240,9 +240,9 @@ export class LayerCache {
   }
 
   /** Force invalidate all caches */
-  async invalidateAll(): Promise<void> {
+  async invalidateAll(strict = false): Promise<void> {
     this.l1.invalidate();
-    await this.l2.invalidate();
+    await this.l2.invalidate(undefined, strict);
   }
 
   async disconnect(): Promise<void> {

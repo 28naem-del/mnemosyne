@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.1] — source release candidate, 2026-09-12
+
+### Added
+
+- Embedded SQLite memory with source provenance, owner/workspace visibility, correction cascades, keyed conflicts, typed checkpoints, controller outcomes, and bounded context compilation.
+- Portable owner snapshots with atomic restore, retry identity, consistent size limits, and explicit cross-agent provenance omissions.
+- Real CLI and MCP stdio interfaces, bounded tool responses, and launch-time capability controls.
+- Optional single-pass reflection with caller-selected providers, source/outcome revision checks, independent controller validation, and no automatic memory writes.
+- Executable 14-check handoff/correction demo, synthetic retrieval probe, source-linked research, and a responsive static site candidate with inspectable recorded evidence.
+
+### Fixed
+
+- RRF score dilution (#21), keyword-only hydration, and awaited paginated BM25 startup with configurable coverage diagnostics (#22).
+- Scoped erasure, graph hydration, cross-instance cache revalidation, immutable collection configuration, backend credentials/timeouts, and embedding dimension checks.
+- Private high-priority broadcast content leaking onto the shared critical channel.
+- Snapshot idempotency/size mismatches, conflicting handoff state, stale reflection proposals, and valid context being crowded out by failed evidence.
+- Broken backend examples, unsupported documentation claims, outdated runtime requirements, dependency update backlog, and nonexistent Dependabot labels.
+
+### Changed
+
+- Node >=22.16 required; CI covers Node 22.16/24 and the installed package.
+- Explicit IDs required for erasure. Unsafe historical URL-only destructive maintenance helpers fail closed; scoped nondestructive replacements are available.
+- Prerelease publication uses the next tag and verifies release identity. No npm release or production website deployment is implied by this source changelog.
+
+Read [migration](docs/MIGRATION-v2.md), [issue disposition](docs/ISSUE-AUDIT-2026-09-12.md), and [evaluation limits](docs/EVALUATION.md).
+
+## Historical release notes
+
+The entries below preserve earlier release descriptions. They are not an independently verified inventory of current capabilities; current contracts are in the maintained documentation above.
+
 ## [1.0.1] — 2026-02-24
 
 ### Security

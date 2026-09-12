@@ -23,6 +23,7 @@ export interface RecallOptions {
 }
 
 export interface ForgetOptions {
+  /** @deprecated Query-based erasure is disabled; select memoryId explicitly. */
   query?: string;
   memoryId?: string;
   collection?: string;

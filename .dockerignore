@@ -1,0 +1,21 @@
+# Only package manifests, TypeScript configuration, and src are copied by Dockerfile.
+**
+!package.json
+!package-lock.json
+!tsconfig*.json
+!src/
+!src/**
+!Dockerfile
+!.dockerignore
+
+# Keep accidental runtime data and secrets out even if they appear under src.
+**/.env
+**/.env.*
+**/*.log
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.sqlite3-*
+**/*.db
+**/*.db-*
+**/*.tgz

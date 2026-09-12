@@ -11,7 +11,7 @@ import type { QdrantDB } from "../core/qdrant.js";
 import type { EmbeddingsClient } from "../core/embeddings.js";
 import type { BM25Index } from "../core/bm25.js";
 import { classifyMemory } from "../core/security.js";
-import { isDuplicate, shouldSemanticMerge, buildMergedPayload } from "../core/dedup.js";
+import { isDuplicate } from "../core/dedup.js";
 import { classifyMemoryType, classifyUrgency, classifyDomain, computePriorityScore } from "../pipeline/classifier.js";
 import type { StoreOptions } from "./types.js";
 
@@ -39,32 +39,16 @@ export async function store(
 
   // 3. Deduplication check
   const collection = classification === "private"
-    ? DEFAULT_COLLECTIONS.PRIVATE
-    : DEFAULT_COLLECTIONS.SHARED;
+    ? (ctx.db.collections?.private ?? DEFAULT_COLLECTIONS.PRIVATE)
+    : (ctx.db.collections?.shared ?? DEFAULT_COLLECTIONS.SHARED);
   const existing = await ctx.db.search(collection, vector, 1, 0.92);
 
-  if (existing.length > 0 && isDuplicate(existing[0].score)) {
-    const mergeType = options.memoryType || classifyMemoryType(text);
-    const merge = shouldSemanticMerge(existing[0], text, mergeType);
-    if (merge.shouldMerge) {
-      const merged = buildMergedPayload(existing[0].entry, options.importance ?? 0.7, merge);
-      // Soft-delete old, store new with merged metadata
-      await ctx.db.softDelete(collection, merge.dropId);
-      const cell = await ctx.db.store(text, vector, {
-        ...options,
-        agentId: ctx.agentId,
-        classification,
-        memoryType: mergeType as MemCell["memoryType"],
-        importance: merged.importance,
-        accessCount: merged.accessCount,
-        linkedMemories: merged.linkedMemories,
-        metadata: { ...options.metadata, ...merged.metadata },
-      });
-
-      ctx.bm25Index?.addDocument(cell.id, text);
-      return cell;
-    }
-    // High similarity but different type — store as new
+  if (existing.length > 0 && isDuplicate(existing[0].score)
+      && existing[0].entry.text === text
+      && JSON.stringify(existing[0].entry.metadata ?? {}) === JSON.stringify(options.metadata ?? {})
+      && (options.importance === undefined || options.importance === existing[0].entry.importance)
+      && (options.memoryType === undefined || options.memoryType === existing[0].entry.memoryType)) {
+    return existing[0].entry;
   }
 
   // 4. Classify memory type, urgency, domain

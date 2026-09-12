@@ -1,97 +1,11 @@
-# Mnemosyne Examples
+# Runnable examples
 
-This directory contains runnable TypeScript examples demonstrating Mnemosyne's core features.
+Start with `npm run check` and `npm run demo` in the repository root. The demo runs the complete local handoff/correction workflow with synthetic data, without external services.
 
-## Prerequisites
+The three TypeScript examples here demonstrate the separate backend APIs. Build first, use Node >=22.16, and run with `node --experimental-strip-types examples/basic-usage.ts` (substitute the other filename as needed). Environment variables must be passed by your shell; if you use an `.env` file, add Node's `--env-file=.env` option explicitly. These examples do not load environment files automatically.
 
-All examples require:
-- **Node.js 22+** and **TypeScript** (`npm install -g ts-node typescript`)
-- The Mnemosyne package built locally (`npm run build` in the repo root)
-- A copy of `.env.example` saved as `.env` (fill in your values)
+- `basic-usage.ts`: requires explicit `QDRANT_URL` and full `EMBEDDING_URL`; supports optional provider keys/model. Writes to isolated `example_*` collections, recalls, and forgets the sample ID. It does not delete the collections.
+- `with-redis.ts`: requires explicit `REDIS_URL`; demonstrates the actual publisher/subscriber classes, bounded delivery wait, and disconnect. No nonexistent factory subscription API is used.
+- `with-falkordb.ts`: requires explicit `GRAPH_URL`; demonstrates direct entity/relationship storage and lookup in `mnemosyne_example_graph`. Sample nodes remain in that example graph. An empty lookup is not proof of a successful live write; inspect your backend if needed.
 
-```bash
-cp .env.example .env
-```
-
----
-
-## Examples
-
-### `basic-usage.ts`
-
-**The essential CRUD loop.** Shows how to:
-
-1. Create and configure a Mnemosyne instance
-2. `store()` — persist a memory with text, category, importance, and metadata
-3. `recall()` — semantic search over stored memories by query string
-4. `forget()` — permanently delete a memory by id
-
-**Requires:** Qdrant + Ollama (or any OpenAI-compatible embedding endpoint)
-
-```bash
-npx ts-node examples/basic-usage.ts
-```
-
----
-
-### `with-redis.ts`
-
-**Fleet-wide memory broadcasting.** Demonstrates:
-
-- Two agent instances sharing the same Qdrant collection
-- One agent stores a memory → the other receives a real-time Redis pub/sub event
-- `subscribe()` / `unsubscribe()` API for event-driven memory pipelines
-
-**Requires:** Qdrant + Ollama + Redis
-
-```bash
-npx ts-node examples/with-redis.ts
-```
-
----
-
-### `with-falkordb.ts`
-
-**Knowledge graph integration.** Demonstrates:
-
-- Automatic entity/relationship extraction into a FalkorDB property graph
-- `graph.traverse()` — multi-hop graph traversal from a named entity
-- `spreadingActivation()` — loosely related memory retrieval via graph propagation
-
-**Requires:** Qdrant + Ollama + FalkorDB
-
-```bash
-npx ts-node examples/with-falkordb.ts
-```
-
----
-
-## Running with Docker Compose
-
-The quickest way to spin up all dependencies at once:
-
-```bash
-# Start Qdrant, Redis, and FalkorDB
-docker compose up -d qdrant redis falkordb
-
-# Run any example
-npx ts-node examples/with-falkordb.ts
-```
-
-See [`docker-compose.yml`](../docker-compose.yml) at the repo root for service definitions.
-
----
-
-## Environment Variables
-
-| Variable          | Default                        | Description                             |
-| ----------------- | ------------------------------ | --------------------------------------- |
-| `QDRANT_URL`      | `http://localhost:6333`        | Qdrant vector store URL                 |
-| `EMBEDDING_URL`   | `http://localhost:11434`       | Ollama (or OpenAI-compatible) base URL  |
-| `EMBEDDING_MODEL` | `nomic-embed-text`             | Model name for generating embeddings    |
-| `AGENT_ID`        | `my-agent`                     | Unique identifier for this agent        |
-| `COLLECTION_NAME` | `memories`                     | Qdrant collection to use                |
-| `REDIS_URL`       | `redis://localhost:6379`       | Redis connection URL (for broadcasting) |
-| `FALKORDB_HOST`   | `localhost`                    | FalkorDB host                           |
-| `FALKORDB_PORT`   | `6380`                         | FalkorDB port                           |
-| `MONGODB_URL`     | `mongodb://localhost:27017`    | MongoDB URL (optional document store)   |
+Never point example writes at production services. These examples were checked against generated API declarations; live Redis/Qdrant/FalkorDB conformance is not part of the default local test suite. See [deployment](../docs/deployment.md) for optional infrastructure.

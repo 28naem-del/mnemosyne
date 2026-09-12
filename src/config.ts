@@ -12,6 +12,11 @@ export type MnemosyneConfig = {
 
   // Embedding model
   embeddingModel?: string;
+  /** Validate the provider output; omitted dimensions are detected at startup. */
+  embeddingDimensions?: number;
+  embeddingApiKey?: string;
+  qdrantApiKey?: string;
+  requestTimeoutMs?: number;
 
   // Auto behavior
   autoCapture?: boolean;
@@ -33,6 +38,9 @@ export type MnemosyneConfig = {
   enablePriorityScoring?: boolean;
   enableConfidenceTags?: boolean;
   enableBM25?: boolean;
+  /** Maximum points scanned per collection during startup. */
+  bm25MaxDocs?: number;
+  bm25BatchSize?: number;
   spreadActivationDepth?: number;
   spreadActivationDecay?: number;
   enablePreferenceTracking?: boolean;
@@ -61,6 +69,10 @@ export type ResolvedConfig = Required<
   Pick<MnemosyneConfig, "vectorDbUrl" | "embeddingUrl" | "agentId">
 > & {
   embeddingModel: string;
+  embeddingDimensions?: number;
+  embeddingApiKey?: string;
+  qdrantApiKey?: string;
+  requestTimeoutMs: number;
   autoCapture: boolean;
   autoRecall: boolean;
   captureMaxChars: number;
@@ -74,6 +86,8 @@ export type ResolvedConfig = Required<
   enablePriorityScoring: boolean;
   enableConfidenceTags: boolean;
   enableBM25: boolean;
+  bm25MaxDocs: number;
+  bm25BatchSize: number;
   spreadActivationDepth: number;
   spreadActivationDecay: number;
   enablePreferenceTracking: boolean;
@@ -121,11 +135,27 @@ export function resolveConfig(cfg: MnemosyneConfig): ResolvedConfig {
     throw new Error("captureMaxChars must be between 100 and 10000");
   }
 
+  const positiveInteger = (value: number, name: string): number => {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(`${name} must be a positive safe integer`);
+    }
+    return value;
+  };
+  if (cfg.embeddingDimensions !== undefined) positiveInteger(cfg.embeddingDimensions, "embeddingDimensions");
+  const requestTimeoutMs = positiveInteger(cfg.requestTimeoutMs ?? 15_000, "requestTimeoutMs");
+  if (requestTimeoutMs > 2_147_483_647) throw new Error("requestTimeoutMs exceeds the supported timer range");
+  const bm25MaxDocs = positiveInteger(cfg.bm25MaxDocs ?? 50_000, "bm25MaxDocs");
+  const bm25BatchSize = positiveInteger(cfg.bm25BatchSize ?? 100, "bm25BatchSize");
+
   return {
     vectorDbUrl: cfg.vectorDbUrl,
     embeddingUrl: cfg.embeddingUrl,
     agentId: cfg.agentId,
     embeddingModel: cfg.embeddingModel ?? "nomic-text-v1.5",
+    embeddingDimensions: cfg.embeddingDimensions,
+    embeddingApiKey: cfg.embeddingApiKey,
+    qdrantApiKey: cfg.qdrantApiKey,
+    requestTimeoutMs,
     autoCapture: cfg.autoCapture ?? true,
     autoRecall: cfg.autoRecall ?? true,
     captureMaxChars,
@@ -139,6 +169,8 @@ export function resolveConfig(cfg: MnemosyneConfig): ResolvedConfig {
     enablePriorityScoring: cfg.enablePriorityScoring ?? true,
     enableConfidenceTags: cfg.enableConfidenceTags ?? true,
     enableBM25: cfg.enableBM25 ?? true,
+    bm25MaxDocs,
+    bm25BatchSize,
     spreadActivationDepth: cfg.spreadActivationDepth ?? 2,
     spreadActivationDecay: cfg.spreadActivationDecay ?? 0.5,
     enablePreferenceTracking: cfg.enablePreferenceTracking ?? true,

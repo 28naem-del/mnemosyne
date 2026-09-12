@@ -1,55 +1,84 @@
 {
   "name": "mnemosy-ai",
-  "version": "1.0.1",
-  "description": "Cognitive Memory OS for AI Agents — persistent, self-improving, multi-agent memory",
+  "version": "2.0.0-rc.1",
+  "description": "Portable agent memory with evidence, corrections, scoped handoffs, and a local MCP server",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "mnemosy": "./dist/cli/index.js"
+  },
   "exports": {
+    "./local": {
+      "types": "./dist/local/index.d.ts",
+      "import": "./dist/local/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    },
+    "./reflection": {
+      "types": "./dist/reflection/index.d.ts",
+      "import": "./dist/reflection/index.js"
+    },
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./core": {
-      "import": "./dist/core/index.js",
-      "types": "./dist/core/index.d.ts"
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
     },
     "./cognitive": {
-      "import": "./dist/cognitive/index.js",
-      "types": "./dist/cognitive/index.d.ts"
+      "types": "./dist/cognitive/index.d.ts",
+      "import": "./dist/cognitive/index.js"
     },
     "./graph": {
-      "import": "./dist/graph/index.js",
-      "types": "./dist/graph/index.d.ts"
+      "types": "./dist/graph/index.d.ts",
+      "import": "./dist/graph/index.js"
     },
     "./broadcast": {
-      "import": "./dist/broadcast/index.js",
-      "types": "./dist/broadcast/index.d.ts"
+      "types": "./dist/broadcast/index.d.ts",
+      "import": "./dist/broadcast/index.js"
     },
     "./pipeline": {
-      "import": "./dist/pipeline/index.js",
-      "types": "./dist/pipeline/index.d.ts"
+      "types": "./dist/pipeline/index.d.ts",
+      "import": "./dist/pipeline/index.js"
     },
     "./cache": {
-      "import": "./dist/cache/index.js",
-      "types": "./dist/cache/index.d.ts"
+      "types": "./dist/cache/index.d.ts",
+      "import": "./dist/cache/index.js"
     },
     "./tools": {
-      "import": "./dist/tools/index.js",
-      "types": "./dist/tools/index.d.ts"
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
     }
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE.md",
+    "docs",
+    "site"
   ],
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build",
-    "typecheck": "tsc --noEmit"
+    "prepublishOnly": "npm run clean && npm run check",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm test && npm run typecheck:examples",
+    "demo": "node dist/cli/index.js demo",
+    "demo:record": "node dist/cli/index.js demo --record",
+    "benchmark": "node dist/evaluation/local-benchmark.js",
+    "pretest": "npm run build",
+    "pretest:coverage": "npm run build",
+    "test:watch": "vitest",
+    "pretest:watch": "npm run build",
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts"
   },
   "keywords": [
     "ai",
@@ -79,7 +108,9 @@
     "url": "https://github.com/28naem-del/mnemosyne/issues"
   },
   "dependencies": {
-    "uuid": "^13.0.0"
+    "@modelcontextprotocol/server": "^2.0.0",
+    "uuid": "^14.0.2",
+    "zod": "^4.6.2"
   },
   "peerDependencies": {
     "ioredis": "^5.0.0"
@@ -90,13 +121,14 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^25.3.0",
-    "@vitest/coverage-v8": "^4.0.18",
-    "ioredis": "^5.9.3",
-    "typescript": "^5.4.0",
-    "vitest": "^4.0.18"
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@types/node": "^25.9.6",
+    "@vitest/coverage-v8": "^5.0.0",
+    "ioredis": "^5.11.1",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.16.0"
   }
 }

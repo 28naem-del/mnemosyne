@@ -1,3 +1,4 @@
+/** Legacy URL-only mutation entry points are disabled; pass a scoped QdrantDB to safe maintenance. */
 /**
  * Memory consolidation -- feedback loops for memory maintenance.
  *
@@ -20,6 +21,9 @@
 
 import type { MemCell, MemoryType } from "../core/types.js";
 import { DEFAULT_COLLECTIONS } from "../core/types.js";
+import type { QdrantDB } from "../core/qdrant.js";
+import { maintainMemory } from "./maintenance.js";
+import { rejectUnsafeLegacyOperation } from "./legacy-guard.js";
 
 export type ConsolidationAction =
   | { type: "merge"; sourceIds: string[]; mergedText: string; newType: MemoryType }
@@ -135,112 +139,13 @@ export function findMergeCandidates(
 }
 
 // Apply a single consolidation action to Qdrant
+/** @deprecated Disabled before network access; use instance-scoped maintainMemory instead. */
 export async function applyConsolidationAction(
   qdrantUrl: string,
   collection: string,
   action: ConsolidationAction,
 ): Promise<boolean> {
-  try {
-    switch (action.type) {
-      case "strengthen": {
-        await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            wait: true,
-            points: [action.id],
-            payload: {
-              importance: action.newImportance,
-              updated_at: new Date().toISOString(),
-            },
-          }),
-        });
-        return true;
-      }
-
-      case "promote": {
-        await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            wait: true,
-            points: [action.id],
-            payload: {
-              memory_type: action.toType,
-              updated_at: new Date().toISOString(),
-              metadata: { promoted_from: action.fromType, promotion_reason: action.reason },
-            },
-          }),
-        });
-        return true;
-      }
-
-      case "archive": {
-        await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            wait: true,
-            points: [action.id],
-            payload: {
-              deleted: true,
-              updated_at: new Date().toISOString(),
-              metadata: { archived_reason: action.reason },
-            },
-          }),
-        });
-        return true;
-      }
-
-      case "flag_contradiction": {
-        // Mark both memories as having a conflict
-        for (const id of action.ids) {
-          await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              wait: true,
-              points: [id],
-              payload: {
-                metadata: {
-                  has_contradiction: true,
-                  contradiction_with: action.ids.find(i => i !== id),
-                  contradiction_reason: action.reason,
-                },
-              },
-            }),
-          });
-        }
-        return true;
-      }
-
-      case "merge": {
-        // Soft-delete source memories and note the merge
-        for (const srcId of action.sourceIds) {
-          await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              wait: true,
-              points: [srcId],
-              payload: {
-                deleted: true,
-                metadata: { merged_into: "consolidated", merge_reason: `Merged ${action.sourceIds.length} similar memories` },
-              },
-            }),
-          });
-        }
-        // Note: the merged text should be stored as a new memory via the store pipeline
-        // This just handles the cleanup of source memories
-        return true;
-      }
-
-      default:
-        return false;
-    }
-  } catch {
-    return false;
-  }
+  return rejectUnsafeLegacyOperation("applyConsolidationAction");
 }
 
 // Statistics for consolidation reporting
@@ -343,58 +248,13 @@ async function setPayload(
  * Search pairs where text is semantically similar (>0.7) but content contradicts.
  * Flag the lower-confidence one with contradiction_with: [other_id].
  */
+/** @deprecated Disabled before network access; use instance-scoped maintainMemory instead. */
 export async function findContradictions(
   qdrantUrl: string,
   collection: string = DEFAULT_COLLECTIONS.SHARED,
   batchSize: number = 200,
 ): Promise<{ flagged: number; pairs: Array<[string, string]> }> {
-  const points = await scrollCollection(qdrantUrl, collection, batchSize);
-  let flagged = 0;
-  const pairs: Array<[string, string]> = [];
-
-  // Compare pairs using vector similarity
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    if (!a.vector || !Array.isArray(a.vector)) continue;
-    const textA = (a.payload.text as string) || "";
-
-    for (let j = i + 1; j < points.length; j++) {
-      const b = points[j];
-      if (!b.vector || !Array.isArray(b.vector)) continue;
-      const textB = (b.payload.text as string) || "";
-
-      const sim = cosineSimilarity(a.vector as number[], b.vector as number[]);
-      if (sim < 0.7 || sim > 0.92) continue; // Sweet spot: similar but not duplicates
-
-      // Check for negation mismatch
-      const negA = NEG_RE.test(textA);
-      const negB = NEG_RE.test(textB);
-      if (negA === negB) continue; // Both affirm or both negate -- not contradictory
-
-      // Flag the lower-confidence one
-      const confA = (a.payload.confidence as number) ?? 0.5;
-      const confB = (b.payload.confidence as number) ?? 0.5;
-      const lowerId = confA <= confB ? a.id : b.id;
-      const higherId = confA <= confB ? b.id : a.id;
-
-      const ok = await setPayload(qdrantUrl, collection, lowerId, {
-        metadata: {
-          ...((points.find(p => p.id === lowerId)?.payload.metadata as Record<string, unknown>) || {}),
-          has_contradiction: true,
-          contradiction_with: higherId,
-          contradiction_flagged_at: new Date().toISOString(),
-        },
-        updated_at: new Date().toISOString(),
-      });
-
-      if (ok) {
-        flagged++;
-        pairs.push([lowerId, higherId]);
-      }
-    }
-  }
-
-  return { flagged, pairs };
+  return rejectUnsafeLegacyOperation("findContradictions");
 }
 
 /**
@@ -402,167 +262,39 @@ export async function findContradictions(
  * Find pairs with >0.92 similarity. Keep the one with more access_count,
  * merge metadata, soft-delete the other.
  */
+/** @deprecated Disabled before network access; use instance-scoped maintainMemory instead. */
 export async function mergeNearDuplicates(
   qdrantUrl: string,
   collection: string = DEFAULT_COLLECTIONS.SHARED,
   batchSize: number = 200,
 ): Promise<{ merged: number; deletedIds: string[] }> {
-  const points = await scrollCollection(qdrantUrl, collection, batchSize);
-  let merged = 0;
-  const deletedIds: string[] = [];
-  const alreadyDeleted = new Set<string>();
-
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    if (alreadyDeleted.has(a.id)) continue;
-    if (!a.vector || !Array.isArray(a.vector)) continue;
-
-    for (let j = i + 1; j < points.length; j++) {
-      const b = points[j];
-      if (alreadyDeleted.has(b.id)) continue;
-      if (!b.vector || !Array.isArray(b.vector)) continue;
-
-      const sim = cosineSimilarity(a.vector as number[], b.vector as number[]);
-      if (sim < 0.92) continue;
-
-      // Keep the one with more access_count
-      const countA = (a.payload.access_count as number) || 0;
-      const countB = (b.payload.access_count as number) || 0;
-      const keeper = countA >= countB ? a : b;
-      const loser = countA >= countB ? b : a;
-
-      // Merge access counts and linked memories on the keeper
-      const keeperMeta = (keeper.payload.metadata as Record<string, unknown>) || {};
-      const loserMeta = (loser.payload.metadata as Record<string, unknown>) || {};
-      const keeperLinks = (keeper.payload.linked_memories as string[]) || [];
-      const loserLinks = (loser.payload.linked_memories as string[]) || [];
-      const mergedLinks = [...new Set([...keeperLinks, ...loserLinks])];
-
-      await setPayload(qdrantUrl, collection, keeper.id, {
-        access_count: countA + countB,
-        linked_memories: mergedLinks,
-        metadata: {
-          ...keeperMeta,
-          ...loserMeta,
-          merged_from: loser.id,
-          merged_at: new Date().toISOString(),
-        },
-        updated_at: new Date().toISOString(),
-      });
-
-      // Soft-delete the loser
-      await setPayload(qdrantUrl, collection, loser.id, {
-        deleted: true,
-        metadata: {
-          ...loserMeta,
-          merged_into: keeper.id,
-          merged_at: new Date().toISOString(),
-        },
-        updated_at: new Date().toISOString(),
-      });
-
-      alreadyDeleted.add(loser.id);
-      deletedIds.push(loser.id);
-      merged++;
-    }
-  }
-
-  return { merged, deletedIds };
+  return rejectUnsafeLegacyOperation("mergeNearDuplicates");
 }
 
 /**
  * Promote popular memories.
  * Memories with access_count > 10 get promoted to memoryType "core".
  */
+/** @deprecated Disabled before network access; use instance-scoped maintainMemory instead. */
 export async function promotePopular(
   qdrantUrl: string,
   collection: string = DEFAULT_COLLECTIONS.SHARED,
   batchSize: number = 200,
 ): Promise<{ promoted: number; ids: string[] }> {
-  const points = await scrollCollection(qdrantUrl, collection, batchSize);
-  let promoted = 0;
-  const ids: string[] = [];
-
-  for (const p of points) {
-    const accessCount = (p.payload.access_count as number) || 0;
-    const memoryType = (p.payload.memory_type as string) || "semantic";
-
-    // Already core -- skip
-    if (memoryType === "core") continue;
-    if (accessCount <= 10) continue;
-
-    const ok = await setPayload(qdrantUrl, collection, p.id, {
-      memory_type: "core",
-      metadata: {
-        ...((p.payload.metadata as Record<string, unknown>) || {}),
-        promoted_from: memoryType,
-        promoted_by: "consolidation_popular",
-        promoted_at: new Date().toISOString(),
-      },
-      updated_at: new Date().toISOString(),
-    });
-
-    if (ok) {
-      promoted++;
-      ids.push(p.id);
-    }
-  }
-
-  return { promoted, ids };
+  return rejectUnsafeLegacyOperation("promotePopular");
 }
 
 /**
  * Demote stale memories.
  * Memories not accessed in 30+ days AND importance < 0.3 get priority_score halved.
  */
+/** @deprecated Disabled before network access; use instance-scoped maintainMemory instead. */
 export async function demoteStale(
   qdrantUrl: string,
   collection: string = DEFAULT_COLLECTIONS.SHARED,
   batchSize: number = 200,
 ): Promise<{ demoted: number; ids: string[] }> {
-  const points = await scrollCollection(qdrantUrl, collection, batchSize);
-  const now = Date.now();
-  const thirtyDaysMs = 30 * 24 * 3_600_000;
-  let demoted = 0;
-  const ids: string[] = [];
-
-  for (const p of points) {
-    const memoryType = (p.payload.memory_type as string) || "semantic";
-    // Never demote core or procedural
-    if (memoryType === "core" || memoryType === "procedural") continue;
-
-    const importance = (p.payload.importance as number) ?? 0.5;
-    if (importance >= 0.3) continue;
-
-    // Check last access time
-    const accessTimes = (p.payload.access_times as number[]) || [];
-    const lastAccess = accessTimes.length > 0
-      ? Math.max(...accessTimes)
-      : new Date((p.payload.created_at as string) || 0).getTime();
-
-    if (now - lastAccess < thirtyDaysMs) continue;
-
-    const currentPriority = (p.payload.priority_score as number) ?? 0.5;
-    const newPriority = currentPriority / 2;
-
-    const ok = await setPayload(qdrantUrl, collection, p.id, {
-      priority_score: newPriority,
-      metadata: {
-        ...((p.payload.metadata as Record<string, unknown>) || {}),
-        demoted_by: "consolidation_stale",
-        demoted_at: new Date().toISOString(),
-        previous_priority: currentPriority,
-      },
-      updated_at: new Date().toISOString(),
-    });
-
-    if (ok) {
-      demoted++;
-      ids.push(p.id);
-    }
-  }
-
-  return { demoted, ids };
+  return rejectUnsafeLegacyOperation("demoteStale");
 }
 
 /**
@@ -574,24 +306,11 @@ export async function demoteStale(
  *   4. demoteStale
  */
 export async function runConsolidation(
-  qdrantUrl: string,
-  collection: string = DEFAULT_COLLECTIONS.SHARED,
+  qdrantUrl: string | QdrantDB,
+  collection?: string,
   batchSize: number = 200,
+  options: { dryRun?: boolean } = {},
 ): Promise<ConsolidationReport> {
-  const contradictions = await findContradictions(qdrantUrl, collection, batchSize);
-  const duplicates = await mergeNearDuplicates(qdrantUrl, collection, batchSize);
-  const popular = await promotePopular(qdrantUrl, collection, batchSize);
-  const stale = await demoteStale(qdrantUrl, collection, batchSize);
-
-  return {
-    analyzed: batchSize,
-    strengthened: 0,
-    promoted: 0,
-    archived: 0,
-    contradictions: contradictions.flagged,
-    merged: 0,
-    nearDuplicatesMerged: duplicates.merged,
-    popularPromoted: popular.promoted,
-    staleDemoted: stale.demoted,
-  };
+  if (typeof qdrantUrl === "string") return rejectUnsafeLegacyOperation("runConsolidation(URL)");
+  return maintainMemory(qdrantUrl, { batchSize, collections: collection ? [collection] : undefined, dryRun: options.dryRun });
 }

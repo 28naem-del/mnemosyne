@@ -4,10 +4,16 @@
  * and create bidirectional links (similarity > threshold).
  */
 
+import { qdrantRequest, type HttpOptions } from "../core/http.js";
+
 export type AutoLinkResult = {
   linkedIds: string[];
   scores: number[];
 };
+
+export interface AutoLinkOptions extends HttpOptions {
+  agentId?: string;
+}
 
 export async function findAutoLinks(
   qdrantUrl: string,
@@ -16,20 +22,24 @@ export async function findAutoLinks(
   excludeId: string,
   threshold: number,
   limit = 5,
+  options: AutoLinkOptions = {},
 ): Promise<AutoLinkResult> {
-  const res = await fetch(`${qdrantUrl}/collections/${collection}/points/search`, {
+  const res = await qdrantRequest(qdrantUrl, `/collections/${encodeURIComponent(collection)}/points/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       vector,
       limit: limit + 1, // +1 to account for self
       filter: {
-        must: [{ key: "deleted", match: { value: false } }],
+        must: [
+          { key: "deleted", match: { value: false } },
+          ...(options.agentId ? [{ key: "agent_id", match: { value: options.agentId } }] : []),
+        ],
         must_not: [{ has_id: [excludeId] }],
       },
       with_payload: true,
     }),
-  });
+  }, options);
 
   if (!res.ok) return { linkedIds: [], scores: [] };
 
@@ -53,11 +63,12 @@ export async function createBidirectionalLinks(
   collection: string,
   newId: string,
   linkedIds: string[],
+  options: HttpOptions = {},
 ): Promise<void> {
   if (linkedIds.length === 0) return;
 
   // Add links to the new memory
-  await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
+  await qdrantRequest(qdrantUrl, `/collections/${encodeURIComponent(collection)}/points/payload`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -65,15 +76,14 @@ export async function createBidirectionalLinks(
       points: [newId],
       payload: { linked_memories: linkedIds, updated_at: new Date().toISOString() },
     }),
-  });
+  }, options);
 
   // Add back-links to each existing memory (append to their linked_memories)
   // Note: Qdrant doesn't support array append, so we read-then-write each
   for (const linkedId of linkedIds) {
     try {
-      const getRes = await fetch(
-        `${qdrantUrl}/collections/${collection}/points/${linkedId}`,
-      );
+      const getRes = await qdrantRequest(qdrantUrl,
+        `/collections/${encodeURIComponent(collection)}/points/${encodeURIComponent(linkedId)}`, {}, options);
       if (!getRes.ok) continue;
       const getData = (await getRes.json()) as {
         result: { payload: { linked_memories?: string[] } };
@@ -81,7 +91,7 @@ export async function createBidirectionalLinks(
       const existing = getData.result.payload.linked_memories || [];
       if (!existing.includes(newId)) {
         existing.push(newId);
-        await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
+        await qdrantRequest(qdrantUrl, `/collections/${encodeURIComponent(collection)}/points/payload`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -89,7 +99,7 @@ export async function createBidirectionalLinks(
             points: [linkedId],
             payload: { linked_memories: existing },
           }),
-        });
+        }, options);
       }
     } catch {
       // Non-fatal: back-link failure shouldn't block storage

@@ -1,8 +1,7 @@
 /**
- * forget — Soft-delete memories by query or ID.
+ * forget — Erase a scoped live memory by explicit ID.
  */
 
-import { DEFAULT_COLLECTIONS } from "../core/types.js";
 import type { QdrantDB } from "../core/qdrant.js";
 import type { EmbeddingsClient } from "../core/embeddings.js";
 import type { BM25Index } from "../core/bm25.js";
@@ -25,27 +24,14 @@ export async function forget(
   ctx: ForgetContext,
   options: ForgetOptions,
 ): Promise<ForgetResult> {
+  if (!options.memoryId?.trim()) {
+    throw new Error("Forget requires an explicit memory ID. Query-based erasure is disabled; recall and review candidates first.");
+  }
   const ids: string[] = [];
-
-  if (options.memoryId) {
-    // Direct ID deletion
-    const collection = options.collection || DEFAULT_COLLECTIONS.SHARED;
-    await ctx.db.softDelete(collection, options.memoryId);
+  if (await ctx.db.deleteScopedPoint(options.memoryId, options.collection)) {
     ctx.bm25Index?.removeDocument(options.memoryId);
+    ctx.embeddings.clearCache();
     ids.push(options.memoryId);
-  } else if (options.query) {
-    // Query-based deletion: find similar memories and soft-delete them
-    const vector = await ctx.embeddings.embed(options.query);
-    const results = await ctx.db.searchAll(vector, 5, 0.7);
-
-    for (const r of results) {
-      const collection = r.entry.classification === "private"
-        ? DEFAULT_COLLECTIONS.PRIVATE
-        : DEFAULT_COLLECTIONS.SHARED;
-      await ctx.db.softDelete(collection, r.entry.id);
-      ctx.bm25Index?.removeDocument(r.entry.id);
-      ids.push(r.entry.id);
-    }
   }
 
   // Broadcast invalidation

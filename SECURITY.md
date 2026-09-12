@@ -1,72 +1,24 @@
-# Security Policy
+# Security policy and boundaries
 
-## Supported Versions
+This branch is the 2.0.0-rc.1 release candidate. Security-related breaking changes are described in [migration notes](docs/MIGRATION-v2.md). A passing test suite or dependency audit is not a security certification.
 
-We actively maintain security patches for the following versions:
+## Report a vulnerability
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x     | :white_check_mark: |
-| < 1.0   | :x:                |
+Use the repository's existing private contact, [team@mnemosy.ai](mailto:team@mnemosy.ai), with the subject `[SECURITY]` and a short description. Include affected version, reproduction, impact, and a minimal proof of concept. Do not include real credentials, private memories, or another person's data in a public issue.
 
-## Reporting a Vulnerability
+## Trust model
 
-We take security vulnerabilities seriously and appreciate your efforts to responsibly disclose your findings.
+- The SDK runs inside a trusted controller. Workspace/agent IDs are selectors chosen by that controller, not login credentials or tenant authentication.
+- Anyone who can read the SQLite database or its snapshots can access their content. The package provides no encryption, remote identity provider, or isolation from privileged local processes.
+- Memories are fallible reference data. A stored instruction never creates authority to run a command, send a message, or change access. Prompt wrapping and schema validation reduce accidental misuse; they cannot guarantee model compliance against every injection.
+- Verified trust and successful outcomes are controller assertions. The package requires evidence fields but cannot authenticate their contents. MCP models cannot promote themselves, record successful outcomes, import snapshots, or commit reflection.
+- Sharing is explicit. Do not give an untrusted caller a controller SDK handle or a backend administrator credential. Run separate processes/databases where stronger isolation is needed.
+- Model providers are selected by caller code. Reflection is bounded and signals cancellation, but cannot stop billing or work at a remote service that ignores that signal.
 
-**Please do NOT report security vulnerabilities through public GitHub issues.**
+## Deletion and copies
 
-### How to Report
+Local forgetting removes live content and dependent content from the kernel's records, versions, search entries, outcomes, audit/retry payloads. It does not purge old exports, backups, copied prompts, logs outside the kernel, swap, or physical storage remnants. Qdrant forgetting checks scope and erases explicit points; graph/cache copies elsewhere are not a distributed erasure guarantee. Cache revalidation prevents stale records from being returned through the tested recall path.
 
-Send an email to **[team@mnemosy.ai](mailto:team@mnemosy.ai)** with the subject line:
+## Verification
 
-```
-[SECURITY] <brief description>
-```
-
-Include the following in your report:
-
-- **Type of issue** (e.g., remote code execution, SQL injection, information disclosure, etc.)
-- **Affected component** (e.g., vector store backend, Redis broadcast, FalkorDB integration)
-- **Location** — full path(s) of the source file(s) related to the issue
-- **Step-by-step reproduction instructions**
-- **Proof of concept or exploit code** (if available)
-- **Impact assessment** — what could an attacker achieve?
-
-### Response Timeline
-
-| Stage                        | Target SLA |
-| ---------------------------- | ---------- |
-| Acknowledgement of receipt   | 48 hours   |
-| Confirmation of the issue    | 5 business days |
-| Patch release (critical)     | 14 days    |
-| Patch release (high/medium)  | 30 days    |
-| Public disclosure            | After patch ships |
-
-### Responsible Disclosure
-
-We follow a coordinated disclosure model:
-
-1. Reporter sends details privately to **team@mnemosy.ai**.
-2. We confirm receipt and begin investigation.
-3. We develop and test a fix.
-4. We release a patched version and publish a security advisory.
-5. Reporter is credited in the advisory (unless anonymity is requested).
-
-### Scope
-
-The following are **in scope**:
-
-- The `mnemosyne` npm package and its TypeScript source
-- All supported backend integrations (Qdrant, FalkorDB, Redis, MongoDB)
-- The embedding pipeline (Ollama/OpenAI adapters)
-- Docker images published under `28naem-del/mnemosyne`
-
-The following are **out of scope**:
-
-- Vulnerabilities in third-party dependencies that are already publicly disclosed upstream
-- Issues in end-user infrastructure (self-hosted Qdrant, Redis, etc.)
-- Social engineering attacks
-
-### Thank You
-
-We are grateful to everyone who takes the time to responsibly report security issues. Your efforts make Mnemosyne safer for everyone.
+CI runs tests, package checks, and dependency auditing. Tests use isolated local databases and mocked Qdrant/graph transports unless explicitly labeled otherwise. Keep live infrastructure tests separate from production data. Never use shared production volumes for destructive test fixtures.

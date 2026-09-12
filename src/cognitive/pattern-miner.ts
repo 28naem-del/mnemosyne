@@ -1,3 +1,4 @@
+/** Legacy URL-only mutation entry points are disabled; pass a scoped QdrantDB to safe maintenance. */
 /**
  * Auto Pattern Mining -- scan memory corpus for clusters, recurring themes,
  * co-occurrence correlations, and failure patterns.
@@ -15,6 +16,7 @@
 import { createHash } from "node:crypto";
 import type { MemCell, MemoryType, Domain } from "../core/types.js";
 import { DEFAULT_COLLECTIONS } from "../core/types.js";
+import { rejectUnsafeLegacyOperation } from "./legacy-guard.js";
 
 // ============================================================================
 // Types
@@ -625,71 +627,14 @@ async function embedText(embedUrl: string, text: string): Promise<number[]> {
 /**
  * Persist patterns to Qdrant (private memory, scope="pattern").
  */
+/** @deprecated Disabled before network access; use instance-scoped maintainMemory instead. */
 export async function savePatterns(
   qdrantUrl: string,
   embedUrl: string,
   agentId: string,
   patterns: Pattern[],
 ): Promise<number> {
-  let saved = 0;
-
-  for (const pattern of patterns) {
-    try {
-      const vector = await embedText(embedUrl, pattern.description);
-      if (vector.length === 0) continue;
-
-      const res = await fetch(
-        `${qdrantUrl}/collections/${DEFAULT_COLLECTIONS.PRIVATE}/points`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            wait: true,
-            points: [{
-              id: pattern.id,
-              vector,
-              payload: {
-                text: pattern.description,
-                agent_id: agentId,
-                memory_type: "semantic",
-                scope: "private",
-                classification: "private",
-                category: "other",
-                urgency: "reference",
-                domain: "knowledge",
-                confidence: pattern.confidence,
-                confidence_tag: "inferred",
-                priority_score: 0.6,
-                importance: pattern.confidence,
-                linked_memories: pattern.evidenceIds.slice(0, 10),
-                access_times: [Date.now()],
-                access_count: 0,
-                event_time: pattern.firstSeen,
-                ingested_at: new Date().toISOString(),
-                created_at: pattern.firstSeen,
-                updated_at: new Date().toISOString(),
-                deleted: false,
-                metadata: {
-                  source: "pattern_mining",
-                  pattern_type: pattern.type,
-                  pattern_id: pattern.id,
-                  occurrences: pattern.occurrences,
-                  tags: pattern.tags,
-                  ...pattern.metadata,
-                },
-              },
-            }],
-          }),
-        },
-      );
-
-      if (res.ok) saved++;
-    } catch {
-      // Non-fatal: skip individual pattern save failures
-    }
-  }
-
-  return saved;
+  return rejectUnsafeLegacyOperation("savePatterns");
 }
 
 /**
@@ -779,6 +724,7 @@ function pointToMiningRecord(p: ScrollPoint): {
  * Scrolls Qdrant in batches, clusters, mines co-occurrences, synthesizes.
  * Background job -- expected runtime: 30-120 seconds on 13,000 memories.
  */
+/** @deprecated Disabled before network access; use instance-scoped maintainMemory instead. */
 export async function runPatternMining(
   qdrantUrl: string,
   embedUrl: string,
@@ -786,80 +732,5 @@ export async function runPatternMining(
   agentId: string,
   batchSize = 500,
 ): Promise<MiningReport> {
-  const startTime = Date.now();
-  const allRecords: Array<{
-    id: string;
-    text: string;
-    vector: number[];
-    memoryType: MemoryType;
-    domain: Domain;
-  }> = [];
-
-  // Phase 1: Scroll all memories in batches
-  let offset: string | number | null = null;
-
-  while (true) {
-    const batch = await scrollBatch(qdrantUrl, DEFAULT_COLLECTIONS.SHARED, batchSize, offset);
-    if (batch.points.length === 0) break;
-
-    for (const p of batch.points) {
-      const rec = pointToMiningRecord(p);
-      if (rec) allRecords.push(rec);
-    }
-
-    offset = batch.nextOffset;
-    if (!offset) break;
-
-    // Safety: don't process more than 20,000 memories
-    if (allRecords.length >= 20_000) break;
-  }
-
-  if (allRecords.length === 0) {
-    return {
-      clusters: [],
-      coOccurrences: [],
-      patterns: [],
-      totalMemoriesScanned: 0,
-      durationMs: Date.now() - startTime,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  // Phase 2: Cluster memories in batches of 500 (O(n^2) per batch)
-  const allClusters: MemoryCluster[] = [];
-  for (let i = 0; i < allRecords.length; i += batchSize) {
-    const batch = allRecords.slice(i, i + batchSize);
-    const batchClusters = clusterMemories(batch);
-    allClusters.push(...batchClusters);
-  }
-
-  // Phase 3: Mine co-occurrences from graph (if available)
-  let coOccurrences: CoOccurrence[] = [];
-  if (graphClient) {
-    coOccurrences = await mineCoOccurrences(graphClient);
-  }
-
-  // Phase 4: Detect recurring errors
-  const recurringErrors = detectRecurringErrors(allRecords);
-
-  // Phase 5: Synthesize all into Pattern objects
-  const patterns = synthesizePatterns(allClusters, coOccurrences, recurringErrors);
-
-  // Phase 6: Persist patterns to Qdrant
-  if (patterns.length > 0) {
-    try {
-      await savePatterns(qdrantUrl, embedUrl, agentId, patterns);
-    } catch {
-      // Non-fatal: mining succeeded even if persistence failed
-    }
-  }
-
-  return {
-    clusters: allClusters,
-    coOccurrences,
-    patterns,
-    totalMemoriesScanned: allRecords.length,
-    durationMs: Date.now() - startTime,
-    timestamp: new Date().toISOString(),
-  };
+  return rejectUnsafeLegacyOperation("runPatternMining");
 }

@@ -42,7 +42,8 @@ export const DEFAULT_COLLECTIONS: {
 
 /**
  * Override default collection names globally.
- * Called during createMnemosyne() with resolved config.
+ * @deprecated Process-wide compatibility helper. New instances pass collection
+ * names explicitly; createMnemosyne never calls this function.
  */
 export function configureCollections(collections: {
   shared?: string;
@@ -85,7 +86,12 @@ export type MemCell = {
 export type MemCellSearchResult = {
   entry: MemCell;
   score: number;
-  source?: "qdrant" | "graph" | "amem_link" | "graph_activation";
+  source?: "qdrant" | "bm25" | "graph" | "amem_link" | "graph_activation";
+  retrievalSignals?: {
+    vectorSimilarity?: number;
+    keywordScore?: number;
+    rrfScore?: number;
+  };
 };
 
 export type BroadcastMessage = {
