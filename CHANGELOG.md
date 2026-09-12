@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.3] — source release candidate, 2026-09-13
+
+### Added
+
+- A native Anthropic `memory_20250818` text adapter over scoped SQLite: six virtual file commands, strict paths, host policy, source revisions, dependent-memory invalidation, deletion and durable retry receipts. The `/adapters` export supports a manual Messages loop and a structural SDK runnable without a mandatory Anthropic dependency.
+- An executable local native-command example and package/CI checks. No Claude API session or production integration is implied.
+- A public cleaned LongMemEval S retrieval baseline covering 499/500 cases, with a verified source checksum, exact exclusion manifest, raw per-case results and independent score recomputation. Complete evidence coverage was 406/499 at 20 retrieved turns; answer quality remains unevaluated.
+
+### Fixed
+
+- Added explicit `question-day` timestamp compatibility for supplied evaluation histories while retaining strict-instant validation by default. Reports preserve source dates and disclose every effective cutoff and affected-session count.
+
+### Limits
+
+- Native files are text only, private, create-exclusive and untrusted by default. Empty directories are implicit; editing after an adapter restart requires a new view. Deletion requires explicit host permission.
+- Evaluation uses day-level compatibility and excludes one oversized turn before scoring. Its retrieval metrics are not published answer scores or evidence of AGI. [Raw evaluation and limitations](docs/evaluation/LONGMEMEVAL-S-BASELINE.md).
+
 ## [2.0.0-rc.2] — source release candidate, 2026-09-13
 
 ### Added

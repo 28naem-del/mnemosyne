@@ -6,9 +6,9 @@ Portable memory for agents that need to carry work forward, explain what they re
 
 Mnemosyne 2 combines a local SQLite memory engine with source capture, bounded observation jobs, source-backed project models, trial-gated skills, hybrid retrieval, and correction-aware provenance. Use it through TypeScript, MCP, the CLI, or an authenticated local HTTP service with a live inspector and Python client. The existing Qdrant integration remains available separately.
 
-**Status: 2.0.0-rc.2, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
+**Status: 2.0.0-rc.3, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
 
-[Quickstart](docs/quickstart.md) · [Runtime and service guide](docs/RUNTIME.md) · [API](docs/api.md) · [Migration](docs/MIGRATION-v2.md) · [Provider memory research](docs/PROVIDER-MEMORY-RESEARCH.md) · [Security boundaries](SECURITY.md)
+[Quickstart](docs/quickstart.md) · [Runtime and service guide](docs/RUNTIME.md) · [Claude native memory](docs/ANTHROPIC-MEMORY.md) · [API](docs/api.md) · [Migration](docs/MIGRATION-v2.md) · [Provider memory research](docs/PROVIDER-MEMORY-RESEARCH.md) · [Security boundaries](SECURITY.md)
 
 ## See it work
 
@@ -118,6 +118,8 @@ The parent directory for the database must exist. Launch with `--read-only` to o
 Runtime tools also expose supplied transcript capture, source expansion, observation-job enqueueing, model/skill inspection, entity resolution and branch previews. The host runs workers, selects providers and records skill trials. `--provider-config FILE` enables configured hybrid retrieval after indexing; separate `--no-capture` and `--no-recall` runtime policies are available. [Runtime guide](docs/RUNTIME.md).
 
 ## Keep the promise measurable
+
+The [native Claude memory adapter](docs/ANTHROPIC-MEMORY.md) maps six virtual file commands to scoped source revisions, correction and forgetting. It supports manual tool loops and a structural SDK runnable, with no mandatory provider package or physical memory directory.
 
 Research motivates the design; it does not establish superiority. [The research review](docs/RESEARCH-2026-09-12.md) covers primary papers, competing implementations, GitHub reports, Hacker News, Reddit, and accessible X posts. [Evaluation](docs/EVALUATION.md) separates deterministic lifecycle checks, synthetic scale measurements, and still-needed agent experiments.
 

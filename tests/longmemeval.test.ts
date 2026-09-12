@@ -52,6 +52,32 @@ describe('documented LongMemEval v1 adapter', () => {
     await expect(runLongMemEval([question()], { tempParent, maxProviderCalls: 1 } as never)).rejects.toThrow('Unknown evaluation option');
     expect(readdirSync(tempParent)).toEqual([]);
   });
+
+  it('requires an explicit question-day cutoff and preserves same-day source timestamps', async () => {
+    const { tempParent } = fixture();
+    const sameDay = question({ haystack_dates: ['2023/05/20 (Sat) 21:00', '2023/05/18 (Thu) 09:00'] });
+    expect(() => parseLongMemEvalDataset([sameDay])).toThrow('strict-instant');
+    const [parsed] = parseLongMemEvalDataset([sameDay], { timestampPolicy: 'question-day' });
+    expect(parsed.questionTime).toBe('2023-05-20T12:00:00.000Z');
+    expect(parsed.retrievalCutoff).toBe('2023-05-20T23:59:59.999Z');
+    expect(parsed.sessionsAfterQuestionTime).toBe(1);
+    expect(parsed.sessions[1].timestamp).toBe('2023-05-20T21:00:00.000Z');
+    const report = await runLongMemEval([sameDay], { tempParent, timestampPolicy: 'question-day', embedder: vectors });
+    expect(report.limits.timestampPolicy).toBe('question-day');
+    expect(report.results[0]).toMatchObject({ questionDate: sameDay.question_date, retrievalCutoff: parsed.retrievalCutoff, sessionsAfterQuestionTime: 1 });
+    expect(report.results[0].baselines.lexical?.evidenceSessionRecall).toBe(1);
+    expect(report.results[0].baselines.hybrid?.evidenceSessionRecall).toBe(1);
+    expect(readdirSync(tempParent)).toEqual([]);
+  });
+
+  it('rejects next-day history in day mode and defines ISO-offset day boundaries in UTC', () => {
+    expect(() => parseLongMemEvalDataset([question({ haystack_dates: ['2023/05/21 (Sun) 00:00', '2023/05/18 (Thu) 09:00'] })], { timestampPolicy: 'question-day' })).toThrow('retrieval cutoff');
+    const [parsed] = parseLongMemEvalDataset([question({ question_date: '2023-05-20T23:00:00-04:00', haystack_dates: ['2023-05-21T19:00:00Z', '2023-05-18T09:00:00Z'] })], { timestampPolicy: 'question-day' });
+    expect(parsed.questionTime).toBe('2023-05-21T03:00:00.000Z');
+    expect(parsed.retrievalCutoff).toBe('2023-05-21T23:59:59.999Z');
+    expect(() => parseLongMemEvalDataset([question()], { timestampPolicy: 'allow-anything' } as never)).toThrow();
+    expect(parseLongMemEvalDataset([question()])[0].retrievalCutoff).toBe('2023-05-20T12:00:00.000Z');
+  });
 });
 
 describe('isolated retrieval-only baselines', () => {

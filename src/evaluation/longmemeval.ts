@@ -16,6 +16,8 @@ export type LongMemEvalQuestionType = typeof questionTypes[number];
 export type LongMemEvalBaseline = 'no-memory' | 'lexical' | 'hybrid';
 export interface LongMemEvalOptions {
   topK?: number;
+  /** Opt-in day-level compatibility for benchmark histories with same-day timestamps. */
+  timestampPolicy?: 'strict-instant' | 'question-day';
   /** Lexical candidate budget and most-recent vector candidate window. */
   maxCandidates?: number;
   maxQuestions?: number;
@@ -40,6 +42,8 @@ export interface LongMemEvalCase {
   question: string;
   questionDate: string;
   questionTime: string;
+  retrievalCutoff: string;
+  sessionsAfterQuestionTime: number;
   unanswerable: boolean;
   evidenceSessionIds: string[];
   sessions: { id: string; date: string; timestamp: string; turns: { role: 'user' | 'assistant'; content: string }[] }[];
@@ -64,6 +68,8 @@ export interface LongMemEvalQuestionResult {
   questionId: string;
   questionType: LongMemEvalQuestionType;
   questionDate: string;
+  retrievalCutoff: string;
+  sessionsAfterQuestionTime: number;
   answerability: 'answerable' | 'unanswerable';
   evidenceSessionIds: string[];
   historySessions: number;
@@ -111,10 +117,11 @@ function integer(value: number | undefined, fallback: number, maximum: number, n
 }
 function limits(options: LongMemEvalOptions) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Evaluation options must be an object.');
-  const allowed = ['topK', 'maxCandidates', 'maxQuestions', 'maxSessionsPerQuestion', 'maxMessagesPerQuestion', 'maxBytesPerQuestion', 'maxDatasetBytes', 'timeoutMs', 'signal', 'tempParent', 'datasetLabel', 'datasetRevision', 'embedder', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes'];
+  const allowed = ['topK', 'timestampPolicy', 'maxCandidates', 'maxQuestions', 'maxSessionsPerQuestion', 'maxMessagesPerQuestion', 'maxBytesPerQuestion', 'maxDatasetBytes', 'timeoutMs', 'signal', 'tempParent', 'datasetLabel', 'datasetRevision', 'embedder', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes'];
   if (Object.keys(options).some(key => !allowed.includes(key))) throw new Error('Unknown evaluation option.');
   return {
     topK: integer(options.topK, 20, 100, 'topK'),
+    timestampPolicy: z.enum(['strict-instant', 'question-day']).parse(options.timestampPolicy ?? 'strict-instant'),
     maxCandidates: integer(options.maxCandidates, 1000, 10000, 'maxCandidates'),
     maxQuestions: integer(options.maxQuestions, 100, 500, 'maxQuestions'),
     maxSessionsPerQuestion: integer(options.maxSessionsPerQuestion, 1000, 2000, 'maxSessionsPerQuestion'),
@@ -155,10 +162,14 @@ function decode(input: unknown, budget: ReturnType<typeof limits>) {
     if (value.answer_session_ids.some(id => !value.haystack_session_ids.includes(id))) throw new Error('An evidence session ID is absent from this question history.');
     if (value.haystack_sessions.reduce((count, turns) => count + turns.length, 0) > budget.maxMessagesPerQuestion) throw new Error('Question exceeds maxMessagesPerQuestion.');
     const questionTime = timestamp(value.question_date);
+    // This changes only the explicit retrieval cutoff, never source timestamps.
+    // Day mode uses the UTC day after timestamp normalization, including ISO offsets.
+    const retrievalCutoff = budget.timestampPolicy === 'question-day' ? `${questionTime.slice(0, 10)}T23:59:59.999Z` : questionTime;
     const sessions = value.haystack_sessions.map((turns, index) => ({ id: value.haystack_session_ids[index], date: value.haystack_dates[index], timestamp: timestamp(value.haystack_dates[index]), turns }));
-    if (sessions.some(session => session.timestamp > questionTime)) throw new Error('History sessions must not occur after the question date.');
+    if (sessions.some(session => session.timestamp > retrievalCutoff)) throw new Error('History sessions must not occur after the question retrieval cutoff; timestampPolicy defaults to strict-instant.');
+    const sessionsAfterQuestionTime = sessions.filter(session => session.timestamp > questionTime).length;
     sessions.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    return { questionId: value.question_id, questionType: value.question_type, question: value.question, questionDate: value.question_date, questionTime, unanswerable: value.question_id.endsWith('_abs'), evidenceSessionIds: [...new Set(value.answer_session_ids)], sessions } satisfies LongMemEvalCase;
+    return { questionId: value.question_id, questionType: value.question_type, question: value.question, questionDate: value.question_date, questionTime, retrievalCutoff, sessionsAfterQuestionTime, unanswerable: value.question_id.endsWith('_abs'), evidenceSessionIds: [...new Set(value.answer_session_ids)], sessions } satisfies LongMemEvalCase;
   });
   return { cases, bytes: Buffer.byteLength(serialized), sha256: createHash('sha256').update(serialized).digest('hex') };
 }
@@ -275,8 +286,8 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
             await setImmediate(); check();
           }
         }
-        clock = item.questionTime;
-        const query = { query: item.question, limit: budget.topK, maxCandidates: budget.maxCandidates, asOf: item.questionTime, knownAt: item.questionTime };
+        clock = item.retrievalCutoff;
+        const query = { query: item.question, limit: budget.topK, maxCandidates: budget.maxCandidates, asOf: item.retrievalCutoff, knownAt: item.retrievalCutoff };
         const convert = (hits: RecallResult[]) => hits.map(hit => {
           const reference = references.get(hit.memory.id);
           if (!reference) throw new Error('Retrieval returned an ID outside this question history.');
@@ -296,7 +307,7 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
           baselines.hybrid = score(convert(await memory.recallHybrid(query, { embedder, maxCandidates: budget.maxCandidates, timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })), item.evidenceSessionIds);
         }
         check();
-        results.push({ questionId: item.questionId, questionType: item.questionType, questionDate: item.questionDate, answerability: item.unanswerable ? 'unanswerable' : 'answerable', evidenceSessionIds: [...item.evidenceSessionIds], historySessions: item.sessions.length, historyTurns: item.sessions.reduce((count, session) => count + session.turns.length, 0), indexedTurns, indexedBytes, baselines });
+        results.push({ questionId: item.questionId, questionType: item.questionType, questionDate: item.questionDate, retrievalCutoff: item.retrievalCutoff, sessionsAfterQuestionTime: item.sessionsAfterQuestionTime, answerability: item.unanswerable ? 'unanswerable' : 'answerable', evidenceSessionIds: [...item.evidenceSessionIds], historySessions: item.sessions.length, historyTurns: item.sessions.reduce((count, session) => count + session.turns.length, 0), indexedTurns, indexedBytes, baselines });
       } finally { memory?.close(); }
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -307,7 +318,7 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
     summary[baseline] = { all: summarize(results, baseline), answerable: summarize(results.filter(row => row.answerability === 'answerable'), baseline), unanswerable: summarize(results.filter(row => row.answerability === 'unanswerable'), baseline), byQuestionType };
   }
   return { kind: 'LongMemEval-style offline retrieval evaluation', protocol: 'v1-turn-retrieval-session-evidence', dataset: { origin: 'caller-supplied; official provenance not verified', ...(label ? { label } : {}), ...(revision ? { revision } : {}), sha256: dataset.sha256, bytes: dataset.bytes, questions: results.length }, granularity: 'turn', topK: budget.topK, providerMode: supplied ? 'caller-supplied-embedder' : 'none', ...(supplied ? { embeddingModel: { model: supplied.model, dimensions: supplied.dimensions } } : {}), calls, answerQuality: { status: 'not-evaluated', abstentionAccuracy: null }, results, summary, limits: budget, storage: 'fresh scoped SQLite per question; temporary files removed', durationMs: performance.now() - started,
-    limitations: ['Retrieval scores do not measure answer correctness, reasoning quality or semantic abstention.', 'K counts retrieved turns; evidence metrics deduplicate their session IDs. These are not official session-retrieval-at-K results.', 'Questions without evidence-session labels have null evidence metrics and are excluded from evidence averages.', 'Naive benchmark timestamps are interpreted as UTC for chronological ordering; no real-world timezone is inferred.', 'Time budgets are checked between bounded SQLite operations; an individual synchronous operation cannot be preempted.', 'maxCandidates bounds lexical SQL candidates and the most-recent vector window. Hybrid fusion uses up to 100 ranked candidates per channel; it does not search every vector in larger histories.', 'No official dataset was downloaded or provenance authenticated by this runner. Caller embedding adapters determine their own networking and cost.'], protocolSources: LONGMEMEVAL_PROTOCOL_SOURCES };
+    limitations: ['Retrieval scores do not measure answer correctness, reasoning quality or semantic abstention.', 'K counts retrieved turns; evidence metrics deduplicate their session IDs. These are not official session-retrieval-at-K results.', 'Questions without evidence-session labels have null evidence metrics and are excluded from evidence averages.', 'Naive benchmark timestamps are interpreted as UTC for chronological ordering; no real-world timezone is inferred.', 'timestampPolicy defaults to strict-instant. Explicit question-day mode uses the end of the normalized UTC question day and may include history later than the stated question instant; each case reports its cutoff and affected session count.', 'Time budgets are checked between bounded SQLite operations; an individual synchronous operation cannot be preempted.', 'maxCandidates bounds lexical SQL candidates and the most-recent vector window. Hybrid fusion uses up to 100 ranked candidates per channel; it does not search every vector in larger histories.', 'No official dataset was downloaded or provenance authenticated by this runner. Caller embedding adapters determine their own networking and cost.'], protocolSources: LONGMEMEVAL_PROTOCOL_SOURCES };
 }
 
 /** Bounded regular-file JSON reader; callers must already possess the dataset. */

@@ -1,6 +1,6 @@
 {
   "name": "mnemosy-ai",
-  "version": "2.0.0-rc.2",
+  "version": "2.0.0-rc.3",
   "description": "Evidence-backed agent memory with observation, hybrid recall, temporal history, tested skills, and local MCP/HTTP",
   "type": "module",
   "main": "./dist/index.js",
@@ -81,6 +81,10 @@
     "./evaluation": {
       "types": "./dist/evaluation/index.d.ts",
       "import": "./dist/evaluation/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
     }
   },
   "files": [
@@ -109,7 +113,7 @@
     "pretest:coverage": "npm run build",
     "test:watch": "vitest",
     "pretest:watch": "npm run build",
-    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts",
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts",
     "evaluate": "node dist/cli/index.js evaluate"
   },
   "keywords": [

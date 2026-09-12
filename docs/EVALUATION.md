@@ -1,6 +1,14 @@
-# Evaluation evidence — 2026-09-12
+# Evaluation evidence — 2026-09-13
 
-This release separates correctness checks from memory-quality claims. No paid model calls, public memory benchmark runs, or matched competitor experiments were performed.
+This release separates correctness checks, public-data retrieval measurements and memory-quality claims. No paid model calls, generated-answer evaluation or matched competitor experiments were performed.
+
+## Verified rc3 local checkpoint
+
+The rc3 source passed **342 TypeScript tests** on Node 22.16.0 and 24.21.0, source/example typechecking and build. This includes 36 native memory adapter tests and 19 LongMemEval adapter tests. An offline-installed package imported all **12** tested entry points, passed both recorded demos and executed the native correction/retry/deletion example with zero model calls. Package, CLI and MCP versions were checked for agreement; CI now enforces that agreement.
+
+Independent review checked native command parsing, scope, source lifecycle, blank-byte preservation, transaction rollback, concurrent connections, policy changes and durable receipts. The new-code Semgrep scan applied 22 matching security-audit rules to five TypeScript files with zero findings and no parse errors. Snyk was attempted again and remains unavailable because the account is unauthenticated. These are local results; remote CI is recorded separately in the pull request.
+
+The [public cleaned LongMemEval S baseline](evaluation/LONGMEMEVAL-S-BASELINE.md) ran 499 supported cases with explicit day-level compatibility and one pre-scoring size rejection. Its raw source hash and all case/aggregate metrics were independently checked. It provides retrieval evidence and identifies gaps; it does not measure answer accuracy.
 
 ## Verified rc2 checkpoint
 
@@ -56,7 +64,9 @@ With the original rc2 layout, explicit atomic batches of 500 records took 5.269�
 
 The new [LongMemEval v1 adapter](LONGMEMEVAL.md) accepts an explicitly supplied dataset file and runs isolated no-memory and lexical baselines, with optional selected embeddings. It measures evidence-session recall, precision and coverage; answer correctness and semantic abstention remain unevaluated. The runner strips reference answers, turn labels and evidence-marked identifiers from indexed data, uses deterministic ordinal record IDs, and records raw-file hashes, effective candidate windows and provider budgets.
 
-Seventeen synthetic adapter tests cover label leakage, metrics, stable ties, BOM fingerprints, cancellation, multi-batch deadlines, bounds and cleanup. Two additional CLI tests cover file output and no-provider operation. No official dataset or external model was used for those checks. This is an executable evaluation path, not a published LongMemEval score.
+Nineteen synthetic adapter tests cover label leakage, metrics, stable ties, BOM fingerprints, cancellation, multi-batch deadlines, bounds and cleanup. The extra timestamp-policy fixtures distinguish strict instants from explicit question-day cutoffs. Two additional CLI tests cover file output and no-provider operation. No official dataset or external model was used for those checks. This is an executable evaluation path, not a published LongMemEval score.
+
+A subsequent [public cleaned S retrieval baseline](evaluation/LONGMEMEVAL-S-BASELINE.md) evaluated 499 of 500 cases and retrieved complete labeled evidence for 406/499 at K = 20 turns. The full source hash was verified; the exact oversized-turn exclusion and question-day compatibility mode are documented with raw results. An independent reviewer recomputed every score. These are retrieval metrics with zero model calls, not answer accuracy or a comparison to other systems.
 
 ## Agent experiments still required
 

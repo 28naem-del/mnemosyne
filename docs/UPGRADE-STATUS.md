@@ -1,4 +1,4 @@
-# What rc2 adds, and what remains to prove
+# What the v2 candidates add, and what remains to prove
 
 The experience runtime builds on the rc1 evidence kernel. These are implemented paths in the source candidate; npm and production website release are separate steps. [The executable guide](RUNTIME.md) and [evaluation evidence](EVALUATION.md) distinguish working behavior from performance hypotheses.
 
@@ -42,10 +42,10 @@ Erasure covers this live store. Existing exports, device snapshots and context a
 
 Plain text, Markdown and JSON work directly. An explicit OpenAI-compatible vision adapter can extract text from selected PNG/JPEG/WebP images. Other binary documents require a caller-selected extractor. The repository now includes a live inspector, Python client, runtime guide, executable SDK example, and a second recorded website demo.
 
-Built-in PDF extraction, managed source connectors, native filesystem-memory bridges and cross-system migration are still distinct gaps. The earlier [v2 migration notes](MIGRATION-v2.md) describe compatibility and local snapshots; they do not yet claim a complete importer for other products.
+The [native Anthropic memory adapter](ANTHROPIC-MEMORY.md) now maps six text commands to private virtual files, source revisions and forgetting. Its native command example runs locally; no Claude model session has been evaluated. Built-in PDF extraction, managed source connectors and cross-system migration remain distinct gaps. The earlier [v2 migration notes](MIGRATION-v2.md) describe compatibility and local snapshots; they do not yet claim a complete importer for other products.
 
 ## Research and evidence
 
 The [provider research review](PROVIDER-MEMORY-RESEARCH.md) distinguishes consumer memory, developer memory services, prompt caching and model-architecture research. Public sources informed source recovery, selective consolidation, topic models, deletion and independent controls. Comparable features already exist elsewhere; assembling them does not establish novelty or superiority.
 
-An offline [LongMemEval v1 retrieval adapter](LONGMEMEVAL.md) now accepts caller-supplied batches and separates evidence-session metrics from answer quality. It does not download data or invoke a judge. The next evidence step is matched task evaluation: no-memory and strong baseline comparisons, separate retrieval and answer scoring, held-out tasks, temporal corrections, negative transfer, privacy and cost. The current source candidate does not establish AGI or a public benchmark advantage.
+An offline [LongMemEval v1 retrieval adapter](LONGMEMEVAL.md) now accepts caller-supplied batches and separates evidence-session metrics from answer quality. It does not download data or invoke a judge. A [public cleaned S baseline](evaluation/LONGMEMEVAL-S-BASELINE.md) now covers 499 of 500 questions with explicit day-level compatibility and one oversized-turn exclusion; answer quality is unmeasured. The next evidence step is matched task evaluation: no-memory and strong baseline comparisons, separate retrieval and answer scoring, held-out tasks, temporal corrections, negative transfer, privacy and cost. The current source candidate does not establish AGI or a public benchmark advantage.

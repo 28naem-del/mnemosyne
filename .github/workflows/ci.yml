@@ -47,7 +47,7 @@ jobs:
           import { readFileSync } from 'node:fs';
           const pack = JSON.parse(readFileSync(process.argv[2], 'utf8'))[0];
           const files = new Set(pack.files.map(file => file.path));
-          for (const path of ['README.md', 'LICENSE', 'NOTICE.md', 'docs/deployment.md', 'docs/RUNTIME.md', 'dist/cli/index.js', 'dist/local/index.js', 'dist/mcp/server.js', 'dist/reflection/index.js', 'dist/runtime/index.js', 'dist/http/index.js', 'dist/providers/index.js', 'dist/branches/index.js', 'dist/relations/index.js', 'dist/connectors/index.js', 'dist/evaluation/learning-demo.js', 'dist/evaluation/index.js', 'dist/evaluation/longmemeval.js', 'python/mnemosyne_memory/__init__.py']) {
+          for (const path of ['README.md', 'LICENSE', 'NOTICE.md', 'docs/deployment.md', 'docs/RUNTIME.md', 'dist/cli/index.js', 'dist/local/index.js', 'dist/mcp/server.js', 'dist/reflection/index.js', 'dist/runtime/index.js', 'dist/http/index.js', 'dist/providers/index.js', 'dist/branches/index.js', 'dist/relations/index.js', 'dist/connectors/index.js', 'dist/adapters/index.js', 'dist/adapters/anthropic-memory.js', 'dist/evaluation/learning-demo.js', 'dist/evaluation/index.js', 'dist/evaluation/longmemeval.js', 'python/mnemosyne_memory/__init__.py']) {
             if (!files.has(path)) throw new Error(`Package is missing ${path}`);
           }
           NODE
@@ -57,12 +57,23 @@ jobs:
           "$MNEMOSYNE_SMOKE_DIR/node_modules/.bin/mnemosy" demo > "$MNEMOSYNE_SMOKE_DIR/demo.json"
           "$MNEMOSYNE_SMOKE_DIR/node_modules/.bin/mnemosy" learning-demo > "$MNEMOSYNE_SMOKE_DIR/learning-demo.json"
           cd "$MNEMOSYNE_SMOKE_DIR"
-          node --input-type=module -e "await Promise.all(['mnemosy-ai', 'mnemosy-ai/local', 'mnemosy-ai/mcp', 'mnemosy-ai/reflection', 'mnemosy-ai/runtime', 'mnemosy-ai/http', 'mnemosy-ai/providers', 'mnemosy-ai/branches', 'mnemosy-ai/relations', 'mnemosy-ai/connectors', 'mnemosy-ai/evaluation'].map(specifier => import(specifier)));"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import { VERSION } from 'mnemosy-ai/mcp';
+          const expected = JSON.parse(readFileSync('node_modules/mnemosy-ai/package.json', 'utf8')).version;
+          const actual = execFileSync(process.execPath, ['node_modules/mnemosy-ai/dist/cli/index.js', '--version'], { encoding: 'utf8' }).trim();
+          if (actual !== expected || VERSION !== expected) throw new Error('Installed package, CLI and MCP versions disagree.');
+          NODE
+          node --input-type=module -e "await Promise.all(['mnemosy-ai', 'mnemosy-ai/local', 'mnemosy-ai/mcp', 'mnemosy-ai/reflection', 'mnemosy-ai/runtime', 'mnemosy-ai/http', 'mnemosy-ai/providers', 'mnemosy-ai/branches', 'mnemosy-ai/relations', 'mnemosy-ai/connectors', 'mnemosy-ai/adapters', 'mnemosy-ai/evaluation'].map(specifier => import(specifier)));"
           node -e "const report = require('./demo.json'); if (!report.checksTotal || report.checksPassed !== report.checksTotal) process.exit(1); console.log(report.checksPassed + '/' + report.checksTotal + ' demo checks passed');"
           node -e "const report = require('./learning-demo.json'); if (!report.passed || !report.checksTotal || report.checksPassed !== report.checksTotal || report.externalModelCalls !== 0 || report.kind !== 'deterministic integration demonstration') process.exit(1); console.log(report.checksPassed + '/' + report.checksTotal + ' learning integration checks passed');"
 
       - name: Run the runtime SDK example
         run: node --experimental-strip-types examples/runtime-learning.ts
+
+      - name: Run the native memory command example
+        run: node --experimental-strip-types examples/anthropic-memory.ts
 
   python:
     name: Python client (Python ${{ matrix.python }})
