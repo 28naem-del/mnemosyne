@@ -1,4 +1,4 @@
-# Migration to 2.0.0-rc.1
+# Migration to the 2.0 release candidate
 
 This release candidate adds local memory alongside the existing Qdrant engine and intentionally changes unsafe behavior. Test against isolated copies before production use. No automatic database migration runs.
 

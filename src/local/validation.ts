@@ -111,9 +111,9 @@ export function checkpointState(value: unknown): Record<string, JsonValue> {
   };
 }
 
-export function storeInput(value: unknown): Required<Pick<StoreMemoryInput, 'text' | 'kind' | 'visibility' | 'trust' | 'source' | 'dependencies' | 'metadata'>> & Pick<StoreMemoryInput, 'evidence' | 'key' | 'idempotencyKey'> {
+export function storeInput(value: unknown): Required<Pick<StoreMemoryInput, 'text' | 'kind' | 'visibility' | 'trust' | 'source' | 'dependencies' | 'metadata'>> & Pick<StoreMemoryInput, 'evidence' | 'key' | 'idempotencyKey' | 'validFrom' | 'validUntil'> {
   const input = object(value, 'memory');
-  keys(input, ['text', 'kind', 'visibility', 'trust', 'source', 'evidence', 'key', 'dependencies', 'metadata', 'idempotencyKey'], 'memory');
+  keys(input, ['text', 'kind', 'visibility', 'trust', 'source', 'evidence', 'key', 'dependencies', 'metadata', 'idempotencyKey', 'validFrom', 'validUntil'], 'memory');
   const dependencies = strings(input.dependencies === undefined ? [] : input.dependencies, 'dependencies');
   if (new Set(dependencies).size !== dependencies.length) throw new TypeError('Duplicate dependencies');
   const trust = enumeration(input.trust === undefined ? 'untrusted' : input.trust, ['untrusted', 'observed', 'verified'] as const, 'trust');
@@ -128,9 +128,14 @@ export function storeInput(value: unknown): Required<Pick<StoreMemoryInput, 'tex
     try { parsed = JSON.parse(text); } catch { throw new TypeError('Checkpoint text must contain its typed JSON state'); }
     if (canonical(parsed) !== canonical(state)) throw new TypeError('Checkpoint text and metadata state must agree');
   }
+  const validFrom = input.validFrom === undefined ? undefined : timestamp(input.validFrom, 'validFrom');
+  const validUntil = input.validUntil === undefined ? undefined : timestamp(input.validUntil, 'validUntil');
+  if (validFrom && validUntil && validUntil <= validFrom) throw new TypeError('validUntil must follow validFrom');
   return {
     text,
     kind,
+    ...(validFrom === undefined ? {} : { validFrom }),
+    ...(validUntil === undefined ? {} : { validUntil }),
     visibility: enumeration(input.visibility === undefined ? 'private' : input.visibility, ['private', 'workspace'] as const, 'visibility'),
     trust,
     source: source(input.source),

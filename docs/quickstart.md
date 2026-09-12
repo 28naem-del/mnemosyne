@@ -8,6 +8,7 @@ Requires Node >=22.16; Node 24 is recommended. Build this release candidate from
 npm ci
 npm run check
 npm run demo
+npm run demo:learning
 node dist/cli/index.js demo --record demo-evidence.json
 ```
 
@@ -35,6 +36,14 @@ node dist/cli/index.js mcp --db ./data/memory.sqlite --workspace demo --agent al
 This waits for an MCP client on standard input; it does not launch a web server. Put the command and arguments in the server configuration format your client supports. Use absolute file paths when the client's working directory differs. Server diagnostics go to stderr; stdout is reserved for protocol messages.
 
 Tools include recall, context, inspection, task resume, store, checkpoint, and correction. Read-only mode removes writes; explicit `--allow-destructive` enables forgetting. Validation/outcome recording and reflection commitment remain controller SDK operations.
+
+## Capture and inspect live experience
+
+`capture --file YOUR_FILE --adapter text` ingests only the file you explicitly select. Add `--watch` for a foreground watcher. Generic, Codex and Claude JSONL adapters preserve visible conversation text and stable replay identities. Ingested text is untrusted by default; `--trust observed` means the host observed it, not that its claims were verified.
+
+`serve --token-file YOUR_TOKEN_FILE` starts an authenticated local HTTP service and live inspector. The token file must contain at least 32 bytes of unpredictable secret text. Keep it private. The default address is loopback; the CLI prints the URL and scope without printing the token.
+
+Both commands need the same explicit `--db`, `--workspace` and `--agent` flags as other commands. The [runtime guide](RUNTIME.md) includes complete examples, Python usage, source-backed topic models, skill trials, optional hybrid recall and bounded background work.
 
 ## Export and restore
 

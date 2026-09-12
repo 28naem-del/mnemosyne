@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mnemosyne-memory-client"
+version = "2.0.0rc2"
+description = "Scoped Python client for the Mnemosyne memory service"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mnemosyne_memory*"]

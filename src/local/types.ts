@@ -26,6 +26,10 @@ export interface MemoryRecord {
   evidence?: string;
   /** Explicit fact identity; different active texts with the same key remain conflicts. */
   key?: string;
+  /** Inclusive real-world validity; defaults to createdAt when absent. */
+  validFrom?: string;
+  /** Exclusive real-world validity endpoint. */
+  validUntil?: string;
   createdAt: string;
   updatedAt: string;
   status: MemoryStatus;
@@ -44,6 +48,8 @@ export interface StoreMemoryInput {
   key?: string;
   dependencies?: string[];
   metadata?: Record<string, JsonValue>;
+  validFrom?: string;
+  validUntil?: string;
   /** Retries must use exactly the same normalized payload. */
   idempotencyKey?: string;
 }
@@ -62,6 +68,52 @@ export interface RecallInput {
   limit?: number;
   kinds?: MemoryKind[];
   includeUntrusted?: boolean;
+  /** Real-world time to recall. Historical mode is enabled by either time field. */
+  asOf?: string;
+  /** Only use memories and outcome evidence recorded by this time. */
+  knownAt?: string;
+  /** SQL-ranked candidate budget before provenance checks, at most 10000. */
+  maxCandidates?: number;
+}
+
+export interface ListMemoryInput {
+  limit?: number;
+  cursor?: string;
+  kinds?: MemoryKind[];
+  includeInactive?: boolean;
+  includeUntrusted?: boolean;
+  /** Exact top-level string equality, not JSON path expressions. */
+  metadata?: Record<string, string>;
+}
+export interface MemoryPage { items: MemoryRecord[]; nextCursor?: string }
+
+export interface MemoryEmbedder {
+  /** Stable model AND revision identifier. Changing output semantics requires a new identifier. */
+  model: string;
+  dimensions: number;
+  embed(texts: readonly string[], options: { signal: AbortSignal }): Promise<number[][]>;
+}
+export interface MemoryReranker {
+  rerank(query: string, candidates: readonly MemoryRecord[], options: { signal: AbortSignal }): Promise<{ id: string; score: number }[]>;
+}
+export interface EmbeddingIndexOptions {
+  embedder: MemoryEmbedder;
+  /** Maximum records submitted in this invocation, at most 1000. */
+  limit?: number;
+  /** Maximum records in each provider call, at most 100. */
+  batchSize?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+export interface EmbeddingIndexResult { indexed: number; skipped: number; remaining: number }
+export interface HybridRecallOptions {
+  embedder: MemoryEmbedder;
+  reranker?: MemoryReranker;
+  signal?: AbortSignal;
+  /** Per-provider-call deadline; late results are ignored. */
+  timeoutMs?: number;
+  /** Maximum vector candidates scanned, at most 10000. */
+  maxCandidates?: number;
 }
 
 export interface RecallResult {

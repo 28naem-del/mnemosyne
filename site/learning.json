@@ -1,0 +1,112 @@
+{
+  "kind": "deterministic integration demonstration",
+  "passed": true,
+  "checksPassed": 13,
+  "checksTotal": 13,
+  "steps": [
+    {
+      "id": "empty",
+      "title": "A new agent starts without the fixture lesson",
+      "passed": true,
+      "status": "passed",
+      "detail": "An empty scoped database supplies no fixture evidence."
+    },
+    {
+      "id": "capture",
+      "title": "Capture exact source text with a stable replay identity",
+      "passed": true,
+      "status": "passed",
+      "detail": "The exact supplied message is observed evidence, and replay returns the same source ID."
+    },
+    {
+      "id": "observe",
+      "title": "Process one durable source-cited observation job",
+      "passed": true,
+      "status": "passed",
+      "detail": "One scripted proposer call committed a distinct observation citing the supplied source ID."
+    },
+    {
+      "id": "candidate",
+      "title": "Keep an untested skill out of compiled context",
+      "passed": true,
+      "status": "passed",
+      "detail": "The candidate is untrusted control state and is absent from compiled context."
+    },
+    {
+      "id": "trial",
+      "title": "Promote the skill after an external controller trial",
+      "passed": true,
+      "status": "passed",
+      "detail": "Two controller-executed cases passed; the observed skill has a recorded outcome and becomes eligible context."
+    },
+    {
+      "id": "share",
+      "title": "Explicitly publish a source-backed workspace lesson",
+      "passed": true,
+      "status": "passed",
+      "detail": "The explicit shared lesson depends on shared original evidence and trial results, with no private skill IDs."
+    },
+    {
+      "id": "peer",
+      "title": "A second agent recalls the shared lesson",
+      "passed": true,
+      "status": "passed",
+      "detail": "The second scoped LocalMemory recalls the lesson with citations while private runtime records remain inaccessible."
+    },
+    {
+      "id": "isolation",
+      "title": "Another workspace cannot read that lesson",
+      "passed": true,
+      "status": "passed",
+      "detail": "The same reader identity in a different workspace receives no fixture memories."
+    },
+    {
+      "id": "retire",
+      "title": "A source correction suppresses the old skill",
+      "passed": true,
+      "status": "passed",
+      "detail": "Correcting the transitive source immediately retires the old skill without waiting for another job."
+    },
+    {
+      "id": "peer-retire",
+      "title": "The second agent stops recalling the stale lesson",
+      "passed": true,
+      "status": "passed",
+      "detail": "The shared lesson is invalidated through its source dependency and is no longer supplied to the second agent."
+    },
+    {
+      "id": "inspect",
+      "title": "Original evidence remains available for inspection",
+      "passed": true,
+      "status": "passed",
+      "detail": "Explicit source inspection retains the original message and provenance after correction."
+    },
+    {
+      "id": "forget",
+      "title": "Forgetting purges original and derived content",
+      "passed": true,
+      "status": "passed",
+      "detail": "Forgetting the captured source removes its correction history, learned procedures, shared lesson and derived evidence from the live store."
+    },
+    {
+      "id": "restart",
+      "title": "A tombstone blocks replay after reopening the database",
+      "passed": true,
+      "status": "passed",
+      "detail": "The reopened database retains only a non-advisory tombstone for this source identity and rejects replay."
+    }
+  ],
+  "modelCalls": 0,
+  "externalModelCalls": 0,
+  "scriptedProposerCalls": 1,
+  "trialCasesPassed": 2,
+  "storage": "New temporary SQLite database; connections closed and files removed after this run.",
+  "limitations": [
+    "Hand-authored source, proposer and trial fixtures; no LLM was invoked or trained.",
+    "Checks establish these integration behaviors, not general task improvement, AGI, or competitor superiority.",
+    "Trial verification and workspace publication are explicit controller actions; callbacks are trusted assertions, not authentication.",
+    "The two-agent check uses two scoped connections in one local process, not a distributed load test.",
+    "Forgetting covers this live store and replay identity; it does not certify erasure of external backups or device snapshots."
+  ],
+  "mode": "recorded"
+}

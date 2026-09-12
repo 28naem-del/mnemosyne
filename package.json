@@ -1,7 +1,7 @@
 {
   "name": "mnemosy-ai",
-  "version": "2.0.0-rc.1",
-  "description": "Portable agent memory with evidence, corrections, scoped handoffs, and a local MCP server",
+  "version": "2.0.0-rc.2",
+  "description": "Evidence-backed agent memory with observation, hybrid recall, temporal history, tested skills, and local MCP/HTTP",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -10,6 +10,30 @@
     "mnemosy": "./dist/cli/index.js"
   },
   "exports": {
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "import": "./dist/providers/index.js"
+    },
+    "./branches": {
+      "types": "./dist/branches/index.d.ts",
+      "import": "./dist/branches/index.js"
+    },
+    "./relations": {
+      "types": "./dist/relations/index.d.ts",
+      "import": "./dist/relations/index.js"
+    },
+    "./connectors": {
+      "types": "./dist/connectors/index.d.ts",
+      "import": "./dist/connectors/index.js"
+    },
     "./local": {
       "types": "./dist/local/index.d.ts",
       "import": "./dist/local/index.js"
@@ -53,6 +77,10 @@
     "./tools": {
       "types": "./dist/tools/index.d.ts",
       "import": "./dist/tools/index.js"
+    },
+    "./evaluation": {
+      "types": "./dist/evaluation/index.d.ts",
+      "import": "./dist/evaluation/index.js"
     }
   },
   "files": [
@@ -61,7 +89,8 @@
     "LICENSE",
     "NOTICE.md",
     "docs",
-    "site"
+    "site",
+    "python"
   ],
   "scripts": {
     "build": "tsc",
@@ -74,11 +103,14 @@
     "demo": "node dist/cli/index.js demo",
     "demo:record": "node dist/cli/index.js demo --record",
     "benchmark": "node dist/evaluation/local-benchmark.js",
+    "demo:learning": "node dist/cli/index.js learning-demo",
+    "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v",
     "pretest": "npm run build",
     "pretest:coverage": "npm run build",
     "test:watch": "vitest",
     "pretest:watch": "npm run build",
-    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts"
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts",
+    "evaluate": "node dist/cli/index.js evaluate"
   },
   "keywords": [
     "ai",

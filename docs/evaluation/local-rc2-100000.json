@@ -1,0 +1,27 @@
+{
+  "kind": "synthetic local lexical retrieval smoke test; not an LLM or public memory benchmark",
+  "generatedAt": "2026-09-12T22:21:29.076Z",
+  "runtime": "v26.4.0",
+  "platform": "darwin/arm64",
+  "records": 100000,
+  "queries": 100,
+  "backend": "file-backed SQLite, per-record transactions, WAL",
+  "ingestionMs": 63086.083125000005,
+  "exactIdentifier": {
+    "hitsAt5": 100,
+    "queries": 100,
+    "p50Ms": 0.13491700000304263,
+    "p95Ms": 0.3320830000011483
+  },
+  "broadQuery": {
+    "queries": 20,
+    "p50Ms": 371.8074590000033,
+    "p95Ms": 411.9058329999971
+  },
+  "limitations": [
+    "Synthetic records and exact identifiers; this does not establish semantic recall or task improvement.",
+    "One local process; not a concurrent-agent load test.",
+    "Cold/warm cache states are not independently controlled.",
+    "No claims of AGI, competitor superiority or public-benchmark scores."
+  ]
+}

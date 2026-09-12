@@ -9,3 +9,7 @@ The three TypeScript examples here demonstrate the separate backend APIs. Build 
 - `with-falkordb.ts`: requires explicit `GRAPH_URL`; demonstrates direct entity/relationship storage and lookup in `mnemosyne_example_graph`. Sample nodes remain in that example graph. An empty lookup is not proof of a successful live write; inspect your backend if needed.
 
 Never point example writes at production services. These examples were checked against generated API declarations; live Redis/Qdrant/FalkorDB conformance is not part of the default local test suite. See [deployment](../docs/deployment.md) for optional infrastructure.
+
+## Experience runtime
+
+After building, run `node --experimental-strip-types examples/runtime-learning.ts` from the repository root. This isolated example captures original evidence, runs one scripted observation job, executes a controller trial, attributes an outcome, corrects the source and forgets the resulting chain. It uses no network or language model. See [the runtime guide](../docs/RUNTIME.md) for real-provider integration.

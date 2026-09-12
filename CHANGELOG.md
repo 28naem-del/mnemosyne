@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.2] — source release candidate, 2026-09-13
+
+### Added
+
+- Exact supplied transcript capture for generic, Codex and Claude visible-message JSONL, bounded original-source pages, and explicit document/image extraction callbacks.
+- A regular-file connector with explicit foreground watching, stable transcript retry identities, partial-final-row handling, and replay-blocking source tombstones.
+- Durable observation and model jobs with leases, retries, bounded calls/bytes/time, source revalidation before commit, and source-backed model freshness checks.
+- Typed skill candidates, controller-supplied trial evidence or verifier callbacks, outcome-gated promotion/retirement, and retrieval/use traces. Generated content remains fallible evidence.
+- Incremental SQLite embedding indexes and hybrid recall through explicitly configured providers; model/revision/dimension checks, cancellation and response bounds.
+- Validity/knowledge-time queries, scoped pagination, atomic controller operations, entity aliases and evidence-linked traversal, and isolated branch staging with atomic merges.
+- An authenticated loopback HTTP service and live inspector, dependency-free Python client, additional CLI/MCP runtime interfaces, and explicit OpenAI-compatible provider adapters.
+- A deterministic 13-check capture-to-skill-to-shared-lesson demonstration, transport/runtime regression tests, Python CI, and installed-package checks for the new exports.
+
+### Fixed
+
+- Runtime provenance and persisted envelope validation, duplicate/no-progress proposals, source changes during asynchronous work, and replay after source forgetting.
+- Stale skill/model visibility after evidence correction or failed outcomes, untrusted branch result handling, cross-owner receipt shadowing, merge rollback, and forgotten-result replay.
+- HTTP token/scope enforcement, revocation during delayed requests, response bounds, controller-state mutation restrictions, and inspector state across reconnects.
+- Python redirect handling, malformed responses, timeout errors, and input/response byte limits.
+
+### Limits
+
+- Providers, job execution, trial verification and workspace publication are explicit controller responsibilities. There is no installed scheduler, automatic model download, cloud synchronization or model-weight training.
+- The learning demonstration uses scripted fixtures and real local APIs. It does not establish general task improvement, AGI, or superiority over other memory systems.
+- This changelog describes the source candidate, not a published npm/PyPI release or production deployment. See [runtime contracts](docs/RUNTIME.md) and [evaluation limits](docs/EVALUATION.md).
+
+### Evaluation and measured implementation changes
+
+- Added an offline LongMemEval v1 retrieval adapter and CLI with isolated baselines, evidence-session metrics, label-leakage guards, reproducible tie-breaking, raw-file fingerprints and bounded optional embeddings. Answer quality remains unevaluated.
+- Repaired a SQLite planner regression using grouped term postings. The synthetic 100,000-record exact-ID p95 measured 0.332 ms and broad-query p95 411.906 ms; these are local workload observations, not guarantees.
+- Reduced new posting-table storage with `WITHOUT ROWID` while preserving existing table layouts and durability defaults. Added measured write-cost and batching tradeoffs to the evaluation report.
+
 ## [2.0.0-rc.1] — source release candidate, 2026-09-12
 
 ### Added

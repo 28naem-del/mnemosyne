@@ -1,6 +1,6 @@
 # API reference
 
-The generated TypeScript declarations are the exact contract. The local engine is synchronous and file-backed; reflection and MCP startup are asynchronous.
+The generated TypeScript declarations are the exact contract. The local kernel is synchronous and file-backed. Hybrid retrieval, provider calls, extraction and server startup are asynchronous. [Runtime API and examples](RUNTIME.md) cover experience processing, HTTP/Python, connectors, branches and relations.
 
 ## Local engine
 
@@ -23,6 +23,16 @@ const memory = createLocalMemory({ path: './memory.sqlite', workspaceId: 'projec
 - `close()` releases the connection. Always close in a `finally` block in reusable applications.
 
 Text and identifiers are byte-bounded and NUL-free. Invalid unknown input fields are rejected. Source references are recorded; the engine does not fetch or authenticate them.
+
+## Advanced local retrieval
+
+- `list({ limit?, cursor?, kinds?, includeInactive?, includeUntrusted?, metadata? })` returns `{ items, nextCursor? }`. Pages contain at most 1,000 records, filtered within the fixed scope. Metadata filters are exact string matches.
+- `getAt(id, { asOf?, knownAt? })` projects a visible record at the requested valid time and knowledge time. `isEligible(id, time?)` additionally checks provenance, trust, conflicts and recorded failures.
+- `recall({ query, asOf?, knownAt?, maxCandidates?, ... })` and `compile` support explicit temporal queries. Records may declare `validFrom`/`validUntil`; corrections retain the earlier text version. This is a versioned evidence view, not an arbitrary replay of every mutable field.
+- `await indexEmbeddings({ embedder, ... })` persists vectors identified by endpoint/model/revision/dimensions and source text hash. `await recallHybrid(input, { embedder, reranker?, ... })` fuses scoped lexical and vector candidates, then rechecks current evidence after asynchronous calls. `compileHybrid` packs those results with the same citation and context budget rules.
+- `atomic(() => result)` groups synchronous SDK operations under a transaction or nested savepoint. Async callbacks are rejected; keep network work outside the transaction and revalidate inputs before committing.
+
+See [local types](../src/local/types.ts) for exact limits and adapter contracts. Runtime control records marked `advisory: false` remain inspectable but are excluded from ordinary recall and context.
 
 ## Reflection
 
@@ -54,7 +64,7 @@ This illustrates the contract, not a substitute for running the validator. Guard
 
 ## MCP
 
-`createMemoryServer(memory, { readOnly?, allowDestructive? })` creates an SDK server. `serveMemoryStdio(memory, options)` connects it. Import these from `mnemosy-ai/mcp`. Caller code owns closing the server and memory. The CLI handles its own lifecycle. Escaped tool results are capped at 1 MiB; oversized reads return a small error and keep the connection alive. Retry with a smaller limit or one ID. If a write completed but its result exceeded the cap, the error explicitly says so; do not repeat the write just to obtain a response.
+`createMemoryServer(memory, { readOnly?, allowDestructive?, runtime?, hybrid? })` creates an SDK server. `serveMemoryStdio(memory, options)` connects it. Import these from `mnemosy-ai/mcp`. Caller code owns closing the server and memory. The CLI handles its own lifecycle. Escaped tool results are capped at 1 MiB; oversized reads return a small error and keep the connection alive. Retry with a smaller limit or one ID. If a write completed but its result exceeded the cap, the error explicitly says so; do not repeat the write just to obtain a response.
 
 Model tools have narrower authority than the controller SDK. They cannot choose another identity, promote trust to verified, report outcomes, import snapshots, or commit reflection. Correction of controller-verified records is refused. Forgetting is opt-in at server launch.
 

@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import * as v from './validation.js';
 import type {
-  CheckpointInput, ContextPacket, ImportResult, LocalMemoryOptions, MemoryRecord,
+  CheckpointInput, ContextPacket, EmbeddingIndexOptions, EmbeddingIndexResult, HybridRecallOptions, ImportResult, ListMemoryInput, LocalMemoryOptions, MemoryEmbedder, MemoryPage, MemoryRecord,
   MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, SnapshotIdempotencyEntry, StoreMemoryInput,
 } from './types.js';
 
@@ -40,6 +41,9 @@ export class LocalMemory {
   readonly #now: () => Date;
   readonly #tokenCounter: (text: string) => number;
   #closed = false;
+  #transactionDepth = 0;
+  readonly #atomicContext = new AsyncLocalStorage<{ done: boolean }>();
+  #cursorSecret = "";
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
@@ -73,6 +77,7 @@ export class LocalMemory {
       if (version > 1) throw new Error(`Unsupported memory schema version ${version}`);
       this.#enableWal();
       if (version === 0) this.#migrate();
+      this.#advancedSchema();
       this.#privateFiles();
     } catch (error) {
       this.#db.close();
@@ -153,7 +158,10 @@ export class LocalMemory {
     });
   }
 
-  #assertOpen(): void { if (this.#closed) throw new Error('Local memory is closed'); }
+  #assertOpen(): void {
+    if (this.#closed) throw new Error('Local memory is closed');
+    if (this.#atomicContext.getStore()?.done) throw new Error('Asynchronous work escaped a synchronous atomic callback');
+  }
 
   #privateFiles(): void {
     if (this.#path === ':memory:') return;
@@ -162,17 +170,71 @@ export class LocalMemory {
     }
   }
 
+  /** Trusted controller transaction. The callback must be synchronous. */
+  atomic<T>(work: () => T): T {
+    this.#assertOpen();
+    if (typeof work !== 'function' || work.constructor.name === 'AsyncFunction') throw new TypeError('atomic requires a synchronous callback');
+    const context = { done: false };
+    return this.#atomicContext.run(context, () => {
+      try { return this.#transaction(work); } finally { context.done = true; }
+    });
+  }
+
   #transaction<T>(work: () => T): T {
     this.#assertOpen();
-    this.#db.exec('BEGIN IMMEDIATE');
+    const depth = this.#transactionDepth++;
+    const savepoint = `mnemosyne_${depth}`;
     try {
-      const result = work();
-      this.#db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.#db.exec('ROLLBACK');
-      throw error;
-    }
+      this.#db.exec(depth ? `SAVEPOINT ${savepoint}` : 'BEGIN IMMEDIATE');
+      try {
+        const result = work();
+        if (result && (typeof result === 'object' || typeof result === 'function') && typeof (result as { then?: unknown }).then === 'function') {
+          // Consume a rejecting async callback; its work must never cross an await.
+          void Promise.resolve(result).catch(() => {});
+          throw new TypeError('atomic callback must be synchronous, not a Promise');
+        }
+        this.#db.exec(depth ? `RELEASE ${savepoint}` : 'COMMIT');
+        return result;
+      } catch (error) {
+        this.#db.exec(depth ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : 'ROLLBACK');
+        throw error;
+      }
+    } finally { this.#transactionDepth--; }
+  }
+
+  #tokens(text: string): string[] {
+    return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
+  }
+
+  #textHash(text: string): string { return createHash('sha256').update(text).digest('hex'); }
+
+  #indexText(record: MemoryRecord): void {
+    const tokens = this.#tokens(record.text);
+    this.#db.prepare('INSERT INTO local_search(memory_id,length_penalty,source_hash) VALUES(?,?,?)').run(record.id, 1 + Math.log1p(tokens.length) * 0.1, this.#textHash(record.text));
+    const insert = this.#db.prepare('INSERT INTO local_terms(memory_id,term) VALUES(?,?)');
+    for (const term of new Set(tokens)) insert.run(record.id, term);
+  }
+
+  #advancedSchema(): void {
+    // Additive derived indexes retain schema-v1 records/snapshots. Rebuildable
+    // vectors are never exported and disappear with their source via FK cascade.
+    // New posting tables cluster their composite key without duplicating it in
+    // a rowid table. Existing rowid layouts stay compatible and are not rebuilt.
+    this.#transaction(() => {
+      this.#db.exec(`
+        CREATE TABLE IF NOT EXISTS local_search(memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE, length_penalty REAL NOT NULL, source_hash TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS local_terms(memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE, term TEXT NOT NULL, PRIMARY KEY(memory_id,term)) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS local_terms_term ON local_terms(term,memory_id);
+        CREATE TABLE IF NOT EXISTS local_embedding_models(model TEXT PRIMARY KEY,dimensions INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS local_embeddings(memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE, model TEXT NOT NULL REFERENCES local_embedding_models(model), dimensions INTEGER NOT NULL, source_hash TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(memory_id,model));
+        CREATE INDEX IF NOT EXISTS local_embeddings_model ON local_embeddings(model,memory_id);
+        CREATE TABLE IF NOT EXISTS local_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS memories_page ON memories(workspace_id,created_at,id);
+      `);
+      this.#db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run('cursor-secret', randomBytes(32).toString('hex'));
+      this.#cursorSecret = (this.#db.prepare("SELECT value FROM local_settings WHERE key='cursor-secret'").get() as { value: string }).value;
+      for (const row of this.#db.prepare('SELECT m.data FROM memories m LEFT JOIN local_search s ON s.memory_id=m.id WHERE s.memory_id IS NULL').iterate()) this.#indexText(this.#decode(row)!);
+    });
   }
 
   #time(): string {
@@ -211,6 +273,7 @@ export class LocalMemory {
       record.id, record.workspaceId, record.agentId, record.visibility, record.trust, record.status,
       record.kind, record.text, record.key ?? null, record.supersedes ?? null, record.createdAt, JSON.stringify(record),
     );
+    this.#indexText(record);
     this.#links(record);
     this.#audit(record.id, 'stored');
   }
@@ -243,6 +306,7 @@ export class LocalMemory {
       }
       const now = this.#time();
       const record: MemoryRecord = { ...payload, id: randomUUID(), workspaceId: this.#workspaceId, agentId: this.#agentId, createdAt: now, updatedAt: now, status: 'active' };
+      if (record.validUntil !== undefined && record.validUntil <= (record.validFrom ?? record.createdAt)) throw new TypeError('validUntil must follow validFrom or createdAt');
       this.#validateDependencies(record);
       this.#insert(record);
       if (idempotencyKey) this.#db.prepare('INSERT INTO idempotency(workspace_id,agent_id,key,payload,memory_id) VALUES(?,?,?,?,?)').run(this.#workspaceId, this.#agentId, idempotencyKey, v.canonical(payload), record.id);
@@ -259,10 +323,121 @@ export class LocalMemory {
     return this.#db.prepare(`SELECT data FROM memories WHERE ${SCOPE} ${includeInactive ? '' : "AND status='active'"} ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(this.#workspaceId, this.#agentId, count).map((row) => this.#decode(row)!);
   }
 
-  #outcomes(id: string): { successes: number; failures: number } {
+  /** Stable seek pagination for a scope and filter set; not a concurrent snapshot. */
+  list(options: ListMemoryInput = {}): MemoryPage {
+    this.#assertOpen();
+    v.keys(v.object(options, 'list'), ['limit', 'cursor', 'kinds', 'includeInactive', 'includeUntrusted', 'metadata'], 'list');
+    const count = v.limit(options.limit, 100, 1000);
+    const kinds = options.kinds === undefined ? [] : [...new Set(v.strings(options.kinds, 'kinds', 6).map((kind) => v.enumeration(kind, v.KINDS, 'kind')))].sort();
+    const includeInactive = v.boolean(options.includeInactive);
+    const includeUntrusted = v.boolean(options.includeUntrusted);
+    const metadata = options.metadata === undefined ? {} : v.object(options.metadata, 'metadata filter');
+    if (Object.keys(metadata).length > 32) throw new TypeError('At most 32 metadata filters are allowed');
+    for (const [key, value] of Object.entries(metadata)) { v.string(key, 'metadata key', 256); v.string(value, 'metadata value', 4096); }
+    const identity = this.#textHash(v.canonical({ workspaceId: this.#workspaceId, agentId: this.#agentId, kinds, includeInactive, includeUntrusted, metadata }));
+    let after: { createdAt: string; id: string } | undefined;
+    if (options.cursor !== undefined) {
+      try {
+        const cursor = v.string(options.cursor, 'cursor', 2048);
+        const [payload, signature, extra] = cursor.split('.');
+        if (!payload || !signature || extra) throw new Error();
+        const expected = createHmac('sha256', this.#cursorSecret).update(payload).digest();
+        const supplied = Buffer.from(signature, 'base64url');
+        if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) throw new Error();
+        const decoded = v.object(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')), 'cursor');
+        v.keys(decoded, ['identity', 'createdAt', 'id'], 'cursor');
+        if (decoded.identity !== identity) throw new Error();
+        after = { createdAt: v.timestamp(decoded.createdAt, 'cursor time'), id: v.string(decoded.id, 'cursor id', 160) };
+      } catch { throw new TypeError('Invalid cursor for this scope and filter'); }
+    }
+    const args: (string | number)[] = [this.#workspaceId, this.#agentId, ...kinds];
+    const metadataClauses = Object.entries(metadata).map(([key, value]) => {
+      args.push(key, value as string);
+      return "AND EXISTS (SELECT 1 FROM json_each(m.data,'$.metadata') j WHERE j.key=? AND j.type='text' AND j.value=?)";
+    });
+    if (after) args.push(after.createdAt, after.createdAt, after.id);
+    args.push(count + 1);
+    const rows = this.#db.prepare(`SELECT m.data FROM memories m WHERE m.${SCOPE}
+      ${includeInactive ? '' : "AND m.status='active'"} ${includeUntrusted ? '' : "AND m.trust!='untrusted'"}
+      ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}
+      ${metadataClauses.join(' ')}
+      ${after ? 'AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))' : ''}
+      ORDER BY m.created_at DESC,m.id DESC LIMIT ?`).all(...args);
+    const items = rows.slice(0, count).map((row) => this.#decode(row)!);
+    if (rows.length <= count) return { items };
+    const last = items[items.length - 1];
+    const payload = Buffer.from(JSON.stringify({ identity, createdAt: last.createdAt, id: last.id })).toString('base64url');
+    return { items, nextCursor: `${payload}.${createHmac('sha256', this.#cursorSecret).update(payload).digest('base64url')}` };
+  }
+
+  #temporal(input: Pick<RecallInput, 'asOf' | 'knownAt'>): { asOf: string; knownAt: string; historical: boolean } {
+    const now = this.#time();
+    const knownAt = input.knownAt === undefined ? now : v.timestamp(input.knownAt, 'knownAt');
+    return { knownAt, asOf: input.asOf === undefined ? knownAt : v.timestamp(input.asOf, 'asOf'), historical: input.asOf !== undefined || input.knownAt !== undefined };
+  }
+
+  #at(record: MemoryRecord, time: { asOf: string; knownAt: string; historical: boolean }): MemoryRecord | null {
+    if (record.createdAt > time.knownAt || (record.validFrom ?? record.createdAt) > time.asOf || (record.validUntil !== undefined && record.validUntil <= time.asOf)) return null;
+    if (record.status === 'invalidated' && record.updatedAt <= time.knownAt) return null;
+    if (record.status === 'superseded' && record.updatedAt <= time.knownAt) {
+      // Supersession is immutable lineage. A late correction only overrides the
+      // real-world interval it explicitly covers, once the correction was known.
+      const versions = this.#db.prepare(`WITH RECURSIVE versions(id) AS (
+        SELECT id FROM memories WHERE workspace_id=? AND supersedes=?
+        UNION SELECT m.id FROM memories m JOIN versions v ON m.supersedes=v.id WHERE m.workspace_id=?
+      ) SELECT m.data FROM memories m JOIN versions v ON v.id=m.id`).all(this.#workspaceId, record.id, this.#workspaceId).map((row) => this.#decode(row)!);
+      if (!versions.length || versions.some((version) => version.createdAt <= time.knownAt && (version.validFrom ?? version.createdAt) <= time.asOf && (version.validUntil === undefined || version.validUntil > time.asOf))) return null;
+    }
+    // Do not leak a future status transition timestamp into a historical result.
+    return { ...record, status: 'active', updatedAt: record.updatedAt > time.knownAt ? record.createdAt : record.updatedAt };
+  }
+
+  /** Conservative advisory gate. A scope selector is not an authentication boundary. */
+  isEligible(id: string, time: Pick<RecallInput, 'asOf' | 'knownAt'> = {}): boolean {
+    this.#assertOpen();
+    v.string(id, 'id', 160);
+    v.keys(v.object(time, 'eligibility time'), ['asOf', 'knownAt'], 'eligibility time');
+    return this.#eligibleAt(id, this.#temporal(time));
+  }
+
+  /** Scoped temporal projection; does not expose later status transition metadata. */
+  getAt(id: string, time: Pick<RecallInput, 'asOf' | 'knownAt'> = {}): MemoryRecord | null {
+    this.#assertOpen();
+    v.keys(v.object(time, 'memory time'), ['asOf', 'knownAt'], 'memory time');
+    const record = this.get(id);
+    return record ? this.#at(record, this.#temporal(time)) : null;
+  }
+
+  #eligibleAt(id: string, time: { asOf: string; knownAt: string; historical: boolean }, includeUntrusted = false): boolean {
+    const pending = [id];
+    const seen = new Set<string>();
+    for (let index = 0; index < pending.length; index++) {
+      const currentId = pending[index];
+      if (seen.has(currentId)) continue;
+      seen.add(currentId);
+      if (seen.size > 10000) return false;
+      const stored = this.get(currentId);
+      const record = stored && this.#at(stored, time);
+      if (!record || (currentId === id && record.metadata.advisory === false) || (!includeUntrusted && record.trust === 'untrusted') || this.#outcomes(record.id, time.historical ? time.knownAt : undefined).failures > 0) return false;
+      if (record.key) {
+        const rows = this.#db.prepare(`SELECT data FROM memories WHERE ${SCOPE} AND fact_key=? AND trust!='untrusted'`).all(this.#workspaceId, this.#agentId, record.key);
+        const peers = rows.map((row) => this.#at(this.#decode(row)!, time)).filter((peer) => peer !== null);
+        if (new Set(peers.map((peer) => peer.text)).size > 1) return false;
+      }
+      if (record.kind === 'checkpoint') {
+        const taskId = (record.metadata.checkpoint as { taskId: string }).taskId;
+        const peers = this.#db.prepare(`SELECT data FROM memories WHERE ${SCOPE} AND kind='checkpoint' AND trust!='untrusted' AND json_extract(data,'$.metadata.checkpoint.taskId')=?`).all(this.#workspaceId, this.#agentId, taskId).map((row) => this.#at(this.#decode(row)!, time)).filter((peer) => peer !== null);
+        if (new Set(peers.map((peer) => v.canonical(peer.metadata.checkpoint))).size > 1) return false;
+      }
+      pending.push(...record.dependencies);
+    }
+    return true;
+  }
+
+  #outcomes(id: string, knownAt?: string): { successes: number; failures: number } {
     const rows = this.#db.prepare(`SELECT o.data FROM outcomes o JOIN memories m ON o.memory_id=m.id WHERE m.id=? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND o.workspace_id=m.workspace_id AND o.agent_id=m.agent_id`).all(id, this.#workspaceId, this.#agentId) as DataRow[];
     const result = { successes: 0, failures: 0 };
-    for (const row of rows) result[(JSON.parse(row.data) as OutcomeRecord).success ? 'successes' : 'failures']++;
+    for (const row of rows) { const outcome = JSON.parse(row.data) as OutcomeRecord; if (knownAt === undefined || outcome.createdAt <= knownAt) result[outcome.success ? 'successes' : 'failures']++; }
     return result;
   }
 
@@ -274,11 +449,13 @@ export class LocalMemory {
 
   #hasFailedEvidence(record: MemoryRecord): boolean {
     const pending = [record];
+    const time = this.#temporal({});
     const seen = new Set<string>();
     for (let index = 0; index < pending.length; index++) {
       const current = pending[index];
       if (seen.has(current.id)) continue;
       seen.add(current.id);
+      if (!this.#at(current, time) || (current.id === record.id && current.metadata.advisory === false)) return true;
       if (this.#outcomes(current.id).failures > 0) return true;
       for (const id of current.dependencies) {
         const dependency = this.get(id);
@@ -292,7 +469,7 @@ export class LocalMemory {
 
   #conflictingPeers(record: MemoryRecord): MemoryRecord[] {
     if (!record.key) return [record];
-    const peers = this.#db.prepare(`SELECT data FROM memories WHERE ${SCOPE} AND status='active' AND trust!='untrusted' AND fact_key=? ORDER BY created_at,id`).all(this.#workspaceId, this.#agentId, record.key).map((row) => this.#decode(row)!);
+    const peers = this.#db.prepare(`SELECT data FROM memories WHERE ${SCOPE} AND status!='invalidated' AND trust!='untrusted' AND fact_key=? ORDER BY created_at,id`).all(this.#workspaceId, this.#agentId, record.key).map((row) => this.#decode(row)!).filter((peer) => peer.metadata.advisory !== false && this.#at(peer, this.#temporal({})) !== null);
     return new Set(peers.map((peer) => peer.text)).size > 1 ? peers : [record];
   }
 
@@ -330,48 +507,213 @@ export class LocalMemory {
 
   #rankedRecall(input: RecallInput, eligible?: (memory: MemoryRecord) => boolean): RecallResult[] {
     this.#assertOpen();
-    const options = v.object(input, 'recall');
-    v.keys(options, ['query', 'limit', 'kinds', 'includeUntrusted'], 'recall');
+    v.keys(v.object(input, 'recall'), ['query', 'limit', 'kinds', 'includeUntrusted', 'asOf', 'knownAt', 'maxCandidates'], 'recall');
     const query = v.string(input.query, 'query', 4096);
     const count = v.limit(input.limit, 10);
+    const budget = v.limit(input.maxCandidates, 1000, 10000);
     const includeUntrusted = v.boolean(input.includeUntrusted);
     const kinds = input.kinds === undefined ? [] : v.strings(input.kinds, 'kinds', 6).map((kind) => v.enumeration(kind, v.KINDS, 'kind'));
-    const words = [...new Set(query.match(/[\p{L}\p{N}\p{M}_]+/gu) ?? [])].slice(0, 64);
-    if (words.length === 0) return [];
-    // Quote tokens individually: callers can never inject FTS operators or syntax.
-    const match = words.map((word) => `"${word}"`).join(' OR ');
-    const statement = this.#db.prepare(`
-      SELECT m.data FROM memories_fts JOIN memories m ON m.rowid=memories_fts.rowid
-      WHERE memories_fts MATCH ? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
-      AND m.status='active' ${includeUntrusted ? '' : "AND m.trust != 'untrusted'"}
+    const terms = [...new Set(this.#tokens(query))].slice(0, 64);
+    if (!terms.length) return [];
+    const time = this.#temporal(input);
+    // Materialize grouped posting hits before hydrating records. Otherwise SQLite
+    // can drive this join from the scope/time index and inspect every workspace
+    // record even for one rare term. Grouping first also hydrates broad matches
+    // once per record, not once per query term. Scope, temporal and advisory gates
+    // still precede ranking/truncation; only ranked candidates cross into JavaScript.
+    const outcomeTime = time.historical ? time.knownAt : '9999-12-31T23:59:59.999Z';
+    const rows = this.#db.prepare(`WITH matches AS MATERIALIZED (
+      SELECT memory_id,count(*) AS hits FROM local_terms INDEXED BY local_terms_term
+      WHERE term IN (${terms.map(() => '?').join(',')}) GROUP BY memory_id
+    ), candidates AS (
+      SELECT m.id,m.data,(1.0+t.hits*1.0/?)/s.length_penalty AS lexical,
+        (SELECT count(*) FROM outcomes o WHERE o.memory_id=m.id AND o.workspace_id=m.workspace_id AND o.agent_id=m.agent_id AND json_extract(o.data,'$.success')=1 AND json_extract(o.data,'$.createdAt')<=?) AS successes,
+        (SELECT count(*) FROM outcomes o WHERE o.memory_id=m.id AND o.workspace_id=m.workspace_id AND o.agent_id=m.agent_id AND json_extract(o.data,'$.success')=0 AND json_extract(o.data,'$.createdAt')<=?) AS failures
+      FROM matches t CROSS JOIN memories m ON m.id=t.memory_id CROSS JOIN local_search s ON s.memory_id=m.id
+      WHERE m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
+      ${time.historical ? '' : "AND m.status!='invalidated'"}
+      AND m.created_at<=? AND coalesce(json_extract(m.data,'$.validFrom'),m.created_at)<=?
+      AND (json_extract(m.data,'$.validUntil') IS NULL OR json_extract(m.data,'$.validUntil')>?)
+      ${includeUntrusted ? '' : "AND m.trust!='untrusted'"}
+      AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}
-    `);
-    const normalize = (text: string): string => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-    const terms = words.map(normalize);
+    ) SELECT data,successes,failures,lexical*(1+min(successes,3)*0.05)/(1+failures*10) AS score FROM candidates ORDER BY score DESC,id ASC LIMIT ?
+    `).all(...terms, terms.length, outcomeTime, outcomeTime, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds, budget) as (DataRow & { score: number; successes: number; failures: number })[];
     const ranked: RecallResult[] = [];
-    for (const row of statement.iterate(match, this.#workspaceId, this.#agentId, ...kinds)) {
-      const memory = this.#decode(row)!;
-      if (eligible && !eligible(memory)) continue;
-      const outcomes = this.#outcomes(memory.id);
-      // Negative evidence has a much larger penalty than repeated successes.
-      const utility = (1 + Math.min(outcomes.successes, 3) * 0.05) / (1 + outcomes.failures * 10);
-      // Do not use global FTS BM25 statistics: hidden tenants must not change
-      // scores. This score measures lexical coverage in this visible record.
-      const tokens = normalize(memory.text).match(/[\p{L}\p{N}_]+/gu) ?? [];
-      const tokenSet = new Set(tokens);
-      const hits = terms.filter((term) => tokenSet.has(term)).length;
-      const lexicalScore = (1 + hits / terms.length) / (1 + Math.log1p(tokens.length) * 0.1);
-      const result = { memory, score: lexicalScore * utility, outcomes };
-      // Rank every scoped match before truncation, retaining only a bounded top-k.
-      const index = ranked.findIndex((existing) => result.score > existing.score || (result.score === existing.score && result.memory.id.localeCompare(existing.memory.id) < 0));
-      if (index === -1) {
-        if (ranked.length < count) ranked.push(result);
-      } else {
-        ranked.splice(index, 0, result);
-        if (ranked.length > count) ranked.pop();
-      }
+    for (const row of rows) {
+      const memory = this.#at(this.#decode(row)!, time);
+      if (!memory || (eligible && !eligible(memory))) continue;
+      ranked.push({ memory, score: row.score, outcomes: { successes: row.successes, failures: row.failures } });
+      if (ranked.length === count) break;
     }
     return ranked;
+  }
+
+  #embeddingContract(embedder: MemoryEmbedder): { model: string; dimensions: number } {
+    v.object(embedder, 'embedder');
+    const model = v.string(embedder.model, 'embedder.model', 512);
+    const dimensions = v.limit(embedder.dimensions, 0, 4096);
+    if (typeof embedder.embed !== 'function') throw new TypeError('embedder.embed must be a function');
+    const previous = this.#db.prepare('SELECT dimensions FROM local_embedding_models WHERE model=?').get(model) as { dimensions: number } | undefined;
+    if (previous && previous.dimensions !== dimensions) throw new Error('Embedding model dimension mismatch; use a new model revision identifier');
+    return { model, dimensions };
+  }
+
+  #vector(value: unknown, dimensions: number): number[] {
+    if (!Array.isArray(value) || value.length !== dimensions || value.some((entry) => typeof entry !== 'number' || !Number.isFinite(entry))) throw new TypeError('Embedding must contain the declared number of finite dimensions');
+    const norm = Math.hypot(...value as number[]);
+    if (!Number.isFinite(norm) || norm === 0) throw new TypeError('Embedding norm must be finite and nonzero');
+    return (value as number[]).map((entry) => entry / norm);
+  }
+
+  #abort(signal?: AbortSignal): void {
+    if (signal !== undefined && !(signal instanceof AbortSignal)) throw new TypeError('signal must be an AbortSignal');
+    if (signal?.aborted) throw signal.reason ?? new Error('Memory operation aborted');
+  }
+
+  async #boundedCall<T>(call: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
+    this.#abort(signal);
+    const deadline = v.limit(timeoutMs, 10000, 60000);
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    try {
+      const cancelled = new Promise<never>((_resolve, reject) => {
+        onAbort = () => { const reason = signal?.reason ?? new Error('Memory operation aborted'); controller.abort(reason); reject(reason); };
+        signal?.addEventListener('abort', onAbort, { once: true });
+        timer = setTimeout(() => { const error = new Error(`Memory adapter timed out after ${deadline}ms`); controller.abort(error); reject(error); }, deadline);
+      });
+      return await Promise.race([Promise.resolve().then(() => { this.#assertOpen(); this.#abort(signal); return call(controller.signal); }), cancelled]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
+  /** Incremental, resumable derived index. No provider is installed or called implicitly. */
+  async indexEmbeddings(options: EmbeddingIndexOptions): Promise<EmbeddingIndexResult> {
+    this.#assertOpen();
+    v.keys(v.object(options, 'index embeddings'), ['embedder', 'limit', 'batchSize', 'timeoutMs', 'signal'], 'index embeddings');
+    const { model, dimensions } = this.#embeddingContract(options.embedder);
+    const count = v.limit(options.limit, 100, 1000);
+    const batchSize = v.limit(options.batchSize, 32, 100);
+    v.limit(options.timeoutMs, 10000, 60000);
+    this.#abort(options.signal);
+    // Register the model contract before a call; concurrent instances cannot
+    // write different vector dimensions under the same revision identifier.
+    this.#transaction(() => {
+      this.#db.prepare('INSERT OR IGNORE INTO local_embedding_models(model,dimensions) VALUES(?,?)').run(model, dimensions);
+      this.#embeddingContract(options.embedder);
+    });
+    const pendingSql = `FROM memories m JOIN local_search s ON s.memory_id=m.id LEFT JOIN local_embeddings e ON e.memory_id=m.id AND e.model=?
+      WHERE m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND m.status='active' AND m.trust!='untrusted' AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
+      AND (e.memory_id IS NULL OR e.source_hash!=s.source_hash)`;
+    const rows = this.#db.prepare(`SELECT m.data ${pendingSql} ORDER BY m.created_at,m.id LIMIT ?`).all(model, this.#workspaceId, this.#agentId, count).map((row) => this.#decode(row)!);
+    const result: EmbeddingIndexResult = { indexed: 0, skipped: 0, remaining: 0 };
+    for (let offset = 0; offset < rows.length;) {
+      this.#assertOpen(); this.#abort(options.signal);
+      const batch: MemoryRecord[] = [];
+      let bytes = 0;
+      while (offset < rows.length && batch.length < batchSize) {
+        const record = rows[offset];
+        const size = Buffer.byteLength(record.text);
+        if (batch.length && bytes + size > 1024 * 1024) break;
+        batch.push(record); bytes += size; offset++;
+      }
+      const vectors = await this.#boundedCall((signal) => options.embedder.embed(Object.freeze(batch.map((record) => record.text)), { signal }), options.signal, options.timeoutMs);
+      if (!Array.isArray(vectors) || vectors.length !== batch.length) throw new TypeError('Embedder must return one vector per input text');
+      const validated = vectors.map((vector) => this.#vector(vector, dimensions));
+      this.#abort(options.signal);
+      this.#transaction(() => {
+        for (let index = 0; index < batch.length; index++) {
+          const original = batch[index];
+          const current = this.get(original.id);
+          if (!current || current.status !== 'active' || current.trust === 'untrusted' || this.#textHash(current.text) !== this.#textHash(original.text)) { result.skipped++; continue; }
+          this.#db.prepare('INSERT INTO local_embeddings(memory_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data').run(current.id, model, dimensions, this.#textHash(current.text), JSON.stringify(validated[index]));
+          result.indexed++;
+        }
+      });
+    }
+    result.remaining = (this.#db.prepare(`SELECT count(*) AS count ${pendingSql}`).get(model, this.#workspaceId, this.#agentId) as { count: number }).count;
+    return result;
+  }
+
+  /** RRF over local lexical and exact cosine candidates; optional reranking cannot invent IDs. */
+  async recallHybrid(input: RecallInput, options: HybridRecallOptions): Promise<RecallResult[]> {
+    this.#assertOpen();
+    v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'signal', 'timeoutMs', 'maxCandidates'], 'hybrid options');
+    const { model, dimensions } = this.#embeddingContract(options.embedder);
+    const maxCandidates = v.limit(options.maxCandidates, 1000, 10000);
+    const count = v.limit(input.limit, 10);
+    v.limit(options.timeoutMs, 10000, 60000);
+    this.#abort(options.signal);
+    let time = this.#temporal(input);
+    const includeUntrusted = v.boolean(input.includeUntrusted);
+    const eligible = (memory: MemoryRecord): boolean => this.#eligibleAt(memory.id, time, includeUntrusted);
+    // Validate input and collect lexical candidates before any model call.
+    const lexical = this.#rankedRecall({ ...input, limit: 100 }, eligible);
+    if (options.reranker !== undefined && typeof options.reranker.rerank !== 'function') throw new TypeError('reranker.rerank must be a function');
+    const embedded = await this.#boundedCall((signal) => options.embedder.embed(Object.freeze([input.query]), { signal }), options.signal, options.timeoutMs);
+    if (!Array.isArray(embedded) || embedded.length !== 1) throw new TypeError('Embedder must return one query vector');
+    const query = this.#vector(embedded[0], dimensions);
+    this.#assertOpen(); this.#abort(options.signal);
+    time = this.#temporal(input);
+    const kinds = input.kinds ?? [];
+    const vectorRows = this.#db.prepare(`SELECT m.data,e.data AS vector,e.source_hash FROM local_embeddings e JOIN memories m ON m.id=e.memory_id
+      WHERE e.model=? AND e.dimensions=? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
+      ${time.historical ? '' : "AND m.status!='invalidated'"} ${includeUntrusted ? '' : "AND m.trust!='untrusted'"}
+      AND m.created_at<=? AND coalesce(json_extract(m.data,'$.validFrom'),m.created_at)<=?
+      AND (json_extract(m.data,'$.validUntil') IS NULL OR json_extract(m.data,'$.validUntil')>?)
+      ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}
+      ORDER BY m.created_at DESC,m.id ASC LIMIT ?`).iterate(model, dimensions, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds, maxCandidates);
+    const semantic: { memory: MemoryRecord; score: number }[] = [];
+    for (const value of vectorRows) {
+      this.#abort(options.signal);
+      const row = value as DataRow & { vector: string; source_hash: string };
+      const memory = this.#at(this.#decode(row)!, time);
+      if (!memory || row.source_hash !== this.#textHash(memory.text) || !eligible(memory)) continue;
+      const vector = this.#vector(JSON.parse(row.vector), dimensions);
+      const score = vector.reduce((sum, entry, index) => sum + entry * query[index], 0);
+      // Nonpositive cosine is not affirmative semantic evidence.
+      if (score <= 0) continue;
+      semantic.push({ memory, score });
+      semantic.sort((a, b) => b.score - a.score || a.memory.id.localeCompare(b.memory.id));
+      if (semantic.length > 100) semantic.pop();
+    }
+    const fused = new Map<string, { memory: MemoryRecord; score: number }>();
+    for (const channel of [lexical, semantic]) channel.forEach((entry, rank) => {
+      const old = fused.get(entry.memory.id);
+      fused.set(entry.memory.id, { memory: entry.memory, score: (old?.score ?? 0) + 1 / (60 + rank + 1) });
+    });
+    let ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.memory.id.localeCompare(b.memory.id));
+    if (options.reranker && ranked.length) {
+      const candidates = ranked.slice(0, 100);
+      // Adapter mutation must not rewrite retained source records or provenance.
+      const supplied = candidates.map((entry) => JSON.parse(JSON.stringify(entry.memory)) as MemoryRecord);
+      const scores = await this.#boundedCall((signal) => options.reranker!.rerank(input.query, supplied, { signal }), options.signal, options.timeoutMs);
+      if (!Array.isArray(scores) || scores.length !== candidates.length) throw new TypeError('Reranker must return every candidate exactly once');
+      const known = new Set(candidates.map((entry) => entry.memory.id));
+      const seen = new Set<string>();
+      const byId = new Map<string, number>();
+      for (const entry of scores) {
+        if (!entry || !known.has(entry.id) || seen.has(entry.id) || typeof entry.score !== 'number' || !Number.isFinite(entry.score) || entry.score < 0 || entry.score > 1) throw new TypeError('Reranker returned an unknown, duplicate or invalid score; scores must be between 0 and 1');
+        seen.add(entry.id); byId.set(entry.id, entry.score);
+      }
+      ranked = candidates.map((entry) => ({ ...entry, score: byId.get(entry.memory.id)! })).sort((a, b) => b.score - a.score || a.memory.id.localeCompare(b.memory.id));
+    }
+    this.#assertOpen(); this.#abort(options.signal);
+    // Every await is an invalidation boundary. Rehydrate and recheck all safety
+    // gates after provider work so corrections/failures cannot revive stale text.
+    time = this.#temporal(input);
+    const results: RecallResult[] = [];
+    for (const entry of ranked) {
+      const current = this.get(entry.memory.id);
+      const memory = current && this.#at(current, time);
+      if (!memory || !eligible(memory)) continue;
+      results.push({ memory, score: entry.score, outcomes: this.#outcomes(memory.id, time.historical ? time.knownAt : undefined) });
+      if (results.length === count) break;
+    }
+    return results;
   }
 
   #descendants(initial: string[], includeVersions = false): MemoryRecord[] {
@@ -406,9 +748,9 @@ export class LocalMemory {
     return records;
   }
 
-  correct(id: string, input: { text: string; source: MemoryRecord['source']; reason: string }): MemoryRecord {
+  correct(id: string, input: { text: string; source: MemoryRecord['source']; reason: string; validFrom?: string; validUntil?: string; metadata?: MemoryRecord['metadata'] }): MemoryRecord {
     const correction = v.object(input, 'correction');
-    v.keys(correction, ['text', 'source', 'reason'], 'correction');
+    v.keys(correction, ['text', 'source', 'reason', 'validFrom', 'validUntil', 'metadata'], 'correction');
     const text = v.string(input.text, 'text', 65536);
     const source = v.source(input.source);
     const reason = v.string(input.reason, 'reason', 4096);
@@ -419,7 +761,14 @@ export class LocalMemory {
       for (const record of affected) if (record.status === 'active') this.#updateStatus(record, record.id === id ? 'superseded' : 'invalidated');
       const now = this.#time();
       const { evidence: _evidence, ...old } = previous;
-      const record: MemoryRecord = { ...old, id: randomUUID(), text, source, trust: previous.trust === 'untrusted' ? 'untrusted' : 'observed', status: 'active', supersedes: id, createdAt: now, updatedAt: now, metadata: v.metadata({ ...previous.metadata, correctionReason: reason }) };
+      const validFrom = input.validFrom === undefined ? previous.validFrom ?? previous.createdAt : v.timestamp(input.validFrom, 'validFrom');
+      const validUntil = input.validUntil === undefined ? previous.validUntil : v.timestamp(input.validUntil, 'validUntil');
+      if (validUntil !== undefined && validUntil <= validFrom) throw new TypeError('validUntil must follow validFrom');
+      const metadata = v.metadata({ ...(input.metadata === undefined ? previous.metadata : v.metadata(input.metadata)),
+        // A generic text correction cannot inherit a runtime artifact's prior
+        // validation. Only its controller may explicitly reissue artifact metadata.
+        ...(input.metadata === undefined && ['skill', 'model'].includes(String(previous.metadata.runtimeType)) ? { advisory: false } : {}), correctionReason: reason });
+      const record: MemoryRecord = { ...old, validFrom, ...(validUntil === undefined ? {} : { validUntil }), id: randomUUID(), text, source, trust: previous.trust === 'untrusted' ? 'untrusted' : 'observed', status: 'active', supersedes: id, createdAt: now, updatedAt: now, metadata };
       if (record.dependencies.some((dependency) => this.get(dependency)?.trust === 'untrusted')) record.trust = 'untrusted';
       this.#validateDependencies(record);
       this.#insert(record);
@@ -438,7 +787,7 @@ export class LocalMemory {
     });
     // Secure deletion covers live SQLite/FTS content. OS snapshots, SSD remapping,
     // backups and a WAL pinned by another reader cannot be guaranteed erased.
-    this.#db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    if (!this.#transactionDepth) this.#db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
     return { deletedIds };
   }
 
@@ -449,6 +798,22 @@ export class LocalMemory {
   }
 
   compile(input: { query: string; maxTokens: number; taskId?: string }): ContextPacket {
+    return this.#compile(input, (eligible) => this.#rankedRecall({ query: input.query, limit: 100 }, eligible));
+  }
+
+  async compileHybrid(input: { query: string; maxTokens: number; taskId?: string }, options: HybridRecallOptions): Promise<ContextPacket> {
+    v.keys(v.object(input, 'compile'), ['query', 'maxTokens', 'taskId'], 'compile');
+    v.limit(input.maxTokens, 0, 1000000);
+    if (input.taskId !== undefined) v.string(input.taskId, 'taskId', 160);
+    const candidates = await this.recallHybrid({ query: input.query, limit: 100 }, options);
+    return this.#compile(input, (eligible) => candidates.flatMap((candidate) => {
+      const current = this.get(candidate.memory.id);
+      return current && this.isEligible(current.id) && eligible(current)
+        ? [{ ...candidate, memory: current, outcomes: this.#outcomes(current.id) }] : [];
+    }));
+  }
+
+  #compile(input: { query: string; maxTokens: number; taskId?: string }, retrieve: (eligible: (memory: MemoryRecord) => boolean) => RecallResult[]): ContextPacket {
     const options = v.object(input, 'compile');
     v.keys(options, ['query', 'maxTokens', 'taskId'], 'compile');
     const maxTokens = v.limit(input.maxTokens, 0, 1000000);
@@ -518,7 +883,7 @@ export class LocalMemory {
     }
     // Apply provenance eligibility before top-k, so rejected high scoring records
     // cannot starve an otherwise useful candidate later in the matching corpus.
-    const candidates = this.#rankedRecall({ query: input.query, limit: 100 }, eligible);
+    const candidates = retrieve(eligible);
     if (taskCheckpoint && eligible(taskCheckpoint) && !candidates.some((candidate) => candidate.memory.id === taskCheckpoint.id)) candidates.unshift({ memory: taskCheckpoint, score: 1, outcomes: this.#outcomes(taskCheckpoint.id) });
     for (const candidate of candidates) {
       const memory = candidate.memory;
@@ -645,20 +1010,21 @@ export class LocalMemory {
   }
 
   #memoryPayload(record: MemoryRecord): SnapshotIdempotencyEntry['payload'] {
-    return v.storeInput({ text: record.text, kind: record.kind, visibility: record.visibility, trust: record.trust, source: record.source, evidence: record.evidence, key: record.key, dependencies: record.dependencies, metadata: record.metadata });
+    return v.storeInput({ text: record.text, kind: record.kind, visibility: record.visibility, trust: record.trust, source: record.source, evidence: record.evidence, key: record.key, dependencies: record.dependencies, metadata: record.metadata, validFrom: record.validFrom, validUntil: record.validUntil });
   }
 
   #snapshotRecord(input: unknown): MemoryRecord {
     const value = v.object(input, 'snapshot memory');
-    v.keys(value, ['id', 'text', 'kind', 'workspaceId', 'agentId', 'visibility', 'trust', 'source', 'evidence', 'key', 'createdAt', 'updatedAt', 'status', 'supersedes', 'dependencies', 'metadata'], 'snapshot memory');
+    v.keys(value, ['id', 'text', 'kind', 'workspaceId', 'agentId', 'visibility', 'trust', 'source', 'evidence', 'key', 'createdAt', 'updatedAt', 'status', 'supersedes', 'dependencies', 'metadata', 'validFrom', 'validUntil'], 'snapshot memory');
     const id = v.string(value.id, 'id', 160);
     if (!UUID.test(id)) throw new TypeError('Snapshot memory id must be a UUID v4');
     if (value.workspaceId !== this.#workspaceId || value.agentId !== this.#agentId) throw new Error('Snapshot memory scope mismatch');
     for (const field of ['kind', 'visibility', 'trust', 'dependencies', 'metadata']) if (value[field] === undefined) throw new TypeError(`Snapshot memory requires ${field}`);
-    const payload = v.storeInput({ text: value.text, kind: value.kind, visibility: value.visibility, trust: value.trust, source: value.source, evidence: value.evidence, key: value.key, dependencies: value.dependencies, metadata: value.metadata });
+    const payload = v.storeInput({ text: value.text, kind: value.kind, visibility: value.visibility, trust: value.trust, source: value.source, evidence: value.evidence, key: value.key, dependencies: value.dependencies, metadata: value.metadata, validFrom: value.validFrom, validUntil: value.validUntil });
     const createdAt = v.timestamp(value.createdAt, 'createdAt');
     const updatedAt = v.timestamp(value.updatedAt, 'updatedAt');
     if (updatedAt < createdAt) throw new TypeError('updatedAt precedes createdAt');
+    if (payload.validUntil !== undefined && payload.validUntil <= (payload.validFrom ?? createdAt)) throw new TypeError('validUntil must follow validFrom or createdAt');
     return { ...payload, id, workspaceId: this.#workspaceId, agentId: this.#agentId, createdAt, updatedAt, status: v.enumeration(value.status, ['active', 'superseded', 'invalidated'] as const, 'status'), ...(value.supersedes === undefined ? {} : { supersedes: v.string(value.supersedes, 'supersedes', 160) }) };
   }
 

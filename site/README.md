@@ -22,6 +22,12 @@ The CLI intentionally refuses to overwrite an existing file. To refresh, record 
 
 The record inspector displays historical snapshots. Deleting a record from the live demo store does not retroactively erase it from this existing recording. All sample data is synthetic.
 
+## Learning-cycle evidence
+
+`learning.json` is a second recording, generated with `node dist/cli/index.js learning-demo --record NEW_FILE.json` and deliberately copied here after checking its results. Its 13 checks exercise capture, a durable observation job, candidate gating, two executed controller trial cases, explicit sharing, correction, inspection, forgetting and replay rejection after reopening. No language model is invoked. `learning.js` validates the check identities and totals before displaying the six stages.
+
+The live inspector is a separate authenticated HTTP service started with `mnemosy serve`. These static recordings never connect to it or retain a user's access token.
+
 ## Accessibility and behavior
 
 The demo is manually stepped and never auto-plays. Native buttons support keyboard activation, inspector tabs support arrows/Home/End, focus is visible and step changes are announced politely. Reduced-motion preferences disable transitions and smooth scrolling. The site stacks down to phone width. Raw JSON and source commands remain available when JavaScript or the demo load fails.

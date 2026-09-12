@@ -2,7 +2,7 @@
 
 ## Local mode
 
-`createLocalMemory({ path, workspaceId, agentId, now?, tokenCounter? })` takes explicit options. CLI commands use `--db`, `--workspace`, and `--agent`. The local engine has no network service, environment-variable configuration loader, embedding provider, or background model. MCP authority is set at launch with `--read-only` and `--allow-destructive`.
+`createLocalMemory({ path, workspaceId, agentId, now?, tokenCounter? })` takes explicit options. CLI commands use `--db`, `--workspace`, and `--agent`. The local kernel needs no network service or model. Optional HTTP serving, embeddings, file capture and durable observation jobs are explicit integrations. MCP and HTTP authority is set at launch with `--read-only`, `--allow-destructive`, `--no-capture` and `--no-recall`. [The runtime guide](RUNTIME.md) documents provider JSON, token handling and working commands; the CLI never chooses a provider or API key automatically.
 
 The database directory must already exist. File permissions reduce accidental access but do not implement encryption or hostile local-user isolation. Select identities in trusted controller code.
 
