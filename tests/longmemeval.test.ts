@@ -19,7 +19,7 @@ function question(overrides: Record<string, unknown> = {}) {
     answer_session_ids: ['answer_session_private_label'], ...overrides };
 }
 const vectors: MemoryEmbedder = { model: 'deterministic-fixture-v1', dimensions: 2, async embed(texts) { return texts.map(value => /orchid|humidity/i.test(value) ? [1, 0] : [0, 1]); } };
-afterEach(() => { vi.restoreAllMocks(); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); });
 
 describe('documented LongMemEval v1 adapter', () => {
   it('normalizes dates and orders sessions while stripping reference answers and turn labels', () => {
@@ -170,15 +170,25 @@ describe('isolated retrieval-only baselines', () => {
 
 describe('bounded execution and file cleanup', () => {
   it('removes temporary databases after provider failure, timeout and cancellation', async () => {
+    // Keep synchronous ingestion outside the deadline clock. Advance provider
+    // deadlines only after a mock confirms that its request is actually active.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     const { tempParent } = fixture();
     await expect(runLongMemEval([question()], { tempParent, embedder: { ...vectors, async embed() { throw new Error('Fixture provider failure'); } } })).rejects.toThrow('Fixture provider failure');
     expect(readdirSync(tempParent)).toEqual([]);
-    let timedSignal: AbortSignal | undefined;
-    await expect(runLongMemEval([question()], { tempParent, timeoutMs: 50, embedder: { ...vectors, async embed(_texts, { signal }) { timedSignal = signal; return new Promise<number[][]>(() => {}); } } })).rejects.toThrow(/tim|budget/);
+    let timedSignal: AbortSignal | undefined, started!: () => void;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const run = runLongMemEval([question()], { tempParent, timeoutMs: 50, embedder: { ...vectors, async embed(_texts, { signal }) { timedSignal = signal; started(); return new Promise<number[][]>(() => {}); } } });
+    const failure = expect(run).rejects.toThrow(/tim|budget/);
+    await Promise.race([ready, run]);
+    expect(timedSignal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(49);
+    expect(timedSignal?.aborted).toBe(false); expect(readdirSync(tempParent)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1); await failure;
     expect(timedSignal?.aborted).toBe(true); expect(readdirSync(tempParent)).toEqual([]);
     const control = new AbortController();
     await expect(runLongMemEval([question()], { tempParent, signal: control.signal, embedder: { ...vectors, async embed(texts) { control.abort(); return texts.map(() => [1, 0]); } } })).rejects.toThrow();
-    expect(readdirSync(tempParent)).toEqual([]);
+    expect(readdirSync(tempParent)).toEqual([]); expect(vi.getTimerCount()).toBe(0);
   });
 
   it('enforces embedding calls and total input bytes before invoking the adapter', async () => {
@@ -190,19 +200,33 @@ describe('bounded execution and file cleanup', () => {
   });
 
   it('uses the remaining global deadline for every embedding batch and ignores late results', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     const { tempParent } = fixture(); let callCount = 0, resolveLate: ((value: number[][]) => void) | undefined, lateSignal: AbortSignal | undefined;
+    let firstStarted!: () => void, secondStarted!: () => void, finishFirst!: () => void;
+    const firstReady = new Promise<void>(resolve => { firstStarted = resolve; });
+    const secondReady = new Promise<void>(resolve => { secondStarted = resolve; });
+    const firstFinished = new Promise<void>(resolve => { finishFirst = resolve; });
     const close = vi.spyOn(LocalMemory.prototype, 'close');
     const started = performance.now();
-    await expect(runLongMemEval([question({ haystack_sessions: [Array.from({ length: 64 }, (_, index) => ({ role: 'user', content: `Orchid humidity sample ${index}` })), []] })], {
+    const run = runLongMemEval([question({ haystack_sessions: [Array.from({ length: 64 }, (_, index) => ({ role: 'user', content: `Orchid humidity sample ${index}` })), []] })], {
       tempParent, timeoutMs: 400, embedder: { ...vectors, async embed(texts, { signal }) {
         callCount++;
-        if (callCount === 1) { await new Promise(resolve => setTimeout(resolve, 260)); return texts.map(() => [1, 0]); }
-        lateSignal = signal; return new Promise<number[][]>(resolve => { resolveLate = resolve; });
+        if (callCount === 1) { firstStarted(); await firstFinished; return texts.map(() => [1, 0]); }
+        lateSignal = signal; secondStarted(); return new Promise<number[][]>(resolve => { resolveLate = resolve; });
       } },
-    })).rejects.toThrow(/tim|budget/);
-    expect(performance.now() - started).toBeLessThan(570);
+    });
+    const failure = expect(run).rejects.toThrow(/tim|budget/);
+    await Promise.race([firstReady, run]);
+    await vi.advanceTimersByTimeAsync(260); finishFirst();
+    await Promise.race([secondReady, run]);
+    expect(callCount).toBe(2); expect(lateSignal?.aborted).toBe(false);
+    // The second batch gets the remaining 140 ms, not another complete 400 ms.
+    await vi.advanceTimersByTimeAsync(139);
+    expect(lateSignal?.aborted).toBe(false); expect(close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1); await failure;
+    expect(performance.now() - started).toBe(400);
     expect(callCount).toBe(2); expect(lateSignal?.aborted).toBe(true);
-    expect(close).toHaveBeenCalledTimes(1); expect(readdirSync(tempParent)).toEqual([]);
+    expect(close).toHaveBeenCalledTimes(1); expect(readdirSync(tempParent)).toEqual([]); expect(vi.getTimerCount()).toBe(0);
     resolveLate?.(Array.from({ length: 32 }, () => [1, 0])); await setImmediate();
     expect(close).toHaveBeenCalledTimes(1); expect(readdirSync(tempParent)).toEqual([]);
   });
