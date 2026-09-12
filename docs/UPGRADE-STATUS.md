@@ -42,7 +42,7 @@ Erasure covers this live store. Existing exports, device snapshots and context a
 
 Plain text, Markdown and JSON work directly. An explicit OpenAI-compatible vision adapter can extract text from selected PNG/JPEG/WebP images. Other binary documents require a caller-selected extractor. The repository now includes a live inspector, Python client, runtime guide, executable SDK example, and a second recorded website demo.
 
-The [native Anthropic memory adapter](ANTHROPIC-MEMORY.md) now maps six text commands to private virtual files, source revisions and forgetting. Its native command example runs locally; no Claude model session has been evaluated. Built-in PDF extraction, managed source connectors and cross-system migration remain distinct gaps. The earlier [v2 migration notes](MIGRATION-v2.md) describe compatibility and local snapshots; they do not yet claim a complete importer for other products.
+The [native Anthropic memory adapter](ANTHROPIC-MEMORY.md) now maps six text commands to private virtual files, source revisions and forgetting. The [Responses and Gemini wrappers](PROVIDER-TOOLS.md) share a fresh generic namespace while preserving provider call identities and separate wire protocols. Their protocol examples run locally; no provider model session has been evaluated. Built-in PDF extraction, managed source connectors and cross-system migration remain distinct gaps. The earlier [v2 migration notes](MIGRATION-v2.md) describe compatibility and local snapshots; they do not yet claim a complete importer for other products.
 
 ## Research and evidence
 

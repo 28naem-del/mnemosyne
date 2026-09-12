@@ -2,6 +2,14 @@
 
 This release separates correctness checks, public-data retrieval measurements and memory-quality claims. No paid model calls, generated-answer evaluation or matched competitor experiments were performed.
 
+## Verified rc4 local checkpoint
+
+The rc4 source passed **371 TypeScript tests** on Node 22.16.0 and 24.21.0, source/example typechecking and build. Its 45 virtual-engine tests and 20 provider-wrapper tests cover shared generic provenance, existing Claude compatibility, completed-call validation, exact provider IDs, optional/null differences, correlated errors, policy, correction, forgetting and retries.
+
+Independent review also created a database using the actual installed rc3 package, then reopened it with the new engine. Notes, a large blank file and replay receipts remained unchanged. Cross-provider IDs stayed distinct, and host-loop fixtures preserved original history, returned failed tool results and avoided empty final Gemini result turns. An offline-installed rc4 package passed all 12 import checks, both demos and both native protocol examples. These examples use synthetic provider envelopes and zero external model calls.
+
+Semgrep applied 22 matching security-audit rules to the five adapter/example source files with zero findings and no parse errors. Snyk was attempted and remains unauthenticated. Provider network/model sessions are untested; remote CI results are recorded in the pull request. The historical public retrieval baseline below is unchanged.
+
 ## Verified rc3 local checkpoint
 
 The rc3 source passed **342 TypeScript tests** on Node 22.16.0 and 24.21.0, source/example typechecking and build. This includes 36 native memory adapter tests and 19 LongMemEval adapter tests. An offline-installed package imported all **12** tested entry points, passed both recorded demos and executed the native correction/retry/deletion example with zero model calls. Package, CLI and MCP versions were checked for agreement; CI now enforces that agreement.

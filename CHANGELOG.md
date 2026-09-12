@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.4] — source release candidate, 2026-09-13
+
+### Added
+
+- OpenAI Responses and Gemini Generate Content function-tool wrappers for the six virtual memory commands, with provider-specific schemas, bounded argument validation, correlated errors and protocol-separated retry identities.
+- A public neutral command executor and immutable generic capture mode. A fresh generic namespace can serve OpenAI, Gemini and Claude without falsely labeling another provider's notes as Claude output; existing Claude namespaces preserve their identities and reject opposite-mode reuse.
+- A deterministic protocol example that shares a note across three interfaces, preserves original Responses/Gemini history and signature sentinels, collects correlated failures, and handles a final reply without calls. CI runs the example from the source checkout.
+
+### Limits
+
+- Wrappers handle individual completed calls. The host owns streaming assembly, candidate selection, complete conversation history, API requests and bounded model loops. Gemini Interactions and OpenAI Chat Completions are separate protocols.
+- No live provider/model session was used. These are locally verified protocol adapters, not consumer-memory imports or proof of model performance. [Integration guide](docs/PROVIDER-TOOLS.md).
+
 ## [2.0.0-rc.3] — source release candidate, 2026-09-13
 
 ### Added

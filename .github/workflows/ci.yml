@@ -47,7 +47,7 @@ jobs:
           import { readFileSync } from 'node:fs';
           const pack = JSON.parse(readFileSync(process.argv[2], 'utf8'))[0];
           const files = new Set(pack.files.map(file => file.path));
-          for (const path of ['README.md', 'LICENSE', 'NOTICE.md', 'docs/deployment.md', 'docs/RUNTIME.md', 'dist/cli/index.js', 'dist/local/index.js', 'dist/mcp/server.js', 'dist/reflection/index.js', 'dist/runtime/index.js', 'dist/http/index.js', 'dist/providers/index.js', 'dist/branches/index.js', 'dist/relations/index.js', 'dist/connectors/index.js', 'dist/adapters/index.js', 'dist/adapters/anthropic-memory.js', 'dist/evaluation/learning-demo.js', 'dist/evaluation/index.js', 'dist/evaluation/longmemeval.js', 'python/mnemosyne_memory/__init__.py']) {
+          for (const path of ['README.md', 'LICENSE', 'NOTICE.md', 'docs/deployment.md', 'docs/RUNTIME.md', 'dist/cli/index.js', 'dist/local/index.js', 'dist/mcp/server.js', 'dist/reflection/index.js', 'dist/runtime/index.js', 'dist/http/index.js', 'dist/providers/index.js', 'dist/branches/index.js', 'dist/relations/index.js', 'dist/connectors/index.js', 'dist/adapters/index.js', 'dist/adapters/anthropic-memory.js', 'dist/adapters/provider-memory-tools.js', 'dist/evaluation/learning-demo.js', 'dist/evaluation/index.js', 'dist/evaluation/longmemeval.js', 'python/mnemosyne_memory/__init__.py']) {
             if (!files.has(path)) throw new Error(`Package is missing ${path}`);
           }
           NODE
@@ -74,6 +74,9 @@ jobs:
 
       - name: Run the native memory command example
         run: node --experimental-strip-types examples/anthropic-memory.ts
+
+      - name: Run the provider memory protocol example
+        run: node --experimental-strip-types examples/provider-memory-tools.ts
 
   python:
     name: Python client (Python ${{ matrix.python }})

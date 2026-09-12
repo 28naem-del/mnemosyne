@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { createLocalMemory, LocalMemory } from '../src/local/index.js';
 import { canonical } from '../src/local/validation.js';
 import { createMemoryRuntime } from '../src/runtime/index.js';
-import { createAnthropicMemoryAdapter, type AnthropicMemoryAdapter, type AnthropicMemoryAdapterOptions, type AnthropicMemoryPolicy, type AnthropicMemoryToolUse } from '../src/adapters/index.js';
+import { createAnthropicMemoryAdapter, type AnthropicMemoryAdapter, type AnthropicMemoryAdapterOptions, type AnthropicMemoryExecutionContext, type AnthropicMemoryPolicy, type AnthropicMemoryToolUse } from '../src/adapters/index.js';
 
 const memories: LocalMemory[] = [], directories: string[] = [];
 let sequence = 0;
@@ -269,5 +269,137 @@ describe('scope, transactions, policy and concurrent writers', () => {
     const nested = createAnthropicMemoryAdapter({ memory, runtime, namespace: 'nested' });
     const guarded = createAnthropicMemoryAdapter({ memory, runtime, namespace: 'nested', authorize: () => { create(nested, '/memories/race', 'nested'); } });
     error(guarded, { command: 'create', path: '/memories/race', file_text: 'outer' }, 'E_CONFLICT'); expect(bindings(memory)).toEqual([]);
+  });
+});
+
+describe('provider-neutral execution and immutable capture provenance', () => {
+  const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
+  const execution = (operationId: string): AnthropicMemoryExecutionContext => ({ sessionId: 'shared-session', operationId });
+
+  it('preserves the exact rc3 Claude namespace, source and receipt contract when the new option is omitted', () => {
+    const { adapter, memory } = setup();
+    const input = { command: 'create', path: '/memories/note.txt', file_text: 'Legacy Claude content' };
+    ok(adapter, input, 'legacy-create');
+    const bound = file(memory), source = memory.get(bound.data.sourceId!)!, namespace = digest(['workspace', 'owner', 'notes']);
+    const session = `native-memory:${namespace}`;
+    expect(adapter.captureAdapter).toBe('claude');
+    expect(source.source.uri).toBe(`transcript://claude/${encodeURIComponent(session)}/${bound.data.fileId}`);
+    expect(source.source.revision).toBe(digest({ id: bound.data.fileId, role: 'assistant', text: input.file_text }));
+    expect(source.metadata).toEqual({ runtimeType: 'source', sessionId: session, adapter: 'claude', cursor: bound.data.fileId, role: 'assistant', ingestKey: `capture:${digest(['claude', session, bound.data.fileId])}` });
+    expect(bound.record.metadata).toEqual({ nativeNamespace: namespace, nativeType: 'manifest', advisory: false });
+    expect(bound.record.source.uri).toBe(`anthropic-memory:manifest:${namespace}:${bound.data.fileId}:1`);
+    const receipt = memory.list({ includeUntrusted: true, metadata: { nativeType: 'receipt' } }).items[0];
+    expect(receipt.metadata).toEqual({ nativeNamespace: namespace, nativeType: 'receipt', advisory: false });
+    expect(JSON.parse(receipt.text)).toEqual({ version: 1, type: 'receipt', key: digest(['session', 'legacy-create']), commandHash: digest(input) });
+    const before = memory.export().memories;
+    expect(adapter.execute(input, { sessionId: 'session', operationId: 'legacy-create' })).toContain('Previously committed');
+    expect(memory.export().memories).toEqual(before);
+  });
+
+  it('imports an unmarked rc3-style snapshot and reopens its files and receipts without mutation', () => {
+    const original = setup(); create(original.adapter, '/memories/note.txt', 'Existing legacy record', 'rc3-receipt');
+    const snapshot = original.memory.export();
+    expect(snapshot.memories.every(record => !('nativeCaptureAdapter' in record.metadata))).toBe(true);
+    const path = database(), restored = setup({}, path); restored.memory.import(snapshot);
+    const reopened = setup({}, path);
+    const before = reopened.memory.export().memories;
+    expect(view(reopened.adapter, '/memories/note.txt').content).toContain('Existing legacy record');
+    expect(ok(reopened.adapter, { command: 'create', path: '/memories/note.txt', file_text: 'Existing legacy record' }, 'rc3-receipt').content).toContain('Previously committed');
+    expect(reopened.memory.export().memories).toEqual(before);
+  });
+
+  it('executes all integrations on one generic engine without manufacturing Claude source provenance', () => {
+    const { adapter, memory, runtime } = setup({ captureAdapter: 'generic', namespace: 'neutral' });
+    const created = { command: 'create', path: '/memories/note.txt', file_text: 'Generic original' };
+    expect(adapter.execute(created, execution('create'))).toContain('Created');
+    const original = file(memory), originalSource = memory.get(original.data.sourceId!)!;
+    expect(originalSource.metadata.adapter).toBe('generic'); expect(originalSource.source.uri).toMatch(/^transcript:\/\/generic\//);
+    expect(originalSource.metadata.ingestKey).toBe(`capture:${digest(['generic', originalSource.metadata.sessionId, original.data.fileId])}`);
+    const replacement = { command: 'str_replace', path: '/memories/note.txt', old_str: 'original', new_str: 'changed' };
+    ok(adapter, replacement, 'replace', 'shared-session');
+    expect(adapter.execute(replacement, execution('replace'))).toContain('Previously committed');
+    const runnable = adapter.asRunnable({ sessionId: 'shared-session' });
+    const insertion = { command: 'insert', path: '/memories/note.txt', insert_line: 1, insert_text: 'New line' };
+    expect(runnable.run(insertion, { toolUse: { id: 'insert', name: 'memory', input: insertion } })).toContain('Updated');
+    const current = file(memory);
+    expect(current.text).toBe('Generic changed\nNew line');
+    for (const record of memory.list({ includeInactive: true, includeUntrusted: true, metadata: { runtimeType: 'source' } }).items) {
+      expect(record.metadata.adapter).toBe('generic'); expect(record.source.uri).toBe(originalSource.source.uri); expect(record.metadata.ingestKey).toBe(originalSource.metadata.ingestKey);
+    }
+    adapter.execute({ command: 'str_replace', path: '/memories/note.txt', old_str: current.text, new_str: '' }, execution('blank'));
+    expect(memory.isEligible(file(memory).data.sourceId!)).toBe(false);
+    adapter.execute({ command: 'insert', path: '/memories/note.txt', insert_line: 0, insert_text: 'Restored' }, execution('restore'));
+    expect(memory.isEligible(file(memory).data.sourceId!)).toBe(true);
+    adapter.execute({ command: 'delete', path: '/memories/note.txt' }, execution('delete'));
+    expect(memory.get(originalSource.id)).toBeNull();
+    expect(adapter.execute(created, execution('create'))).toContain('Previously committed'); expect(bindings(memory)).toEqual([]);
+    expect(() => runtime.capture({ adapter: 'generic', sessionId: String(originalSource.metadata.sessionId), messages: [{ id: original.data.fileId, role: 'assistant', text: created.file_text }], trust: 'observed' })).toThrow('forgotten');
+    expect(memory.list({ includeUntrusted: true, metadata: { nativeType: 'receipt' } }).items.every(record => record.metadata.nativeCaptureAdapter === 'generic')).toBe(true);
+  });
+
+  it.each(['claude', 'generic'] as const)('rejects opposite-mode reuse for %s namespaces with files, blank bindings and receipts only', mode => {
+    for (const text of ['existing text', '']) {
+      const { adapter, memory, runtime } = setup({ captureAdapter: mode });
+      const opposite = createAnthropicMemoryAdapter({ memory, runtime, namespace: 'notes', captureAdapter: mode === 'claude' ? 'generic' : 'claude', policy: () => ({ allowDestructive: true }) });
+      const input = { command: 'create', path: '/memories/note.txt', file_text: text };
+      adapter.execute(input, execution('create'));
+      for (const command of [input, { command: 'view', path: '/memories' }, { command: 'delete', path: '/memories/note.txt' }]) expect(() => opposite.execute(command, execution('create'))).toThrow('E_CONFLICT');
+      adapter.execute({ command: 'delete', path: '/memories/note.txt' }, execution('delete'));
+      expect(bindings(memory)).toEqual([]);
+      expect(() => opposite.execute({ command: 'view', path: '/memories' }, execution('view'))).toThrow('Namespace capture mode differs');
+      expect(() => opposite.execute(input, execution('create'))).toThrow('E_CONFLICT');
+      const fresh = createAnthropicMemoryAdapter({ memory, runtime, namespace: 'fresh', captureAdapter: mode === 'claude' ? 'generic' : 'claude' });
+      expect(fresh.execute(input, execution('fresh-create'))).toContain('Created');
+    }
+  });
+
+  it('reopens generic state, retains replay checks and requires a fresh observation before editing', () => {
+    const path = database(), first = setup({ captureAdapter: 'generic' }, path);
+    first.adapter.execute({ command: 'create', path: '/memories/note.txt', file_text: 'a' }, execution('create'));
+    const insertion = { command: 'insert', path: '/memories/note.txt', insert_line: 1, insert_text: 'b' };
+    first.adapter.execute(insertion, execution('insert'));
+    const second = setup({ captureAdapter: 'generic' }, path);
+    expect(second.adapter.execute(insertion, execution('insert'))).toContain('Previously committed');
+    expect(() => second.adapter.execute({ ...insertion, insert_text: 'different' }, execution('insert'))).toThrow('E_REPLAY');
+    expect(() => second.adapter.execute(insertion, execution('new-insert'))).toThrow('E_CONFLICT');
+    second.adapter.execute({ command: 'view', path: '/memories/note.txt' }, execution('view'));
+    second.adapter.execute(insertion, execution('new-insert')); expect(file(first.memory).text).toBe('a\nb\nb');
+  });
+
+  it('makes captureAdapter immutable in JavaScript and rejects invalid modes and model-supplied provenance', () => {
+    const { adapter, memory, runtime } = setup({ captureAdapter: 'generic' });
+    expect(Object.getOwnPropertyDescriptor(adapter, 'captureAdapter')).toMatchObject({ value: 'generic', writable: false, configurable: false });
+    expect(() => { (adapter as { captureAdapter: string }).captureAdapter = 'claude'; }).toThrow(TypeError);
+    expect(() => Object.defineProperty(adapter, 'captureAdapter', { value: 'claude' })).toThrow(TypeError);
+    expect(adapter.captureAdapter).toBe('generic');
+    for (const captureAdapter of [null, 'codex', '', true]) expect(() => createAnthropicMemoryAdapter({ memory, runtime, namespace: 'invalid', captureAdapter } as never)).toThrow('captureAdapter');
+    expect(() => adapter.execute({ command: 'create', path: '/memories/a', file_text: 'x', captureAdapter: 'claude' }, execution('invalid-command'))).toThrow('E_INPUT');
+    expect(memory.export().memories).toEqual([]);
+  });
+
+  it('validates direct execution identity and returns only typed, bounded errors before touching storage', () => {
+    const { adapter, memory } = setup({ captureAdapter: 'generic' }), input = { command: 'create', path: '/memories/a', file_text: 'x' };
+    for (const context of [null, {}, { sessionId: 's' }, { sessionId: 's', operationId: '' }, { sessionId: 's', operationId: 'x'.repeat(257) }, { sessionId: 's', operationId: 'id', signal: {} }, { sessionId: 's', operationId: 'id', namespace: 'foreign' }]) {
+      try { adapter.execute(input, context as never); throw new Error('Expected rejection'); }
+      catch (error) { expect(error).toMatchObject({ name: 'AnthropicMemoryError', code: 'E_INPUT' }); expect((error as Error).message.length).toBeLessThan(256); }
+    }
+    expect(memory.export().memories).toEqual([]);
+  });
+
+  it('retains scope and current policy for public execution, replay, cancellation and privacy deletion', () => {
+    let readOnly = false;
+    const path = database(), first = setup({ captureAdapter: 'generic', policy: () => ({ readOnly, allowDestructive: true }) }, path);
+    const input = { command: 'create', path: '/memories/note.txt', file_text: 'scoped generic text' };
+    first.adapter.execute(input, execution('same-id'));
+    const foreign = setup({ captureAdapter: 'generic' }, path, 'other'), otherWorkspace = setup({ captureAdapter: 'generic' }, path, 'owner', 'other');
+    expect(() => foreign.adapter.execute({ command: 'view', path: '/memories/note.txt' }, execution('view'))).toThrow('E_NOT_FOUND');
+    expect(() => otherWorkspace.adapter.execute({ command: 'view', path: '/memories/note.txt' }, execution('view'))).toThrow('E_NOT_FOUND');
+    const prior = first.memory.export().memories;
+    readOnly = true; expect(() => first.adapter.execute(input, execution('same-id'))).toThrow('E_POLICY'); expect(first.memory.export().memories).toEqual(prior);
+    readOnly = false; const abort = new AbortController(); abort.abort();
+    expect(() => first.adapter.execute(input, { ...execution('same-id'), signal: abort.signal })).toThrow('E_ABORTED');
+    const disabled = createAnthropicMemoryAdapter({ memory: first.memory, runtime: createMemoryRuntime(first.memory, { recallEnabled: false, captureEnabled: false }), namespace: 'notes', captureAdapter: 'generic', policy: () => ({ allowDestructive: true }) });
+    expect(() => disabled.execute({ command: 'view', path: '/memories' }, execution('view'))).toThrow('E_POLICY');
+    expect(disabled.execute({ command: 'delete', path: '/memories/note.txt' }, execution('delete'))).toContain('Deleted'); expect(bindings(first.memory)).toEqual([]);
   });
 });

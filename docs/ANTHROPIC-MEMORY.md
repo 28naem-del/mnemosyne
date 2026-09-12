@@ -34,6 +34,8 @@ The application chooses the database, owner, namespace, session ID and permissio
 
 Default permissions enable viewing and ordinary writes, with deletion disabled. Runtime capture/recall controls also apply. A trusted host can grant deletion independently; privacy deletion remains available under the documented policy when capture or recall is disabled. Close the memory instance when the host is finished.
 
+For a new namespace shared with OpenAI Responses or Gemini Generate Content, select the immutable `captureAdapter: "generic"` option and use the [provider wrappers](PROVIDER-TOOLS.md). Existing default Claude namespaces retain their original capture identities; an opposite-mode namespace fails rather than relabeling old records.
+
 ## Manual Messages loop
 
 Supply `adapter.definition` in your application's native tools array. When the API returns a matching tool-use block, execute it locally:
@@ -84,7 +86,7 @@ Line numbering splits on LF and retains CR characters. One terminal LF does not 
 
 Nonblank text becomes a model-authored captured source with `untrusted` provenance by default. Explicit file viewing remains available, while ordinary advice retrieval excludes untrusted notes. The host can set `writeTrust: "observed"` when it intends these notes to participate in recall. “Observed” means the host witnessed the text; it does not certify that its assertions are true. Native commands cannot mark facts verified, promote skills, execute code, change provider configuration or choose another owner.
 
-Content edits correct the source and suppress advice that depends on its old version. Original captured text remains inspectable until forgotten. Blank values retain their exact UTF-8 bytes through a validated base64 control representation and do not become fabricated semantic evidence. Edits return bounded acknowledgements; use view to inspect the resulting text. The protected `/memories/_sources` mount exposes bounded original-source inspection and accepts no writes.
+Content edits correct the source and suppress advice that depends on its old version. Original captured text remains inspectable until forgotten. Blank values retain their exact UTF-8 bytes through a validated base64 control representation and do not become fabricated semantic evidence. Edits return bounded acknowledgements; use view to inspect the resulting text. The protected `/memories/_sources` mount exposes bounded original-source inspection and accepts no writes. It follows the owner and workspace scope across virtual namespaces; namespace names alone are not separate privacy principals.
 
 Mutation receipts use the trusted session and tool-use ID plus normalized command hash. Replaying a committed operation cannot duplicate an insertion or resurrect a deleted file. Reusing an ID with different input fails. Receipts retain no original text or result snippets. A new authorized create after deletion gets a new file identity.
 

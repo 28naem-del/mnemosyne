@@ -32,6 +32,8 @@ export interface AnthropicMemoryAdapterOptions {
   runtime: MemoryRuntime;
   /** Trusted logical identity, never a model-selectable scope or host path. */
   namespace: string;
+  /** Choose generic only for a fresh provider-neutral namespace; no implicit migration. */
+  captureAdapter?: 'claude' | 'generic';
   /** Observed must be an explicit host-witnessed choice; neither value verifies claims. */
   writeTrust?: 'untrusted' | 'observed';
   policy?: () => Partial<AnthropicMemoryPolicy>;
@@ -42,6 +44,7 @@ export interface AnthropicMemoryAdapterOptions {
 export interface AnthropicMemoryToolUse { type: 'tool_use'; id: string; name: 'memory'; input: unknown }
 export interface AnthropicMemoryToolResult { type: 'tool_result'; tool_use_id: string; content: string; is_error?: true }
 export interface AnthropicMemoryContext { sessionId: string; signal?: AbortSignal | null }
+export interface AnthropicMemoryExecutionContext extends AnthropicMemoryContext { operationId: string }
 /** Structural subset accepted by the pinned official SDK's BetaToolRunContext. */
 export interface AnthropicMemoryRunContext {
   toolUse?: { id: string; name?: string; input?: unknown };
@@ -75,6 +78,7 @@ function sanitized(error: unknown): AnthropicMemoryError {
 /** Native client-side text tool. Owns no database, provider, host directory or scheduler. */
 export class AnthropicMemoryAdapter {
   readonly definition = Object.freeze({ type: 'memory_20250818', name: 'memory' } as const);
+  readonly captureAdapter!: 'claude' | 'generic';
   readonly limits: ReturnType<typeof configuredLimits>;
   readonly #memory: LocalMemory;
   readonly #runtime: MemoryRuntime;
@@ -90,6 +94,9 @@ export class AnthropicMemoryAdapter {
     this.#memory = options.memory; this.#runtime = options.runtime;
     this.#namespace = hash([this.#memory.workspaceId, this.#memory.agentId, scalarText(options.namespace, 256, false)]);
     this.#captureSession = `native-memory:${this.#namespace}`;
+    const captureAdapter = options.captureAdapter === undefined ? 'claude' : options.captureAdapter;
+    if (captureAdapter !== 'claude' && captureAdapter !== 'generic') fail('E_INPUT', 'captureAdapter must be claude or generic.');
+    Object.defineProperty(this, 'captureAdapter', { value: captureAdapter, enumerable: true, writable: false, configurable: false });
     this.#writeTrust = options.writeTrust ?? 'untrusted';
     if (!['untrusted', 'observed'].includes(this.#writeTrust)) fail('E_INPUT', 'writeTrust must be untrusted or observed.');
     this.#policy = options.policy; this.#authorize = options.authorize;
@@ -156,19 +163,23 @@ export class AnthropicMemoryAdapter {
     return rows;
   }
   #source(row: MemoryRecord | null, fileId: string): MemoryRecord {
-    const uri = `transcript://claude/${encodeURIComponent(this.#captureSession)}/${fileId}`;
-    if (!row || row.agentId !== this.#memory.agentId || row.workspaceId !== this.#memory.workspaceId || row.visibility !== 'private' || row.kind !== 'observation' || row.trust === 'verified' || row.dependencies.length || row.source.uri !== uri || row.metadata.runtimeType !== 'source' || row.metadata.adapter !== 'claude' || row.metadata.sessionId !== this.#captureSession || row.metadata.cursor !== fileId || row.metadata.role !== 'assistant' || row.metadata.ingestKey !== `capture:${hash(['claude', this.#captureSession, fileId])}`) fail('E_CONFLICT', 'File source provenance is unavailable or inconsistent.');
+    const uri = `transcript://${this.captureAdapter}/${encodeURIComponent(this.#captureSession)}/${fileId}`;
+    if (!row || row.agentId !== this.#memory.agentId || row.workspaceId !== this.#memory.workspaceId || row.visibility !== 'private' || row.kind !== 'observation' || row.trust === 'verified' || row.dependencies.length || row.source.uri !== uri || row.metadata.runtimeType !== 'source' || row.metadata.adapter !== this.captureAdapter || row.metadata.sessionId !== this.#captureSession || row.metadata.cursor !== fileId || row.metadata.role !== 'assistant' || row.metadata.ingestKey !== `capture:${hash([this.captureAdapter, this.#captureSession, fileId])}`) fail('E_CONFLICT', 'File source provenance is unavailable or inconsistent.');
     return row;
   }
   #inventory(check: () => void): Inventory {
     const controls = this.#scan({ nativeNamespace: this.#namespace }, check), files: File[] = [], receipts = new Map<string, z.infer<typeof receiptSchema>>();
     for (const record of controls) {
-      check(); if (record.status !== 'active') continue;
+      check();
+      // Unmarked rc3 records retain their Claude interpretation, including
+      // blank-only bindings and receipts left after every file was deleted.
+      if ((record.metadata.nativeCaptureAdapter ?? 'claude') !== this.captureAdapter) fail('E_CONFLICT', 'Namespace capture mode differs; select a fresh namespace for generic capture.');
+      if (record.status !== 'active') continue;
       let payload: Manifest | z.infer<typeof receiptSchema>;
       try { payload = z.union([manifestSchema, receiptSchema]).parse(JSON.parse(record.text)); }
       catch { fail('E_CONFLICT', 'Persisted adapter state is invalid.'); }
       const identity = payload.type === 'manifest' ? `${payload.fileId}:${payload.generation}` : payload.key;
-      if (record.kind !== 'observation' || record.trust !== 'untrusted' || record.visibility !== 'private' || record.source.uri !== `anthropic-memory:${payload.type}:${this.#namespace}:${identity}` || record.source.revision !== hash(payload) || canonical(record.metadata) !== canonical({ nativeNamespace: this.#namespace, nativeType: payload.type, advisory: false })) fail('E_CONFLICT', 'Persisted adapter envelope is invalid.');
+      if (record.kind !== 'observation' || record.trust !== 'untrusted' || record.visibility !== 'private' || record.source.uri !== `anthropic-memory:${payload.type}:${this.#namespace}:${identity}` || record.source.revision !== hash(payload) || canonical(record.metadata) !== canonical(this.#controlMetadata(payload.type))) fail('E_CONFLICT', 'Persisted adapter envelope is invalid.');
       if (payload.type === 'receipt') {
         if (record.dependencies.length || receipts.has(payload.key)) fail('E_CONFLICT', 'Conflicting adapter receipts.');
         receipts.set(payload.key, payload); continue;
@@ -208,7 +219,10 @@ export class AnthropicMemoryAdapter {
   }
   #control(payload: Manifest | z.infer<typeof receiptSchema>, dependencies: string[] = []): MemoryRecord {
     const identity = payload.type === 'manifest' ? `${payload.fileId}:${payload.generation}` : payload.key;
-    return this.#memory.store({ text: JSON.stringify(payload), kind: 'observation', trust: 'untrusted', visibility: 'private', dependencies, source: { uri: `anthropic-memory:${payload.type}:${this.#namespace}:${identity}`, revision: hash(payload) }, metadata: { nativeNamespace: this.#namespace, nativeType: payload.type, advisory: false } });
+    return this.#memory.store({ text: JSON.stringify(payload), kind: 'observation', trust: 'untrusted', visibility: 'private', dependencies, source: { uri: `anthropic-memory:${payload.type}:${this.#namespace}:${identity}`, revision: hash(payload) }, metadata: this.#controlMetadata(payload.type) });
+  }
+  #controlMetadata(type: 'manifest' | 'receipt') {
+    return { nativeNamespace: this.#namespace, nativeType: type, advisory: false, ...(this.captureAdapter === 'generic' ? { nativeCaptureAdapter: 'generic' } : {}) };
   }
   #writeFile(path: string, text: string, previous?: File): File {
     let source = previous?.source;
@@ -218,7 +232,7 @@ export class AnthropicMemoryAdapter {
       if (source) {
         const { nativeEmpty: _empty, advisory: _advisory, correctionReason: _reason, ...sourceMetadata } = source.metadata;
         source = this.#memory.correct(source.id, { text: text.trim() ? text : marker, source: { ...source.source, revision: hash(text) }, metadata: { ...sourceMetadata, ...(text.trim() ? {} : { nativeEmpty: true, advisory: false }) }, reason: 'Native memory file content changed.' });
-      } else if (text.trim()) source = this.#runtime.capture({ adapter: 'claude', sessionId: this.#captureSession, trust: this.#writeTrust, visibility: 'private', messages: [{ id: fileId, role: 'assistant', text }] }).records[0];
+      } else if (text.trim()) source = this.#runtime.capture({ adapter: this.captureAdapter, sessionId: this.#captureSession, trust: this.#writeTrust, visibility: 'private', messages: [{ id: fileId, role: 'assistant', text }] }).records[0];
     }
     if (text.trim() && !source) fail('E_POLICY', 'Source capture is unavailable.');
     // Base64 bounds JSON expansion even for 32,000 vertical tabs (which JSON
@@ -366,12 +380,21 @@ export class AnthropicMemoryAdapter {
     } catch (error) { throw sanitized(error); }
     finally { this.#executing = false; }
   }
+  /** Provider-neutral synchronous execution with host-owned retry identity. */
+  execute(input: unknown, context: AnthropicMemoryExecutionContext): string {
+    try {
+      const value = plain(context); keys(value, ['sessionId', 'operationId', 'signal']);
+      const sessionId = scalarText(value.sessionId, 256, false), operationId = scalarText(value.operationId, 256, false);
+      if (value.signal != null && !(value.signal instanceof AbortSignal)) fail('E_INPUT', 'signal must be an AbortSignal.');
+      return this.#execute(input, operationId, { sessionId, signal: value.signal as AbortSignal | null | undefined });
+    } catch (error) { throw sanitized(error); }
+  }
   handleToolUse(block: unknown, context: AnthropicMemoryContext): AnthropicMemoryToolResult {
     const value = plain(block), id = scalarText(value.id, 256, false);
     try {
       keys(value, ['type', 'id', 'name', 'input']);
       if (value.type !== 'tool_use' || value.name !== 'memory') fail('E_INPUT', 'Expected a native memory tool_use block.');
-      return { type: 'tool_result', tool_use_id: id, content: this.#execute(value.input, id, context) };
+      return { type: 'tool_result', tool_use_id: id, content: this.execute(value.input, { sessionId: context.sessionId, operationId: id, signal: context.signal }) };
     } catch (error) { return { type: 'tool_result', tool_use_id: id, content: sanitized(error).message, is_error: true }; }
   }
   asRunnable(context: Pick<AnthropicMemoryContext, 'sessionId'>) {
@@ -380,7 +403,7 @@ export class AnthropicMemoryAdapter {
       const current = runner?.toolUse, legacy = runner?.toolUseBlock, toolUse = current ?? legacy;
       if (!toolUse || (current && legacy && current.id !== legacy.id) || (toolUse.name !== undefined && toolUse.name !== 'memory')) fail('E_INPUT', 'A consistent trusted memory tool-use identity is required.');
       if (toolUse.input !== undefined && hash(this.parse(toolUse.input)) !== hash(this.parse(input))) fail('E_INPUT', 'Runner command differs from its tool-use input.');
-      return this.#execute(input, toolUse.id, { sessionId, signal: runner?.signal });
+      return this.execute(input, { sessionId, operationId: toolUse.id, signal: runner?.signal });
     } };
   }
 }
