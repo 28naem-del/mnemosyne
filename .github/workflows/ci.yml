@@ -65,6 +65,21 @@ jobs:
       - name: Run the source freshness and action check example
         run: node --experimental-strip-types examples/maintenance.ts
 
+      - name: Run the opt-in host agent example
+        run: node --experimental-strip-types examples/agent-loop.ts
+
+      - name: Run the adaptive source context example
+        run: node --experimental-strip-types examples/adaptive-context.ts
+
+      - name: Run the matched experiment fixture without model calls
+        run: node --experimental-strip-types examples/agent-benchmark.ts
+
+      - name: Run whole-database recovery on synthetic data
+        run: node --experimental-strip-types examples/backup-restore.ts
+
+      - name: Run source-backed typed profiles
+        run: node --experimental-strip-types examples/profiles.ts
+
   python:
     name: Python client (Python ${{ matrix.python }})
     runs-on: ubuntu-latest

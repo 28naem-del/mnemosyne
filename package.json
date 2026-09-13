@@ -1,6 +1,6 @@
 {
   "name": "mnemosy-ai",
-  "version": "2.0.0-rc.6",
+  "version": "2.0.0-rc.7",
   "description": "Evidence-backed agent memory with observation, hybrid recall, temporal history, tested skills, and local MCP/HTTP",
   "type": "module",
   "main": "./dist/index.js",
@@ -93,6 +93,22 @@
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
       "import": "./dist/adapters/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js"
+    },
+    "./context": {
+      "types": "./dist/context/index.d.ts",
+      "import": "./dist/context/index.js"
+    },
+    "./operations": {
+      "types": "./dist/operations/index.d.ts",
+      "import": "./dist/operations/index.js"
+    },
+    "./profiles": {
+      "types": "./dist/profiles/index.d.ts",
+      "import": "./dist/profiles/index.js"
     }
   },
   "files": [
@@ -102,7 +118,8 @@
     "NOTICE.md",
     "docs",
     "site",
-    "python"
+    "python",
+    "examples"
   ],
   "scripts": {
     "build": "tsc",
@@ -121,8 +138,9 @@
     "pretest:coverage": "npm run build",
     "test:watch": "vitest",
     "pretest:watch": "npm run build",
-    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts",
-    "evaluate": "node dist/cli/index.js evaluate"
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts examples/agent-loop.ts examples/adaptive-context.ts examples/agent-benchmark.ts examples/backup-restore.ts examples/profiles.ts",
+    "evaluate": "node dist/cli/index.js evaluate",
+    "benchmark:agent": "node dist/cli/index.js benchmark-agent"
   },
   "keywords": [
     "ai",

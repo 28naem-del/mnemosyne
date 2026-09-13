@@ -4,11 +4,11 @@
 
 Portable memory for agents that need to carry work forward, explain what they remember, and stop relying on something after it changes.
 
-Mnemosyne 2 combines a local SQLite memory engine with source capture, bounded observation jobs, source-backed project models, trial-gated skills, hybrid retrieval, and correction-aware provenance. Use it through TypeScript, MCP, the CLI, or an authenticated local HTTP service with a live inspector and Python client. The existing Qdrant integration remains available separately.
+Mnemosyne 2 combines a local SQLite memory engine with a host-controlled agent lifecycle, adaptive context, source capture, bounded observation jobs, source-backed project models, trial-gated skills, hybrid retrieval, and correction-aware provenance. Use it through TypeScript, MCP, the CLI, or an authenticated local HTTP service with a live inspector and Python client. The existing Qdrant integration remains available separately.
 
-**Status: 2.0.0-rc.6, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
+**Status: 2.0.0-rc.7, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
 
-[Quickstart](docs/quickstart.md) · [Runtime and service guide](docs/RUNTIME.md) · [Native provider tools](docs/PROVIDER-TOOLS.md) · [Import existing memories](docs/MIGRATION.md) · [Source freshness](docs/MAINTENANCE.md) · [API](docs/api.md) · [Security boundaries](SECURITY.md)
+[Quickstart](docs/quickstart.md) · [Agent lifecycle](docs/AGENT.md) · [Adaptive context](docs/CONTEXT.md) · [Typed profiles](docs/PROFILES.md) · [Runtime](docs/RUNTIME.md) · [Migration](docs/MIGRATION.md) · [Backup and restore](docs/OPERATIONS.md) · [Agent evaluation](docs/AGENT-EVALUATION.md) · [Security boundaries](SECURITY.md)
 
 ## See it work
 
@@ -75,7 +75,9 @@ These package imports work from an installed build or this repository's package 
 
 - **Memory with a history.** Source references, trust labels, explicit fact keys, corrections, and dependency chains. Correct a source and dependent lessons become ineligible.
 - **A handoff that preserves the work.** Structured goals, decisions, rejected approaches, artifacts, and next actions survive process restarts. Link their dependencies so obsolete handoffs retire with corrected sources. Conflicting shared checkpoints cause abstention.
-- **Context with a budget and receipts.** Lexical retrieval works immediately. An explicitly configured embedder adds incremental local vectors and hybrid recall. Both paths apply scope, provenance, conflict, outcome and context-budget checks.
+- **Adaptive context with original evidence.** Select current observations, hierarchical summaries and original excerpts within a declared budget. Expand exact source bytes on demand. Reuse local selection plans only while complete source, check and outcome state matches; an injectable tokenizer replaces the labeled byte estimate. Building context makes no model call.
+- **An agent lifecycle you control.** `MemoryAgent` prepares fresh context, captures supplied visible turns, queues durable work and checks action evidence before host dispatch. Use one bounded drain or an explicitly started finite worker. Supplied Codex/Claude event adapters do not install hooks or discover history.
+- **Typed profiles with source evidence.** Define bounded fields as known, unknown or conflict. An explicit proposer supplies values and per-field citations; reads revalidate complete source state and withhold stale values. Schema validation and attribution do not certify truth. [Profile guide](docs/PROFILES.md).
 - **Explicit sharing.** Memories are private by default. Controllers can share selected records within a workspace. Dependencies cannot expose another agent's private source.
 - **Experience tied to outcomes.** A controller records success or failure with evidence. Failed evidence prevents its recommendations from entering compiled context.
 - **Captured evidence and bounded processing.** Preserve supplied transcript text and source pages. A local connector reads a named regular file, with optional foreground watching. Durable observation/model jobs use explicit call, byte, timeout, retry and lease budgets.
@@ -83,10 +85,27 @@ These package imports work from an installed build or this repository's package 
 - **Time, entities and proposals.** Query validity and knowledge time, resolve ambiguous entity aliases, traverse evidence-linked relationships, and stage isolated branch changes before an atomic merge.
 - **Bounded reflection.** A caller-selected model can propose lessons in one budgeted pass. Proposals do not write memory. A controller must validate a proposal before committing it; changed or failed evidence rejects stale proposals.
 - **A usable lifecycle.** Inspect, correct, export, restore, and forget through an SDK and CLI. MCP tools and bearer-token HTTP expose narrower authority. A live browser inspector and dependency-free Python client use the HTTP service.
-- **Bring existing memories.** Preview selected Mem0, Letta, legacy Mnemosyne/Qdrant and Markdown exports, then apply the reviewed source bytes atomically. Preserve original records, recognize retries and undo untouched imports. Forgetting also blocks replay of the same source identity.
+- **Bring existing memories.** Preview 11 explicit export profiles covering Mem0, Letta, LangGraph, Graphiti, Hindsight, Supermemory, legacy Mnemosyne/Qdrant and Markdown, then apply the reviewed source bytes atomically. Preserve original records, recognize retries and undo untouched imports. Forgetting also blocks replay of the same source identity.
 - **Check silent staleness.** Explicit source policies track the last confirmation independently of creation or retrieval. Freshness-aware recall withholds stale dependencies, and short-lived action read sets detect changed evidence before the host acts. Controllers supply check evidence; age does not rewrite facts.
 
 The local path needs no external service for lexical memory. Semantic indexing and generated observations require a caller-selected provider or callback; no model is chosen or downloaded automatically. Local vectors, entities, runtime artifacts and ordinary memories use the same SQLite store. Cloud synchronization, model training, unattended host-history discovery and a managed hosted service are not included. The Qdrant and local engines do not automatically synchronize.
+
+## Connect the host loop
+
+Use [`MemoryAgent`](docs/AGENT.md) around your existing responder. `runTurn` prepares context and records visible input/output; `beforeTurn` and `afterTurn` support separate host stages. Your controller explicitly selects the provider, trust assertions and any background work. Default capture is untrusted. Construction starts no model or worker.
+
+The CLI also supports finite observation work against a chosen provider:
+
+```sh
+node dist/cli/index.js agent --action work --watch \
+  --db ./agent-memory.sqlite --workspace my-project --agent assistant \
+  --provider-config ./provider.json \
+  --json '{"maxCycles":10,"maxDurationMs":60000,"maxCalls":4,"maxTotalInputBytes":262144}'
+```
+
+This process runs until a limit, cancellation or completion; it installs no daemon. Durable jobs and leases remain in SQLite for a later explicitly started worker. See the [agent guide](docs/AGENT.md) for provider configuration, event adapters, retry boundaries and controller action checks.
+
+[`AdaptiveContext`](docs/CONTEXT.md) can incrementally compact selected history with your proposer, then build context locally and expand exact originals through scoped handles. New generated records track the complete source/check/outcome state used to create them. Changes invalidate their reuse; legacy summaries without that proof fall back to eligible original sources. Validate a retained packet immediately before dispatch. The default token count is a conservative UTF-8 byte estimate, not a model tokenizer.
 
 ## Bring your existing memories
 
@@ -102,7 +121,7 @@ node dist/cli/index.js migrate --action apply \
   --batch first-import --confirm
 ```
 
-The preview opens no destination database. Imports are private and untrusted by default; accepted source assertions can be planned with explicit `--trust observed`. The [migration guide](docs/MIGRATION.md) lists all seven supported export shapes, page/owner declarations, exact-byte accounting, limits, inspection, undo and forgetting. There is no account discovery or automatic live migration.
+The preview opens no destination database. Imports are private and untrusted by default; accepted source assertions can be planned with explicit `--trust observed`. The [migration guide](docs/MIGRATION.md) lists all 11 supported export profiles, page/owner declarations, exact-byte accounting, limits, inspection, undo and forgetting. There is no account discovery or automatic live migration.
 
 Run the new synthetic examples after building to see migration and silent-staleness checks on temporary stores:
 
@@ -112,6 +131,22 @@ node --experimental-strip-types examples/maintenance.ts
 ```
 
 The [freshness guide](docs/MAINTENANCE.md) explains source checks, bounded probes and action read sets. Freshness filtering is an explicit SDK/CLI path; existing generic recall does not silently acquire a new policy. Neither example calls a model or accesses live sources.
+
+## Verify a backup before recovery
+
+Operator backups preserve the whole SQLite database, including every workspace, private record, durable job and replay guard. They are distinct from scoped logical exports. In a fresh working directory with an existing `agent-memory.sqlite`:
+
+```sh
+mkdir -m 700 backups recovery
+node dist/cli/index.js operations --action backup \
+  --db ./agent-memory.sqlite --out ./backups/snapshot.mnemo-backup
+node dist/cli/index.js operations --action verify \
+  --file ./backups/snapshot.mnemo-backup
+node dist/cli/index.js operations --action restore \
+  --file ./backups/snapshot.mnemo-backup --out ./recovery/memory.sqlite
+```
+
+Outputs must be new paths in existing private directories. Verification checks bundle hashes and SQLite integrity; it is not a signature or encryption. Restore leaves the original database in place and performs no service cutover. Protect backups separately: forgetting live data cannot erase an older backup. [Operator guide and tested limits](docs/OPERATIONS.md).
 
 ## Open the live inspector
 
@@ -148,7 +183,7 @@ Runtime tools also expose supplied transcript capture, source expansion, observa
 
 The [native provider tools](docs/PROVIDER-TOOLS.md) expose six virtual file commands to OpenAI Responses and Gemini Generate Content; [Claude native memory](docs/ANTHROPIC-MEMORY.md) uses the same engine. A fresh generic namespace shares notes across those interfaces with source revisions, correction and forgetting. No mandatory provider package or physical memory directory is required.
 
-Research motivates the design; it does not establish superiority. [The research review](docs/RESEARCH-2026-09-12.md) covers primary papers, competing implementations, GitHub reports, Hacker News, Reddit, and accessible X posts. [Evaluation](docs/EVALUATION.md) separates deterministic lifecycle checks, synthetic scale measurements, and still-needed agent experiments.
+Research motivates the design; it does not establish superiority. [The research review](docs/RESEARCH-2026-09-12.md) covers primary papers, competing implementations, GitHub reports, Hacker News, Reddit, and accessible X posts. [Evaluation](docs/EVALUATION.md) separates deterministic lifecycle checks and synthetic scale measurements. The new [matched agent harness](docs/AGENT-EVALUATION.md) compares no memory, recent history, lexical memory and adaptive context using the same explicit reader/model revision and budgets. It reports answer/action correctness, provenance, stale actions and positive/negative transfer. Scripted fixtures verify the harness; no live-model or competitor-quality advantage has been established.
 
 [The provider comparison](docs/PROVIDER-MEMORY-RESEARCH.md) distinguishes documented OpenAI, Anthropic and Google behavior from implementation details those providers have not published. Similar product features do not establish equivalent reliability.
 

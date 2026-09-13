@@ -1,6 +1,10 @@
 /** Explicit, offline source profiles. These are not account archive parsers. */
-export type MigrationProfile = 'mnemosyne-memcell-array' | 'mnemosyne-qdrant-scroll' | 'markdown' | 'mem0-array' | 'mem0-results' | 'mem0-page' | 'letta-blocks';
-export type MigrationFamily = 'mnemosyne' | 'markdown' | 'mem0' | 'letta';
+export const MIGRATION_PROFILES = Object.freeze([
+  'mnemosyne-memcell-array', 'mnemosyne-qdrant-scroll', 'markdown', 'mem0-array', 'mem0-results', 'mem0-page', 'letta-blocks',
+  'langgraph-store-items', 'graphiti-edges', 'hindsight-memories', 'supermemory-documents',
+] as const);
+export type MigrationProfile = typeof MIGRATION_PROFILES[number];
+export type MigrationFamily = 'mnemosyne' | 'markdown' | 'mem0' | 'letta' | 'langgraph' | 'graphiti' | 'hindsight' | 'supermemory';
 export type MigrationDisposition = 'create' | 'unchanged' | 'quarantine' | 'excluded' | 'conflict' | 'invalid';
 export type MigrationFieldStatus = 'preserved-active' | 'preserved-raw-only' | 'downgraded' | 'not-retained' | 'unsupported';
 export interface MigrationArtifact {
@@ -24,7 +28,7 @@ export interface MigrationPlanOptions {
   /** Required for both legacy Mnemosyne profiles. */
   readonly collection?: string;
   readonly sourceOwner: {
-    /** Defaults: Mnemosyne agent, Mem0 user, Letta creator. Markdown has no owner field. */
+    /** Defaults: Mnemosyne agent, Mem0 user, Letta creator. Other profiles require assumeMissing; namespaces, banks and tags do not authenticate ownership. */
     readonly field?: 'agent' | 'user' | 'creator';
     readonly allowedIds: readonly string[];
     /** Explicit export-scope assertion for records lacking the selected field. */
@@ -108,6 +112,9 @@ export interface MigrationInputReport {
   readonly reportedTotal?: number;
   readonly hasNext?: boolean;
   readonly hasPrevious?: boolean;
+  /** Upstream offset evidence, independent of caller page declarations. */
+  readonly offset?: number;
+  readonly pageLimit?: number;
 }
 export interface MigrationPlanReport {
   readonly destinationInspected: false;

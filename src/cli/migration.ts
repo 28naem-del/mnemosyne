@@ -4,10 +4,10 @@ import { z } from 'zod';
 import { readLocalText } from '../connectors/index.js';
 import { createLocalMemory } from '../local/index.js';
 import { MemoryRuntime } from '../runtime/index.js';
-import { MigrationService, planMigration, type MigrationArtifact, type MigrationPlanOptions } from '../migration/index.js';
+import { MigrationService, MIGRATION_PROFILES, planMigration, type MigrationArtifact, type MigrationPlanOptions } from '../migration/index.js';
 import { parseJsonWithSpans } from '../migration/json-spans.js';
 
-const profile = z.enum(['mnemosyne-memcell-array', 'mnemosyne-qdrant-scroll', 'markdown', 'mem0-array', 'mem0-results', 'mem0-page', 'letta-blocks']);
+const profile = z.enum(MIGRATION_PROFILES);
 const localFile = z.object({ path: z.string().min(1).max(4096), name: z.string().min(1).max(1024).optional(), profile, logicalPath: z.string().min(1).max(4096).optional(), page: z.object({ index: z.number().int().nonnegative(), totalPages: z.number().int().min(1).max(256) }).strict().optional() }).strict();
 const manifest = z.object({ version: z.literal(1), files: z.array(localFile).min(1).max(256), options: z.record(z.string(), z.unknown()) }).strict();
 const savedPlan = manifest.extend({ kind: z.literal('mnemosyne-migration-plan'), planHash: z.string().regex(/^[a-f0-9]{64}$/), review: z.unknown(), manifestPath: z.string().min(1).max(4096).optional() }).strict();

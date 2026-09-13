@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { JsonValue, LocalMemory, MemoryRecord, MemoryTrust } from '../local/index.js';
 import { canonical } from '../local/validation.js';
+import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseTranscriptJsonl } from './parsers.js';
 import type { CaptureInput, CaptureResult, EnqueueInput, IngestInput, ModelResult, ProposalBudgets, RunJobsOptions, RunJobsReport, RuntimeJob, RuntimeOptions, RuntimeProposalRequest, RuntimeProposer, RuntimeSkill, RuntimeSource, SkillDefinition, SkillTrialInput, SkillValidation } from './types.js';
 export * from './types.js';
@@ -60,6 +61,7 @@ export class MemoryRuntime {
   readonly recallEnabled: boolean;
   readonly #now: () => Date;
   readonly #scanLimit: number;
+  #generationMaintenance?: MemoryMaintenance;
   constructor(memory: LocalMemory, options: RuntimeOptions = {}) {
     this.memory = memory;
     this.captureEnabled = options.captureEnabled ?? true;
@@ -89,20 +91,45 @@ export class MemoryRuntime {
     } while (cursor);
     return records;
   }
-  #sources(sourceIds: string[]): { sources: RuntimeSource[]; fingerprint: string; trust: MemoryTrust } {
+  #sources(sourceIds: string[]): { sources: RuntimeSource[]; fingerprint: string; generationFingerprint: string; trust: MemoryTrust } {
     ids.parse(sourceIds);
     const seen = new Map<string, unknown>();
+    const generation = new Map<string, unknown>();
+    const sourceRecords = new Map<string, MemoryRecord>(), visiting = new Set<string>();
+    // Lazy construction keeps the runtime/maintenance module cycle inert at
+    // import time, and uses the exact same host-supplied clock as this runtime.
+    const maintenance = this.#generationMaintenance ??= new MemoryMaintenance(this, { now: this.#now, maxScanRecords: this.#scanLimit });
     const visit = (sourceId: string): MemoryRecord => {
       const record = this.memory.get(sourceId);
       if (!record || !this.memory.isEligible(sourceId)) throw new RuntimeEvidenceError('Source evidence is stale, conflicted, untrusted, failed or unavailable.');
+      if (visiting.has(sourceId)) throw new RuntimeEvidenceError('Cyclic source evidence is unavailable.');
       if (seen.has(sourceId)) return record;
       if (seen.size >= 2048) throw new Error('Runtime provenance exceeds 2048 records.');
+      const freshness = maintenance.assess(sourceId);
+      if (freshness.status !== 'fresh' && freshness.status !== 'unwatched') throw new RuntimeEvidenceError('Source freshness is unavailable.');
+      generation.set(sourceId, { record, outcomes: this.memory.getOutcomeSummary(sourceId), freshness: { stateHash: freshness.stateHash, status: freshness.status, nextCheckAt: freshness.nextCheckAt ?? null } });
+      sourceRecords.set(sourceId, record); visiting.add(sourceId);
       seen.set(sourceId, { id: record.id, text: record.text, source: record.source, status: record.status, trust: record.trust, updatedAt: record.updatedAt, dependencies: record.dependencies, failures: this.memory.getOutcomeSummary(record.id).failures });
       record.dependencies.forEach(visit);
+      visiting.delete(sourceId);
+      const generated = ['model', 'observation'].includes(String(record.metadata.runtimeType));
+      const projection = record.metadata.runtimeType === 'context-projection';
+      if (generated || projection) {
+        const expected = projection ? record.metadata.sourceFingerprint : record.metadata.generationFingerprint;
+        if ((projection ? record.metadata.contextVersion !== 'v1' : record.metadata.generationStateVersion !== 'v1') || !digest.safeParse(expected).success) throw new RuntimeEvidenceError('Generated source has no complete generation-state evidence.');
+        if (generated) {
+          const relevant = ids.safeParse(record.metadata.relevantSourceIds), cited = ids.safeParse(record.metadata.citedSourceIds);
+          if (!relevant.success || !cited.success || canonical(record.dependencies) !== canonical(relevant.data) || cited.data.some(key => !relevant.data.includes(key))) throw new RuntimeEvidenceError('Generated source lineage is invalid.');
+        }
+        const dependencies = new Set<string>();
+        const collect = (key: string): void => { if (dependencies.has(key)) return; dependencies.add(key); sourceRecords.get(key)!.dependencies.forEach(collect); };
+        record.dependencies.forEach(collect);
+        if (hash([...dependencies].sort().map(key => [key, generation.get(key)])) !== expected) throw new RuntimeEvidenceError('Generated source state changed.');
+      }
       return record;
     };
     const records = sourceIds.map(visit);
-    return { sources: records.map(record => ({ id: record.id, text: record.text, source: record.source, trust: record.trust })), fingerprint: hash([...seen].sort(([a], [b]) => a.localeCompare(b))), trust: records.some(record => record.trust === 'untrusted') ? 'untrusted' : 'observed' };
+    return { sources: records.map(record => ({ id: record.id, text: record.text, source: record.source, trust: record.trust })), fingerprint: hash([...seen].sort(([a], [b]) => a.localeCompare(b))), generationFingerprint: hash([...generation].sort(([a], [b]) => a.localeCompare(b))), trust: records.some(record => record.trust === 'untrusted') ? 'untrusted' : 'observed' };
   }
   capture(input: CaptureInput): CaptureResult {
     if (!this.captureEnabled) return { enabled: false, records: [] };
@@ -241,12 +268,13 @@ export class MemoryRuntime {
     if (typeof proposer !== 'function') throw new Error('A caller-selected proposer is required.');
     const before = this.#envelope(job, options);
     if (before.fingerprint !== job.fingerprint) throw new RuntimeEvidenceError('Queued source evidence changed.');
-    if (job.kind === 'model' && job.key) this.#retireModels(job.key, job.fingerprint);
+    if (job.kind === 'model' && job.key) this.#retireModels(job.key, job.fingerprint, before.generationFingerprint);
     const response = await boundedCall(signal => {
       if (signal.aborted) throw new Error('Runtime operation cancelled.');
       // The callback runs in a queued microtask. Recheck at dispatch, including
       // when the caller forgets evidence immediately after starting runJobs().
-      if (this.#sources(job.sourceIds).fingerprint !== before.fingerprint) throw new RuntimeEvidenceError('Source evidence changed before dispatch.');
+      const current = this.#sources(job.sourceIds);
+      if (current.fingerprint !== before.fingerprint || current.generationFingerprint !== before.generationFingerprint) throw new RuntimeEvidenceError('Source evidence changed before dispatch.');
       onDispatch?.();
       return proposer({ ...before.envelope, signal } as RuntimeProposalRequest);
     }, options);
@@ -254,7 +282,7 @@ export class MemoryRuntime {
     if (typeof serialized !== 'string' || Buffer.byteLength(serialized) > before.envelope.maxOutputBytes) throw new Error('Runtime output budget exceeded.');
     const parsed = job.kind === 'observe' ? z.object({ observations: z.array(sourceProposal).max(8) }).strict().parse(JSON.parse(serialized)).observations : [sourceProposal.parse(JSON.parse(serialized))];
     const current = this.#sources(job.sourceIds);
-    if (current.fingerprint !== before.fingerprint) throw new RuntimeEvidenceError('Source evidence changed during proposal.');
+    if (current.fingerprint !== before.fingerprint || current.generationFingerprint !== before.generationFingerprint) throw new RuntimeEvidenceError('Source evidence changed during proposal.');
     const provided = new Set(job.sourceIds);
     const seen = new Set(before.sources.map(source => source.text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()));
     for (const proposal of parsed) {
@@ -270,7 +298,8 @@ export class MemoryRuntime {
         const claim = this.memory.get(claimed.recordId);
         if (!claim || claim.status !== 'active' || canonical(this.#job(claim)) !== canonical(claimed) || !claimed.leaseUntil || Date.parse(claimed.leaseUntil) <= Date.parse(this.#time())) throw new Error('Job claim expired or was replaced before commit.');
       }
-      if (this.#sources(job.sourceIds).fingerprint !== before.fingerprint) throw new RuntimeEvidenceError('Source evidence changed before commit.');
+      const commitState = this.#sources(job.sourceIds);
+      if (commitState.fingerprint !== before.fingerprint || commitState.generationFingerprint !== before.generationFingerprint) throw new RuntimeEvidenceError('Source evidence changed before commit.');
       if (job.kind === 'model' && job.key) {
         // A peer may finish the same refresh while this proposer is awaiting.
         // Reuse the committed generation instead of publishing competing advice.
@@ -281,10 +310,12 @@ export class MemoryRuntime {
         }
         const failed = this.#records('model', { modelKey: job.key }, true).some(record => record.metadata.fingerprint === job.fingerprint && this.memory.getOutcomeSummary(record.id).failures > 0 && parsed.some(proposal => proposal.text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim() === record.text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()));
         if (failed) throw new RuntimeEvidenceError('Proposal repeats a failed model without changed source evidence.');
-        this.#retireModels(job.key, job.fingerprint);
+        this.#retireModels(job.key, job.fingerprint, before.generationFingerprint);
       }
       const generation = job.kind === 'model' && job.key ? 1 + Math.max(0, ...this.#records('model', { modelKey: job.key }, true).map(record => Number(record.metadata.generation) || 0)) : 0;
-      const records = parsed.map(proposal => this.memory.store({ text: proposal.text, kind: 'observation', trust: before.trust, dependencies: job.kind === 'model' ? job.sourceIds : proposal.sourceIds, source: { uri: `runtime:${job.kind}:${hash({ identity, proposal })}`, revision: before.fingerprint }, metadata: metadata({ runtimeType: job.kind === 'model' ? 'model' : 'observation', advisory: true, generation, ...(job.key ? { modelKey: job.key } : {}), tier: job.tier ?? 'overview', ...(job.parentKey ? { parentKey: job.parentKey } : {}), relevantSourceIds: job.sourceIds, fingerprint: before.fingerprint, citedSourceIds: proposal.sourceIds }), idempotencyKey: `runtime-result:${hash({ identity, proposal, ...(job.kind === 'model' ? { generation } : {}) })}` }));
+      // Any supplied input may influence generated text, including an input the
+      // proposer did not cite. Keep all inputs in erasure/invalidation lineage.
+      const records = parsed.map(proposal => this.memory.store({ text: proposal.text, kind: 'observation', trust: before.trust, dependencies: job.sourceIds, source: { uri: `runtime:${job.kind}:${hash({ identity, proposal })}`, revision: before.fingerprint }, metadata: metadata({ runtimeType: job.kind === 'model' ? 'model' : 'observation', advisory: true, generation, generationStateVersion: 'v1', generationFingerprint: before.generationFingerprint, ...(job.key ? { modelKey: job.key } : {}), tier: job.tier ?? 'overview', ...(job.parentKey ? { parentKey: job.parentKey } : {}), relevantSourceIds: job.sourceIds, fingerprint: before.fingerprint, citedSourceIds: proposal.sourceIds }), idempotencyKey: `runtime-result:${hash({ identity, proposal, generationFingerprint: before.generationFingerprint, ...(job.kind === 'model' ? { generation } : {}) })}` }));
       if (claimed.recordId) this.#changeJob(claimed as RuntimeJob, { state: 'done', resultIds: records.map(record => record.id), leaseUntil: undefined });
       return records;
     });
@@ -335,10 +366,10 @@ export class MemoryRuntime {
     }
     return report;
   }
-  #retireModels(key: string, fingerprint: string): void {
+  #retireModels(key: string, fingerprint: string, generationFingerprint?: string): void {
     this.memory.atomic(() => {
       for (const record of this.#records('model', { modelKey: key })) {
-        if (record.metadata.fingerprint === fingerprint || !this.memory.isEligible(record.id)) continue;
+        if ((record.metadata.fingerprint === fingerprint && (generationFingerprint === undefined || record.metadata.generationStateVersion === undefined || record.metadata.generationFingerprint === generationFingerprint)) || !this.memory.isEligible(record.id)) continue;
         this.memory.correct(record.id, { text: 'Model source set changed; refresh is required.', source: { uri: `runtime:model-retired:${encodeURIComponent(key)}` }, reason: 'Relevant sources changed before model refresh.', metadata: { ...record.metadata, runtimeType: 'retired-model', advisory: false } });
       }
     });
@@ -356,7 +387,7 @@ export class MemoryRuntime {
       if (record.metadata.advisory !== true || record.kind !== 'observation' || record.trust === 'untrusted' || !Number.isSafeInteger(record.metadata.generation) || Number(record.metadata.generation) < 1 || !digest.safeParse(record.metadata.fingerprint).success || record.source.revision !== record.metadata.fingerprint || canonical(record.dependencies) !== canonical(relevantIds) || citedIds.some(sourceId => !relevantIds.includes(sourceId))) throw new Error('Invalid persisted runtime model envelope.');
       if (options.sourceIds && hash([...ids.parse(options.sourceIds)].sort()) !== hash([...relevantIds].sort())) throw new Error('Relevant source set changed.');
       const state = this.#sources(relevantIds);
-      if (!this.memory.isEligible(record.id) || state.fingerprint !== record.metadata.fingerprint) throw new Error('Model source state changed.');
+      if (!this.memory.isEligible(record.id) || state.fingerprint !== record.metadata.fingerprint || (record.metadata.generationStateVersion !== undefined && (record.metadata.generationStateVersion !== 'v1' || record.metadata.generationFingerprint !== state.generationFingerprint))) throw new Error('Model source state changed.');
       return { status: 'fresh', record, sourceIds: relevantIds, modelCalls: 0 };
     } catch (error) {
       // Do not return stale text in a field clients might accidentally compile.

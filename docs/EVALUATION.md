@@ -2,6 +2,18 @@
 
 This release separates correctness checks, public-data retrieval measurements and memory-quality claims. No paid model calls, generated-answer evaluation or matched competitor experiments were performed.
 
+## Verified rc7 local source checkpoint
+
+The rc7 source passed **948 tests in 45 files on both Node 22.16.0 and Node 24.21.0**, source/example typechecking and build. The unchanged Python client passed **8 tests each on Python 3.10.19 and Python 3.13.12**. New coverage exercises host turns and SDK events, durable replay protection, bounded background work, adaptive context and exact-source expansion, complete generation-state validation, typed profiles, four additional migration profiles, operator backup/restore, a matched-reader experiment harness and packaged command-line workflows.
+
+Independent review found and verified fixes for stale nested summaries, incomplete dependency capture, incorrect transfer scoring, model-claimed usage, background versus per-drain budgets, durable backup publication, profile schema handling and replacement ordering. Context replacement now uses fresh generation identities after retirement, including policy A → B → A and invalidated-predecessor cases. Profiles reject direct or transitive use of their own prior projection before dispatch, preserve conflicts/unknown fields and withhold stale values. No actionable findings remained in the reviewed changes.
+
+The dependency audit reported zero known vulnerabilities. Semgrep applied the security-audit rules to **118 source, script and example files** with zero findings. Two rules that initially timed out completed in a focused rescan with no findings or errors. One existing partial parse warning remains on a type-only export in `src/local/index.ts`. Snyk was attempted on the new modules and source tree but could not run without authentication; this is not a completed Snyk check.
+
+The new [matched experiment](AGENT-EVALUATION.md) example completed 36 scripted reader invocations over four conditions and three trials with zero external model calls. It validates isolation, updates, erasure, scoring and budget plumbing. It is not a real-model performance score, an official public benchmark result or a competitor ranking. The prior public retrieval measurement below is unchanged. The source checkpoint is distinct from the separately recorded final-package, clean-client/Docker simulation and publication state.
+
+README/site checks covered 123 local/repository links and eight desktop/mobile page combinations, including demo controls and documentation anchors. No JavaScript errors or horizontal overflow were observed in those checks. The website is still a local candidate until publication is authorized.
+
 ## Verified rc6 local readiness checkpoint
 
 The rc6 source passed **703 tests on Node 22.16.0 and 24.21.0**, source/example typechecking and build. The Python client passed **8 tests each on Python 3.10.19 and 3.13.12**. New coverage checks source-bearing job history erasure, invalidation before provider dispatch, legacy HTTP redirect rejection, command-line policy enforcement and the shared package verifier.

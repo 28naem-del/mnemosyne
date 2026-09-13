@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { createCompatibleEmbedder, createCompatibleImageExtractor, createCompatibleProposer } from '../src/providers/index.js';
+import { createCompatibleEmbedder, createCompatibleImageExtractor, createCompatibleProposer, createCompatibleBenchmarkReader, createCompatibleAgentResponder } from '../src/providers/index.js';
 import type { RuntimeProposalRequest } from '../src/runtime/index.js';
 
 const servers: Server[] = [];
@@ -19,6 +19,35 @@ const proposal = (options: Partial<RuntimeProposalRequest> = {}): RuntimeProposa
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); }))); });
 
 describe('explicit provider adapters using loopback fixtures only', () => {
+  it('validates benchmark answers and uses envelope accounting rather than model-claimed usage', async () => {
+    const outputs = [
+      { answer: 'violet', action: 'act', citations: ['orchid'], usage: { inputTokens: 9000, outputTokens: 9000 } },
+      { answer: 'PRIVATE_INVALID', action: 'execute', citations: [] },
+      { answer: 'PRIVATE_INVALID', action: 'act', citations: 'orchid' },
+      'PRIVATE_INVALID',
+    ];
+    const requests: unknown[] = [];
+    const options = await provider((_request, response, body) => { requests.push(body); json(response, { choices: [{ message: { content: JSON.stringify(outputs.shift()) } }], usage: { prompt_tokens: 12, completion_tokens: 4 } }); });
+    const reader = createCompatibleBenchmarkReader({ ...options, revision: 'fixture-v1' });
+    const input = { query: 'Orchid color?', context: 'violet', sourceKeys: ['orchid'], seed: 17, maxOutputTokens: 40, signal: signal() };
+    expect(await reader.run(input)).toEqual({ answer: 'violet', action: 'act', citations: ['orchid'], usage: { inputTokens: 12, outputTokens: 4 } });
+    expect(requests[0]).toMatchObject({ seed: 17, max_tokens: 40 });
+    for (let i = 0; i < 3; i++) {
+      let failure = ''; try { await reader.run(input); } catch (e) { failure = String(e); }
+      expect(failure).toContain('invalid'); expect(failure).not.toContain('PRIVATE_INVALID');
+    }
+  });
+
+  it('runs a bounded explicit host responder with only supplied visible input and memory', async () => {
+    const seen: unknown[] = [];
+    const options = await provider((_request, response, body) => { seen.push(body); json(response, { choices: [{ message: { content: 'Violet, according to orchid.' } }] }); });
+    const respond = createCompatibleAgentResponder({ ...options, maxOutputTokens: 123 });
+    expect(await respond({ input: 'Orchid?', context: { text: 'orchid: violet', tokens: 4, tokenBudget: 100, memoryIds: ['orchid'], abstained: false }, signal: signal() })).toBe('Violet, according to orchid.');
+    expect(seen[0]).toMatchObject({ model: 'explicit-test-model', max_tokens: 123 });
+    expect(JSON.stringify(seen)).not.toContain('tokenBudget');
+    expect(() => createCompatibleAgentResponder({ ...options, maxOutputTokens: 0 })).toThrow();
+  });
+
   it('rejects implicit/unsafe provider configuration before making any request', () => {
     for (const baseUrl of ['http://remote.example/v1', 'file:///tmp/model', 'https://user:secret@example.test', 'https://example.test?key=hidden', 'https://example.test#fragment']) {
       expect(() => createCompatibleEmbedder({ baseUrl, model: 'explicit', dimensions: 2 })).toThrow();
