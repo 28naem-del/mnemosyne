@@ -19,7 +19,7 @@ jobs:
     environment: npm-publish
     steps:
       - name: Checkout release
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ inputs.release_tag }}
 
