@@ -60,7 +60,21 @@
   },
   "dataPolicy": "Aggregate measurements only. No source conversations, private memory, credentials or local filesystem paths are included.",
   "publication": {
-    "githubRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8",
-    "registriesPublished": false
+    "githubRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.9",
+    "measuredSourceRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8",
+    "npm": {
+      "published": true,
+      "package": "mnemosy-ai",
+      "version": "2.0.0-rc.9",
+      "distTag": "next",
+      "latestVersion": "1.0.1",
+      "url": "https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.9"
+    },
+    "pypi": {
+      "published": false,
+      "distribution": "mnemosyne-memory-client",
+      "availability": "source checkout"
+    },
+    "note": "Publication status is separate from the frozen rc.8 evaluation above. The rc.9 packaging release does not represent a new benchmark run."
   }
 }
