@@ -34,6 +34,19 @@ async function raw(url: string, headers: Record<string, string>, chunks: string[
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => server.close())); opened.splice(0).forEach(db => db.close()); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); });
 
 describe('authenticated memory HTTP service', () => {
+  it('carries both temporal coordinates and explicit lexical scoring into cited context', async () => {
+    let day = 2;
+    const at = (value: number) => `2026-01-${String(value).padStart(2, '0')}T00:00:00.000Z`;
+    const db = createLocalMemory({ path: ':memory:', workspaceId: 'test', agentId: 'alice', now: () => new Date(at(day)) }); opened.push(db);
+    const old = db.store({ text: 'Atlas quota is 10', source, trust: 'observed', validFrom: at(1) });
+    day = 10; const next = db.correct(old.id, { text: 'Atlas quota is 20', source, reason: 'Late update', validFrom: at(5) });
+    const { url } = await serve(db);
+    const past = await post(url, 'context', { query: 'Atlas quota', maxTokens: 4096, asOf: at(6), knownAt: at(7), lexicalScoring: 'bm25' });
+    expect(past.status).toBe(200); expect(past.body.items.map((item: { id: string }) => item.id)).toEqual([old.id]);
+    expect(JSON.parse(past.body.text).temporal).toEqual({ asOf: at(6), knownAt: at(7) });
+    const current = await post(url, 'context', { query: 'Atlas quota', maxTokens: 4096, asOf: at(6), knownAt: at(10), lexicalScoring: 'overlap' });
+    expect(current.body.items.map((item: { id: string }) => item.id)).toEqual([next.id]);
+  });
   it('serves an inert inspector shell but requires a bearer token for every data operation', async () => {
     const db = memory(); const { url } = await serve(db);
     const shell = await fetch(url); expect(shell.status).toBe(200); expect(shell.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");

@@ -1,6 +1,6 @@
 # Deploying Mnemosyne 2
 
-Mnemosyne 2 has two storage paths. The local engine and its MCP server use a SQLite file and lexical retrieval. The existing `createMnemosyne()` API uses Qdrant and an embedding endpoint. The local MCP server does not connect to Qdrant, Redis, FalkorDB, MongoDB, or a model provider.
+Mnemosyne 2 has two storage paths. The local engine and its MCP server use a SQLite file and lexical retrieval by default. The existing `createMnemosyne()` API uses Qdrant and an embedding endpoint. The local MCP server does not connect to Qdrant, Redis, FalkorDB, or MongoDB. It makes no model-provider calls by default; an explicit `--provider-config` enables hybrid queries that send query text to the configured embedding endpoint. See [semantic indexing and hybrid recall](RUNTIME.md#hybrid-retrieval) for provider setup and data flow.
 
 This guide describes the source build in this repository. A release candidate in source does not imply that its version is available on npm.
 
@@ -147,6 +147,6 @@ Forgetting purges content from the live local memory store and its searchable/de
 
 ## Release checks
 
-CI runs typechecking, a build, tests, a production dependency audit, and an installation smoke test of the packed artifact on Node 22.16.0 and Node 24. The smoke test runs the installed CLI demo and loads the root, local, MCP, and reflection package exports.
+CI runs typechecking, a build, tests, a production dependency audit, and an installation smoke test of the packed artifact on Node 22.16.0 and Node 24. CI and publishing use the same artifact verifier. It imports every declared package export, checks all declared JavaScript and type files, executes both installed CLI demonstrations, checks package/CLI/MCP version agreement, and verifies the tarball integrity and installation receipt.
 
 The publication workflow runs only on a published GitHub release and uses the existing `npm-publish` environment. It rejects package-name or release-tag mismatches and requires GitHub's prerelease status to agree with the package version. Prereleases go to the npm `next` tag; stable versions go to `latest`. It checks and installs the tarball before publishing that exact artifact with provenance. Repository changes alone do not publish a package.

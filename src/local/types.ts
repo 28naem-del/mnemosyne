@@ -34,6 +34,8 @@ export interface MemoryRecord {
   updatedAt: string;
   status: MemoryStatus;
   supersedes?: string;
+  /** Kernel-recorded correction cascade. Absent on ambiguous legacy invalidations. */
+  invalidation?: { sourceId: string; correctionId: string; recordedAt: string };
   dependencies: string[];
   metadata: Record<string, JsonValue>;
 }
@@ -65,6 +67,8 @@ export interface LocalMemoryOptions {
 
 export interface RecallInput {
   query: string;
+  /** BM25 is the default. Explicit overlap retains the earlier lexical formula. */
+  lexicalScoring?: 'overlap' | 'bm25';
   limit?: number;
   kinds?: MemoryKind[];
   includeUntrusted?: boolean;
@@ -72,7 +76,7 @@ export interface RecallInput {
   asOf?: string;
   /** Only use memories and outcome evidence recorded by this time. */
   knownAt?: string;
-  /** SQL-ranked candidate budget before provenance checks, at most 10000. */
+  /** Candidate budget, at most 10000. BM25 scores all scoped matches before retaining candidates. */
   maxCandidates?: number;
 }
 
@@ -110,10 +114,22 @@ export interface HybridRecallOptions {
   embedder: MemoryEmbedder;
   reranker?: MemoryReranker;
   signal?: AbortSignal;
-  /** Per-provider-call deadline; late results are ignored. */
+  /** Deadline for each provider call and for the cooperative full vector scan; incomplete scans reject. */
   timeoutMs?: number;
-  /** Maximum vector candidates scanned, at most 10000. */
+  /** Maximum best-scoring vector candidates retained, at most 10000. Every authorized indexed row is scanned. */
   maxCandidates?: number;
+}
+
+export interface CompileInput {
+  query: string;
+  /** BM25 is the default; overlap retains the earlier lexical formula. */
+  lexicalScoring?: 'overlap' | 'bm25';
+  maxTokens: number;
+  taskId?: string;
+  /** Real-world time represented by this packet. Historical context is labeled in its envelope. */
+  asOf?: string;
+  /** Excludes records, corrections and outcome evidence learned after this instant. */
+  knownAt?: string;
 }
 
 export interface RecallResult {

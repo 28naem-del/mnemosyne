@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { canonical } from '../local/validation.js';
+import { MIGRATION_PROFILES } from './types.js';
 
 export const migrationHash = (value: unknown): string => createHash('sha256').update(canonical(value)).digest('hex');
 export const bytesHash = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
@@ -12,7 +13,7 @@ const counts = z.object({ create: z.number().int().nonnegative(), unchanged: z.n
 export const bindingSchema = z.object({
   ...base, type: z.literal('binding'), canonicalHash: digest, rawHash: digest, rawBytes: z.number().int().min(0).max(65536),
   trust: z.enum(['untrusted', 'observed']), disposition: z.enum(['create', 'quarantine']), storage: z.enum(['capture', 'pages']),
-  origin: z.object({ inputHash: digest, startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), profile: z.enum(['mnemosyne-memcell-array', 'mnemosyne-qdrant-scroll', 'markdown', 'mem0-array', 'mem0-results', 'mem0-page', 'letta-blocks']) }).strict(),
+  origin: z.object({ inputHash: digest, startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), profile: z.enum(MIGRATION_PROFILES) }).strict(),
   source: reference.optional(), rawPages: z.array(reference).max(4), projection: reference.optional(), textHash: digest.optional(),
 }).strict();
 export const rawPageSchema = z.object({ ...base, type: z.literal('raw-page'), identity: digest, rawHash: digest, index: z.number().int().min(0).max(3), base64: z.string().max(21848) }).strict();

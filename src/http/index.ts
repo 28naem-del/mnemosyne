@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { z } from 'zod';
-import type { ContextPacket, LocalMemory, RecallInput, RecallResult } from '../local/index.js';
+import type { CompileInput, ContextPacket, LocalMemory, RecallInput, RecallResult } from '../local/index.js';
 import { MemoryRuntime } from '../runtime/index.js';
 import { MemoryBranches } from '../branches/index.js';
 import { MemoryRelations } from '../relations/index.js';
@@ -12,7 +12,7 @@ const text = (max: number) => z.string().min(1).max(max).refine(value => value.t
 const id = text(160);
 const source = z.object({ uri: text(2048), revision: text(512).optional(), author: text(512).optional(), observedAt: z.iso.datetime().transform(value => new Date(value).toISOString()).optional() }).strict();
 const kind = z.enum(['fact', 'preference', 'decision', 'procedure', 'observation', 'checkpoint']);
-const query = z.object({ query: text(4096), limit: z.number().int().min(1).max(100).optional(), includeUntrusted: z.boolean().optional(), kinds: z.array(kind).max(6).optional(), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional() }).strict();
+const query = z.object({ query: text(4096), limit: z.number().int().min(1).max(100).optional(), includeUntrusted: z.boolean().optional(), kinds: z.array(kind).max(6).optional(), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional(), lexicalScoring: z.enum(['bm25', 'overlap']).optional() }).strict();
 const store = z.object({ text: text(16000), source, kind: kind.exclude(['checkpoint']).optional(), key: text(256).optional(), visibility: z.enum(['private', 'workspace']).optional(), dependencies: z.array(id).max(64).optional(), idempotencyKey: text(256).optional() }).strict();
 const correct = z.object({ id, text: text(16000), source, reason: text(4096) }).strict();
 
@@ -23,7 +23,7 @@ export interface MemoryPrincipal {
   allowDestructive?: boolean;
   /** Controller-configured adapter; HTTP callers cannot select providers or credentials. */
   recall?: (input: RecallInput) => Promise<RecallResult[]>;
-  context?: (input: { query: string; maxTokens: number; taskId?: string }) => Promise<ContextPacket>;
+  context?: (input: CompileInput) => Promise<ContextPacket>;
   runtime?: MemoryRuntime;
 }
 export interface MemoryHttpOptions {
@@ -123,7 +123,7 @@ export async function startMemoryHttp(options: MemoryHttpOptions): Promise<{ url
       switch (operation) {
         case 'recall': { const input = query.parse(body); result = principal.recall ? await principal.recall(input) : memory.recall(input); break; }
         case 'context': {
-          const input = z.object({ query: text(4096), maxTokens: z.number().int().min(64).max(32768), taskId: id.optional() }).strict().parse(body);
+          const input = z.object({ query: text(4096), maxTokens: z.number().int().min(64).max(32768), taskId: id.optional(), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional(), lexicalScoring: z.enum(['bm25', 'overlap']).optional() }).strict().parse(body);
           result = principal.context ? await principal.context(input) : memory.compile(input); break;
         }
         case 'inspect': {
@@ -161,7 +161,7 @@ export async function startMemoryHttp(options: MemoryHttpOptions): Promise<{ url
         }
         case 'branch-merge': result = new MemoryBranches(memory).merge(z.object({ id }).strict().parse(body).id); break;
         case 'entity-resolve': { const input = z.object({ name: text(256), type: id.optional() }).strict().parse(body); result = new MemoryRelations(memory).resolve(input.name, input.type); break; }
-        case 'traverse': result = new MemoryRelations(memory).traverse(z.object({ entityId: id, maxDepth: z.number().int().min(1).max(4).optional(), maxNodes: z.number().int().min(1).max(200).optional(), predicates: z.array(id).max(32).optional(), direction: z.enum(['in', 'out', 'both']).optional(), asOf: z.iso.datetime().optional() }).strict().parse(body)); break;
+        case 'traverse': result = new MemoryRelations(memory).traverse(z.object({ entityId: id, maxDepth: z.number().int().min(1).max(4).optional(), maxNodes: z.number().int().min(1).max(200).optional(), predicates: z.array(id).max(32).optional(), direction: z.enum(['in', 'out', 'both']).optional(), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional() }).strict().parse(body)); break;
         default: throw new ApiError(404, 'Unknown operation');
       }
       if (authenticate(request) !== principal) throw new ApiError(401, 'Principal revoked');

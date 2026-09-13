@@ -26,4 +26,4 @@ Checkpoints preserve task goals, completed and pending work, constraints, decisi
 
 ## Outside this release
 
-No hosted synchronization, encrypted storage, semantic local embeddings, autonomous background reflection, automatic cross-engine migration, universal agent compatibility claim, or verified public-benchmark score is included. An MCP-capable client can invoke the tools; individual clients still need integration testing.
+No hosted synchronization, encrypted storage, automatically started reflection daemon, universal agent compatibility claim, or verified public-benchmark score is included. Local hybrid retrieval supports an explicitly configured embedding provider. The gradual bridge supports read-only legacy adapters, and reviewed full imports support explicit export profiles; neither claims universal account migration. An MCP-capable client can invoke the tools; individual clients still need integration testing.

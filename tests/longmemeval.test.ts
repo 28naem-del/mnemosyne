@@ -138,7 +138,7 @@ describe('isolated retrieval-only baselines', () => {
     expect(readdirSync(tempParent)).toEqual([]);
   });
 
-  it('reports and applies the bounded recent vector window independently of full-history indexing', async () => {
+  it('retains nearest semantic evidence across full eligible history even with one retained candidate', async () => {
     const row = question({ question: 'orchid', haystack_session_ids: ['recent', 'older'], answer_session_ids: ['older'],
       haystack_sessions: [[{ role: 'user', content: 'Desert hiking' }], [{ role: 'user', content: 'Greenhouse preference' }]] });
     const embedder: MemoryEmbedder = { ...vectors, async embed(texts) { return texts.map(text => /orchid|Greenhouse/.test(text) ? [1, 0] : [0, 1]); } };
@@ -146,9 +146,20 @@ describe('isolated retrieval-only baselines', () => {
     const wider = await runLongMemEval([row], { embedder, maxCandidates: 2 });
     expect(narrow.results[0].indexedTurns).toBe(2);
     expect(narrow.limits.maxCandidates).toBe(1);
-    expect(narrow.results[0].baselines.hybrid!.retrievedTurns).toEqual([]);
+    expect(narrow.results[0].baselines.hybrid!.retrievedSessionIds).toEqual(['older']);
+    expect(narrow.results[0].baselines.hybrid!.evidenceSessionRecall).toBe(1);
     expect(wider.results[0].baselines.hybrid!.evidenceSessionRecall).toBe(1);
     await expect(runLongMemEval([row], { maxCandidates: 10001 })).rejects.toThrow('maxCandidates');
+  });
+
+  it('pins both v1 lexical channels to overlap independently of the product ranking default', async () => {
+    const recall = vi.spyOn(LocalMemory.prototype, 'recall');
+    const hybrid = vi.spyOn(LocalMemory.prototype, 'recallHybrid');
+    const report = await runLongMemEval([question()], { embedder: vectors });
+    expect(recall.mock.calls.length).toBeGreaterThan(0); expect(hybrid).toHaveBeenCalledOnce();
+    expect(recall.mock.calls.every(([input]) => input.lexicalScoring === 'overlap')).toBe(true);
+    expect(hybrid.mock.calls[0][0].lexicalScoring).toBe('overlap');
+    expect(report.limitations.join(' ')).toContain('explicitly use overlap');
   });
 
   it('does not let an earlier question history satisfy a later question, even with reused session IDs', async () => {

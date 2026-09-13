@@ -228,11 +228,15 @@
     } catch {
       byId('run-score').textContent = 'Recording unavailable';
       const loading = byId('demo-loading');
-      loading.replaceChildren(element('p', '', 'The recorded run could not be loaded. Serve this site over HTTP, then reload the page, or reproduce the run locally with npm run demo.'));
+      loading.replaceChildren(element('p', '', 'The recorded run could not be loaded. Serve this site over HTTP, then reload the page. Once the matching source release is published, reproduce the run locally with npm run demo.'));
       const link = element('a', '', 'Open the raw evidence file');
       link.href = './demo.json';
       loading.append(link);
-    } finally { window.clearTimeout(timeout); }
+    } finally {
+      window.clearTimeout(timeout);
+      demo.dataset.initialLayout = 'settled';
+      window.dispatchEvent(new CustomEvent('mnemosyne:demoready'));
+    }
   }
   void loadDemo();
 })();

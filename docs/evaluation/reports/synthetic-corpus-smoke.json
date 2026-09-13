@@ -1,0 +1,721 @@
+{
+  "kind": "offline corpus retrieval evaluation",
+  "protocol": "mnemosyne-corpus-retrieval-v1",
+  "dataset": {
+    "dataset": "Synthetic corpus smoke test; not a public benchmark",
+    "revision": "fixture-v1",
+    "license": "MIT; first-party synthetic fixture",
+    "verification": "caller-supplied",
+    "adapter": "synthetic-protocol-example-v1",
+    "normalizedSha256": "f637000c9db482dfd98b7fe2e648e1291f0fc5b7061c63ff31279cbcdf8b3691",
+    "questions": 3,
+    "corpora": 1
+  },
+  "runtime": {
+    "node": "v22.16.0",
+    "platform": "darwin/arm64",
+    "implementationSha256": "abf77547ac1bd51c872a7ee0d1c5d25d8c8f12061517b905e11c481df7ae645f",
+    "fingerprint": "SHA256 of relative paths and bytes of all runtime JS (or source TS in source execution), excluding declarations"
+  },
+  "settings": {
+    "topK": 20,
+    "maxContextUnits": 8192,
+    "chunkBytes": 4096,
+    "maxQuestions": 5000,
+    "maxTurnsPerCorpus": 100000,
+    "maxCorpusBytes": 67108864,
+    "maxTotalBytes": 536870912,
+    "maxCandidates": 10000,
+    "timeoutMs": 600000,
+    "maxEmbeddingCalls": 10000,
+    "maxEmbeddingInputBytes": 536870912,
+    "accountingId": "utf8-bytes-v1",
+    "bm25Condition": "enabled",
+    "hybridLexicalScoring": "overlap"
+  },
+  "calls": {
+    "embedding": 0,
+    "embeddingInputBytes": 0,
+    "generation": 0,
+    "judge": 0
+  },
+  "answerQuality": "not-evaluated",
+  "complete": true,
+  "ingestion": [
+    {
+      "corpusId": "example-conversation",
+      "turns": 4,
+      "chunks": 4,
+      "bytes": 148,
+      "milliseconds": 7.627875000000003,
+      "embeddingMilliseconds": 0
+    }
+  ],
+  "attempts": [
+    {
+      "questionId": "location",
+      "category": "single-evidence",
+      "condition": "no-memory",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 0,
+        "retrievedGroups": 0,
+        "anyHit": false,
+        "allHit": false,
+        "recall": 0,
+        "precision": 0,
+        "reciprocalRank": 0
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 0,
+        "retrievedGroups": 0,
+        "anyHit": false,
+        "allHit": false,
+        "recall": 0,
+        "precision": 0,
+        "reciprocalRank": 0
+      },
+      "retrievedChunks": 0,
+      "packedChunks": 0,
+      "contextBytes": 84,
+      "contextUnits": 84,
+      "retrievalMs": 0.0002920000000017353,
+      "packingMs": 0.023500000000005627,
+      "selected": []
+    },
+    {
+      "questionId": "location",
+      "category": "single-evidence",
+      "condition": "full-context",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 1,
+        "retrievedGroups": 4,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.25,
+        "reciprocalRank": 1
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 1,
+        "retrievedGroups": 4,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.25,
+        "reciprocalRank": 1
+      },
+      "retrievedChunks": 4,
+      "packedChunks": 4,
+      "contextBytes": 516,
+      "contextUnits": 516,
+      "retrievalMs": 0.0002080000000006521,
+      "packingMs": 0.02604100000000642,
+      "selected": [
+        {
+          "turnId": "turn-1",
+          "startByte": 0,
+          "endByte": 28
+        },
+        {
+          "turnId": "turn-2",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-3",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-4",
+          "startByte": 0,
+          "endByte": 52
+        }
+      ],
+      "requiredFullContextUnits": 516
+    },
+    {
+      "questionId": "location",
+      "category": "single-evidence",
+      "condition": "lexical",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 1,
+        "retrievedGroups": 2,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.5,
+        "reciprocalRank": 0.5
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 1,
+        "retrievedGroups": 2,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.5,
+        "reciprocalRank": 0.5
+      },
+      "retrievedChunks": 2,
+      "packedChunks": 2,
+      "contextBytes": 285,
+      "contextUnits": 285,
+      "retrievalMs": 0.3424580000000006,
+      "packingMs": 0.05579200000000384,
+      "selected": [
+        {
+          "turnId": "turn-2",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-1",
+          "startByte": 0,
+          "endByte": 28
+        }
+      ]
+    },
+    {
+      "questionId": "location",
+      "category": "single-evidence",
+      "condition": "bm25",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 1,
+        "retrievedGroups": 2,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.5,
+        "reciprocalRank": 0.5
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 1,
+        "matchedGroups": 1,
+        "retrievedGroups": 2,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.5,
+        "reciprocalRank": 0.5
+      },
+      "retrievedChunks": 2,
+      "packedChunks": 2,
+      "contextBytes": 285,
+      "contextUnits": 285,
+      "retrievalMs": 0.3165419999999983,
+      "packingMs": 0.009208000000000993,
+      "selected": [
+        {
+          "turnId": "turn-2",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-1",
+          "startByte": 0,
+          "endByte": 28
+        }
+      ]
+    },
+    {
+      "questionId": "plants",
+      "category": "multiple-evidence",
+      "condition": "no-memory",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 0,
+        "retrievedGroups": 0,
+        "anyHit": false,
+        "allHit": false,
+        "recall": 0,
+        "precision": 0,
+        "reciprocalRank": 0
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 0,
+        "retrievedGroups": 0,
+        "anyHit": false,
+        "allHit": false,
+        "recall": 0,
+        "precision": 0,
+        "reciprocalRank": 0
+      },
+      "retrievedChunks": 0,
+      "packedChunks": 0,
+      "contextBytes": 84,
+      "contextUnits": 84,
+      "retrievalMs": 0.00012499999999704414,
+      "packingMs": 0.0030000000000001137,
+      "selected": []
+    },
+    {
+      "questionId": "plants",
+      "category": "multiple-evidence",
+      "condition": "full-context",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 2,
+        "retrievedGroups": 4,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.5,
+        "reciprocalRank": 0.5
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 2,
+        "retrievedGroups": 4,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.5,
+        "reciprocalRank": 0.5
+      },
+      "retrievedChunks": 4,
+      "packedChunks": 4,
+      "contextBytes": 516,
+      "contextUnits": 516,
+      "retrievalMs": 0.00012499999999704414,
+      "packingMs": 0.006416000000001532,
+      "selected": [
+        {
+          "turnId": "turn-1",
+          "startByte": 0,
+          "endByte": 28
+        },
+        {
+          "turnId": "turn-2",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-3",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-4",
+          "startByte": 0,
+          "endByte": 52
+        }
+      ],
+      "requiredFullContextUnits": 516
+    },
+    {
+      "questionId": "plants",
+      "category": "multiple-evidence",
+      "condition": "lexical",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 2,
+        "retrievedGroups": 3,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.6666666666666666,
+        "reciprocalRank": 1
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 2,
+        "retrievedGroups": 3,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.6666666666666666,
+        "reciprocalRank": 1
+      },
+      "retrievedChunks": 3,
+      "packedChunks": 3,
+      "contextBytes": 389,
+      "contextUnits": 389,
+      "retrievalMs": 0.15349999999999397,
+      "packingMs": 0.006541999999996051,
+      "selected": [
+        {
+          "turnId": "turn-2",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-3",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-1",
+          "startByte": 0,
+          "endByte": 28
+        }
+      ]
+    },
+    {
+      "questionId": "plants",
+      "category": "multiple-evidence",
+      "condition": "bm25",
+      "answerability": "answerable",
+      "answerSchema": "text",
+      "status": "completed",
+      "retrieval": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 2,
+        "retrievedGroups": 3,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.6666666666666666,
+        "reciprocalRank": 1
+      },
+      "packed": {
+        "annotated": true,
+        "targetGroups": 2,
+        "matchedGroups": 2,
+        "retrievedGroups": 3,
+        "anyHit": true,
+        "allHit": true,
+        "recall": 1,
+        "precision": 0.6666666666666666,
+        "reciprocalRank": 1
+      },
+      "retrievedChunks": 3,
+      "packedChunks": 3,
+      "contextBytes": 389,
+      "contextUnits": 389,
+      "retrievalMs": 0.30537500000001216,
+      "packingMs": 0.005624999999994884,
+      "selected": [
+        {
+          "turnId": "turn-3",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-2",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-1",
+          "startByte": 0,
+          "endByte": 28
+        }
+      ]
+    },
+    {
+      "questionId": "birthday",
+      "category": "unanswerable",
+      "condition": "no-memory",
+      "answerability": "unanswerable",
+      "answerSchema": "missing",
+      "status": "completed",
+      "retrieval": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 0,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "packed": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 0,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "retrievedChunks": 0,
+      "packedChunks": 0,
+      "contextBytes": 84,
+      "contextUnits": 84,
+      "retrievalMs": 0.00016700000000469117,
+      "packingMs": 0.0014590000000112013,
+      "selected": []
+    },
+    {
+      "questionId": "birthday",
+      "category": "unanswerable",
+      "condition": "full-context",
+      "answerability": "unanswerable",
+      "answerSchema": "missing",
+      "status": "completed",
+      "retrieval": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 4,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "packed": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 4,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "retrievedChunks": 4,
+      "packedChunks": 4,
+      "contextBytes": 516,
+      "contextUnits": 516,
+      "retrievalMs": 0.000125000000011255,
+      "packingMs": 0.0035419999999959373,
+      "selected": [
+        {
+          "turnId": "turn-1",
+          "startByte": 0,
+          "endByte": 28
+        },
+        {
+          "turnId": "turn-2",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-3",
+          "startByte": 0,
+          "endByte": 34
+        },
+        {
+          "turnId": "turn-4",
+          "startByte": 0,
+          "endByte": 52
+        }
+      ],
+      "requiredFullContextUnits": 516
+    },
+    {
+      "questionId": "birthday",
+      "category": "unanswerable",
+      "condition": "lexical",
+      "answerability": "unanswerable",
+      "answerSchema": "missing",
+      "status": "completed",
+      "retrieval": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 1,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "packed": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 1,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "retrievedChunks": 1,
+      "packedChunks": 1,
+      "contextBytes": 187,
+      "contextUnits": 187,
+      "retrievalMs": 0.13275000000000148,
+      "packingMs": 0.0029169999999965057,
+      "selected": [
+        {
+          "turnId": "turn-3",
+          "startByte": 0,
+          "endByte": 34
+        }
+      ]
+    },
+    {
+      "questionId": "birthday",
+      "category": "unanswerable",
+      "condition": "bm25",
+      "answerability": "unanswerable",
+      "answerSchema": "missing",
+      "status": "completed",
+      "retrieval": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 1,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "packed": {
+        "annotated": false,
+        "targetGroups": 0,
+        "matchedGroups": 0,
+        "retrievedGroups": 1,
+        "anyHit": null,
+        "allHit": null,
+        "recall": null,
+        "precision": null,
+        "reciprocalRank": null
+      },
+      "retrievedChunks": 1,
+      "packedChunks": 1,
+      "contextBytes": 187,
+      "contextUnits": 187,
+      "retrievalMs": 0.12950000000000728,
+      "packingMs": 0.00245800000000429,
+      "selected": [
+        {
+          "turnId": "turn-3",
+          "startByte": 0,
+          "endByte": 34
+        }
+      ]
+    }
+  ],
+  "summaries": {
+    "no-memory": {
+      "questions": 3,
+      "completed": 3,
+      "overflows": 0,
+      "errors": 0,
+      "annotatedQuestions": 2,
+      "anyHitRate": 0,
+      "allHitRate": 0,
+      "meanRecall": 0,
+      "meanPrecision": 0,
+      "mrr": 0,
+      "packedAnyHitRate": 0,
+      "packedAllHitRate": 0,
+      "packedMeanRecall": 0,
+      "meanContextUnits": 84,
+      "p50RetrievalMs": 0.00016700000000469117,
+      "p95RetrievalMs": 0.0002920000000017353
+    },
+    "full-context": {
+      "questions": 3,
+      "completed": 3,
+      "overflows": 0,
+      "errors": 0,
+      "annotatedQuestions": 2,
+      "anyHitRate": 1,
+      "allHitRate": 1,
+      "meanRecall": 1,
+      "meanPrecision": 0.375,
+      "mrr": 0.75,
+      "packedAnyHitRate": 1,
+      "packedAllHitRate": 1,
+      "packedMeanRecall": 1,
+      "meanContextUnits": 516,
+      "p50RetrievalMs": 0.000125000000011255,
+      "p95RetrievalMs": 0.0002080000000006521
+    },
+    "lexical": {
+      "questions": 3,
+      "completed": 3,
+      "overflows": 0,
+      "errors": 0,
+      "annotatedQuestions": 2,
+      "anyHitRate": 1,
+      "allHitRate": 1,
+      "meanRecall": 1,
+      "meanPrecision": 0.5833333333333333,
+      "mrr": 0.75,
+      "packedAnyHitRate": 1,
+      "packedAllHitRate": 1,
+      "packedMeanRecall": 1,
+      "meanContextUnits": 287,
+      "p50RetrievalMs": 0.15349999999999397,
+      "p95RetrievalMs": 0.3424580000000006
+    },
+    "bm25": {
+      "questions": 3,
+      "completed": 3,
+      "overflows": 0,
+      "errors": 0,
+      "annotatedQuestions": 2,
+      "anyHitRate": 1,
+      "allHitRate": 1,
+      "meanRecall": 1,
+      "meanPrecision": 0.5833333333333333,
+      "mrr": 0.75,
+      "packedAnyHitRate": 1,
+      "packedAllHitRate": 1,
+      "packedMeanRecall": 1,
+      "meanContextUnits": 287,
+      "p50RetrievalMs": 0.30537500000001216,
+      "p95RetrievalMs": 0.3165419999999983
+    }
+  },
+  "notices": [
+    "This hand-authored fixture demonstrates protocol wiring only. It cannot measure real-world retrieval quality.",
+    "Normalized protocol file SHA256 6bbcbfa03dab7ca6f402e4563b4a91abc8c29e1832af9879d8b3749fe37538f1; bytes 1861. Original dataset provenance remains caller supplied."
+  ],
+  "durationMs": 24.010875,
+  "limitations": [
+    "Retrieval coverage is not generated-answer correctness, abstention accuracy, citation entailment, or an official benchmark score. No reader or judge runs.",
+    "K counts UTF-8 chunks, with evidence scored at original turn/session group granularity. Finding any chunk from a group does not prove the answer-bearing passage was selected.",
+    "Full-context retrieves all history and only supplies it when the complete envelope fits. Overflow remains in packed-coverage denominators; no silent truncation.",
+    "Unanswerable and unannotated cases remain in attempt counts but have null positive-evidence metrics. Unsupported answer schemas remain reported; no judge score is invented.",
+    "Context accounting defaults to exact UTF-8 bytes, not model tokens. Caller-supplied counters and embedding identities are attestations.",
+    "Fixed ingestion timestamps avoid wall-clock-dependent ranking; original dates remain in delivered context. The retrieval run does not test temporal validity or mutation behavior.",
+    "Latency is local and uncontrolled. Retrieval excludes ingestion, embedding indexing and packing; conditions run in fixed order. Synchronous SQLite operations cannot be preempted.",
+    "Hybrid candidate scope follows the selected engine and maxCandidates setting. Embedding costs are explicit and counted but callbacks must honor cancellation."
+  ]
+}

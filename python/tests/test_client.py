@@ -84,6 +84,27 @@ class MemoryClientTest(unittest.TestCase):
         self.assertEqual(post[:3], ("POST", "/v1/store", "Bearer " + TOKEN))
         self.assertEqual(json.loads(post[3]), {"text": "café observation", "source": {"uri": "test:python"}, "idempotencyKey": "retry-1"})
 
+    def test_context_forwards_temporal_clocks_and_lexical_mode_without_inventing_defaults(self):
+        as_of = "2026-09-03T00:00:00.000Z"
+        known_at = "2026-09-10T00:00:00.000Z"
+        cases = (
+            ({}, {}),
+            ({"as_of": as_of}, {"asOf": as_of}),
+            ({"known_at": known_at}, {"knownAt": known_at}),
+            ({"lexical_scoring": "overlap"}, {"lexicalScoring": "overlap"}),
+            ({"as_of": as_of, "known_at": known_at, "lexical_scoring": "bm25"},
+             {"asOf": as_of, "knownAt": known_at, "lexicalScoring": "bm25"}),
+        )
+        for options, expected in cases:
+            with self.subTest(options=options):
+                before = len(self.server.requests)
+                self.assertEqual(self.client.context("café release", max_tokens=2048, **options), {"live": True})
+                self.assertEqual(len(self.server.requests), before + 1)
+                request = self.server.requests[-1]
+                self.assertEqual(request[:3], ("POST", "/v1/context", "Bearer " + TOKEN))
+                self.assertEqual(json.loads(request[3]), {"query": "café release", "maxTokens": 2048, **expected})
+
+
     def test_redirect_is_rejected_without_followup_or_mutation_retry(self):
         self.server.mode = "redirect"
         with self.assertRaises(MemoryError) as error:

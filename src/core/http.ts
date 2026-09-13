@@ -24,6 +24,7 @@ export async function qdrantRequest(
   if (options.apiKey) headers.set("api-key", options.apiKey);
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
     ...init,
+    redirect: "error",
     headers,
     signal: init.signal ?? AbortSignal.timeout(options.timeoutMs ?? 15_000),
   });

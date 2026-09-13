@@ -18,7 +18,7 @@ export interface LongMemEvalOptions {
   topK?: number;
   /** Opt-in day-level compatibility for benchmark histories with same-day timestamps. */
   timestampPolicy?: 'strict-instant' | 'question-day';
-  /** Lexical candidate budget and most-recent vector candidate window. */
+  /** Lexical candidate budget and retained semantic candidates; vectors are scanned across eligible history. */
   maxCandidates?: number;
   maxQuestions?: number;
   maxSessionsPerQuestion?: number;
@@ -287,7 +287,8 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
           }
         }
         clock = item.retrievalCutoff;
-        const query = { query: item.question, limit: budget.topK, maxCandidates: budget.maxCandidates, asOf: item.retrievalCutoff, knownAt: item.retrievalCutoff };
+        // Protocol v1's lexical baseline remains overlap even if the product default changes.
+        const query = { query: item.question, limit: budget.topK, maxCandidates: budget.maxCandidates, asOf: item.retrievalCutoff, knownAt: item.retrievalCutoff, lexicalScoring: 'overlap' as const };
         const convert = (hits: RecallResult[]) => hits.map(hit => {
           const reference = references.get(hit.memory.id);
           if (!reference) throw new Error('Retrieval returned an ID outside this question history.');
@@ -318,7 +319,7 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
     summary[baseline] = { all: summarize(results, baseline), answerable: summarize(results.filter(row => row.answerability === 'answerable'), baseline), unanswerable: summarize(results.filter(row => row.answerability === 'unanswerable'), baseline), byQuestionType };
   }
   return { kind: 'LongMemEval-style offline retrieval evaluation', protocol: 'v1-turn-retrieval-session-evidence', dataset: { origin: 'caller-supplied; official provenance not verified', ...(label ? { label } : {}), ...(revision ? { revision } : {}), sha256: dataset.sha256, bytes: dataset.bytes, questions: results.length }, granularity: 'turn', topK: budget.topK, providerMode: supplied ? 'caller-supplied-embedder' : 'none', ...(supplied ? { embeddingModel: { model: supplied.model, dimensions: supplied.dimensions } } : {}), calls, answerQuality: { status: 'not-evaluated', abstentionAccuracy: null }, results, summary, limits: budget, storage: 'fresh scoped SQLite per question; temporary files removed', durationMs: performance.now() - started,
-    limitations: ['Retrieval scores do not measure answer correctness, reasoning quality or semantic abstention.', 'K counts retrieved turns; evidence metrics deduplicate their session IDs. These are not official session-retrieval-at-K results.', 'Questions without evidence-session labels have null evidence metrics and are excluded from evidence averages.', 'Naive benchmark timestamps are interpreted as UTC for chronological ordering; no real-world timezone is inferred.', 'timestampPolicy defaults to strict-instant. Explicit question-day mode uses the end of the normalized UTC question day and may include history later than the stated question instant; each case reports its cutoff and affected session count.', 'Time budgets are checked between bounded SQLite operations; an individual synchronous operation cannot be preempted.', 'maxCandidates bounds lexical SQL candidates and the most-recent vector window. Hybrid fusion uses up to 100 ranked candidates per channel; it does not search every vector in larger histories.', 'No official dataset was downloaded or provenance authenticated by this runner. Caller embedding adapters determine their own networking and cost.'], protocolSources: LONGMEMEVAL_PROTOCOL_SOURCES };
+    limitations: ['Retrieval scores do not measure answer correctness, reasoning quality or semantic abstention.', 'K counts retrieved turns; evidence metrics deduplicate their session IDs. These are not official session-retrieval-at-K results.', 'Questions without evidence-session labels have null evidence metrics and are excluded from evidence averages.', 'Naive benchmark timestamps are interpreted as UTC for chronological ordering; no real-world timezone is inferred.', 'timestampPolicy defaults to strict-instant. Explicit question-day mode uses the end of the normalized UTC question day and may include history later than the stated question instant; each case reports its cutoff and affected session count.', 'Time budgets are checked between bounded SQLite operations; an individual synchronous operation cannot be preempted.', 'Protocol v1 lexical and hybrid lexical channels explicitly use overlap scoring, independently of the product ranking default. maxCandidates bounds lexical candidates and retained semantic candidates; semantic similarity scans all eligible indexed history before retaining its best candidates. Hybrid fusion uses up to 100 ranked candidates per channel.', 'No official dataset was downloaded or provenance authenticated by this runner. Caller embedding adapters determine their own networking and cost.'], protocolSources: LONGMEMEVAL_PROTOCOL_SOURCES };
 }
 
 /** Bounded regular-file JSON reader; callers must already possess the dataset. */

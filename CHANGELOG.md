@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.8] — source release candidate, 2026-09-13
+
+### Added
+
+- Gradual migration beside an explicitly supplied, read-only legacy search adapter. Used-record capture, stable origins, paired recall checks, shadow/assist/preferred routing, reconciliation and routing rollback complement full export migration.
+- A corpus evaluation protocol separating original source data, questions and private grading labels, with all-500 LongMemEval support, caller-supplied LoCoMo and BEAM adapters, deterministic oversized-turn splitting, packed evidence scores, timing, failure accounting and implementation fingerprints.
+- Explicit pinned local CPU embeddings and reranking, cached offline inference, process isolation and runtime dependency validation. Provisioning and third-party model licenses remain caller-visible.
+- Persisted skill promotion requirements and `RECOMMENDED_SKILL_PROMOTION_POLICY`, requiring two distinct tasks and two verifier identities. Existing compatibility behavior remains one task and one verifier.
+- An evidence lifecycle diagnostic reporting valid retention, obsolete exposure and citation identity separately, including known failing and unsupported cases.
+
+### Changed and fixed
+
+- Local lexical retrieval now defaults to scoped BM25. Explicit overlap remains available; the older evaluation protocol pins it to preserve historical comparisons.
+- Semantic retrieval scans the full authorized indexed corpus with bounded retained candidates and a deadline, so older indexed evidence is not excluded merely by recency.
+- Context compilation carries independent `asOf` and `knownAt` through SDK, HTTP, MCP and Python. Persisted correction causes improve historical and future-effective projection while retaining conservative handling of ambiguous legacy invalidations.
+- Shared origin erasure prevents gradual and full imports from reviving each other's forgotten identities; agent context packets are rechecked before dispatch.
+- Candidate versions and package exports include the new runtime and evaluation surfaces. Developer documentation now distinguishes source installation, optional providers, benchmark evidence and operational limits.
+
+### Evidence and limits
+
+- On the same 500-question LongMemEval S input, complete annotated-session retrieval at 20 chunks improves from 386/470 to 425/470; after identical 8,192-byte packing, from 367/470 to 382/470. The 30 abstentions remain in attempt counts. Same-day timestamp compatibility, full-context overflows, and the absence of generated-answer scoring are disclosed in the [report](docs/evaluation/BENCHMARKS.md).
+- Gradual migration never writes the original store and continues reconciliation; observed coverage does not establish whole-store migration or answer quality. Local semantic search remains exact scanning, not ANN.
+- Unrelated source-field changes can still retire valid guidance. Encryption, enterprise identity, bidirectional synchronization and six validated native framework integrations remain open. See [release status](docs/UPGRADE-STATUS.md).
+- This entry describes a source candidate. It does not assert npm or PyPI publication.
+
+## [2.0.0-rc.7] — source release candidate, 2026-09-13
+
+- Added the opt-in `MemoryAgent` host loop, explicit event adapters, durable turn reservations, finite observation workers and action bindings that recheck declared dependencies before host dispatch.
+- Added adaptive context with source expansion, hierarchical projections, complete generation fingerprints and invalidation of stale cached selection plans.
+- Added typed, source-backed profiles with supported/unknown/conflict fields and generation revalidation.
+- Added whole-database backup, integrity verification and restore into a new path, including durable jobs and erasure guards. Backups are plaintext and contain all scopes.
+- Added a matched agent experiment harness with isolated no-memory, recent-history, lexical and adaptive conditions; scripted fixtures do not establish model task improvement.
+
+## [2.0.0-rc.6] — source release candidate, 2026-09-13
+
+- Expanded explicit export migration from seven to eleven profiles, adding supported store-item, temporal-edge, memory-record and document-export shapes. Exact accepted formats remain in the [migration guide](docs/MIGRATION.md#supported-shapes).
+- Preserved private/untrusted import defaults, exact original record bytes, stable source identities, atomic application, guarded undo and durable erasure replay protection.
+
 ## [2.0.0-rc.5] — source release candidate, 2026-09-13
 
 - Added offline export migration for seven explicit Mem0, Letta-block, legacy Mnemosyne/Qdrant and Markdown profiles, with exact UTF-8 record spans, owner selection, completeness and byte-accounting reports.
@@ -104,7 +142,7 @@ Read [migration](docs/MIGRATION-v2.md), [issue disposition](docs/ISSUE-AUDIT-202
 
 ## Historical release notes
 
-The entries below preserve earlier release descriptions. They are not an independently verified inventory of current capabilities; current contracts are in the maintained documentation above.
+The entries below preserve earlier release descriptions. Their terminology is historical; current behavior and limitations are described in the maintained contracts above.
 
 ## [1.0.1] — 2026-02-24
 
@@ -115,16 +153,12 @@ The entries below preserve earlier release descriptions. They are not an indepen
 - **Dependency scripts disabled in CI** — Added `--ignore-scripts` to `npm ci` in CI workflow to prevent supply-chain attacks via malicious postinstall scripts
 - **Dependabot enabled** — Automated weekly dependency updates for both npm packages and GitHub Actions, with separate labels for triage
 
-### Fixed
-
-- **Git history cleaned** — Removed internal configuration files from git history that were already deleted from HEAD but remained accessible in prior commits
-
 ## [1.0.0] — 2026-02-23
 
 ### Added
 
-- **Vector memory store/recall/forget** — Store, retrieve, and delete memories using dense vector embeddings via Qdrant for high-accuracy semantic search
-- **BM25 hybrid search** — Combine sparse BM25 keyword matching with dense vector search for superior retrieval precision
+- **Vector memory store/recall/forget** — Store, retrieve, and delete memories using dense vector embeddings via Qdrant for semantic search
+- **BM25 hybrid search** — Combine sparse BM25 keyword matching with dense vector search for combined lexical and semantic retrieval
 - **Spreading activation** — Graph-based spreading activation traversal that surfaces related memories contextually, even when semantic similarity is low
 - **Temporal sequences** — Automatically discover and replay ordered event sequences; predict likely next events from a current trigger
 - **Pattern mining** — Mine co-occurrence clusters, entity correlations, recurring errors, and anomalies from the memory corpus

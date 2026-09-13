@@ -79,8 +79,11 @@ class MemoryClient:
     def recall(self, query, *, limit=10, **filters):
         return self.request("recall", {"query": query, "limit": limit, **filters})
 
-    def context(self, query, *, max_tokens=4096):
-        return self.request("context", {"query": query, "maxTokens": max_tokens})
+    def context(self, query, *, max_tokens=4096, as_of=None, known_at=None, lexical_scoring=None):
+        return self.request("context", {"query": query, "maxTokens": max_tokens,
+                            **({"asOf": as_of} if as_of is not None else {}),
+                            **({"knownAt": known_at} if known_at is not None else {}),
+                            **({"lexicalScoring": lexical_scoring} if lexical_scoring is not None else {})})
 
     def inspect(self, *, memory_id=None, limit=20, cursor=None, include_inactive=False):
         return self.request("inspect", {"id": memory_id} if memory_id else {"limit": limit, "includeInactive": include_inactive, **({"cursor": cursor} if cursor else {})})

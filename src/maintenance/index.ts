@@ -184,7 +184,9 @@ export class MemoryMaintenance {
         const observation = observationSchema.parse(await Promise.race([Promise.resolve().then(() => {
           this.#write();
           if (controller.signal.aborted || signal?.aborted || performance.now() >= deadline) throw new Error('Maintenance deadline or cancellation');
-          return probe({ memory, freshness }, { signal: controller.signal });
+          const current = this.assess(targetId), target = this.memory.get(targetId);
+          if (!target || current.stateHash !== expectedStateHash || ['missing', 'ineligible', 'clock-skew'].includes(current.status)) throw new Error('Source changed before probe dispatch');
+          return probe({ memory: target, freshness: current }, { signal: controller.signal });
         }), stop]));
         if (controller.signal.aborted || signal?.aborted || performance.now() >= deadline) throw new Error('Maintenance deadline or cancellation');
         this.recordCheck({ memoryId: targetId, expectedStateHash, observation }); report[observation.status]++;

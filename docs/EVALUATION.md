@@ -2,6 +2,38 @@
 
 This release separates correctness checks, public-data retrieval measurements and memory-quality claims. No paid model calls, generated-answer evaluation or matched competitor experiments were performed.
 
+## External-review follow-up on the rc8 source candidate
+
+The reviewed source now passes **1,133 tests in 56 files on Node 22.16.0 and Node 24.21.0**, source/example typechecking and build. The Python client passes **9 tests on Python 3.12.13**, both from source and after an offline wheel install into an isolated environment. These are local results; remote CI and publication are separate steps.
+
+The new [corpus protocol and paired report](evaluation/BENCHMARKS.md) retain all 500 LongMemEval S questions, with positive retrieval metrics on 470 answerable questions. Scoped BM25 improves complete annotated-session retrieval from 386/470 to 425/470; after identical context packing, from 367/470 to 382/470. All 499 earlier v1 overlap selections and scores reproduce unchanged under that explicitly pinned legacy scorer. The 100,000-record timings below are historical overlap measurements, not measurements of the new BM25 default.
+
+An executable [evidence lifecycle diagnostic](evaluation/EVIDENCE-PROTOCOL.md) now measures retention and stale exposure, including known failures. Independent review reproduced and verified temporal-cause, future-effective correction, checkpoint privacy, persisted skill promotion and local model process-isolation fixes. It found no remaining blocker in the reviewed scope. Optional local CPU embedding and reranking ran together successfully against synthetic memories with cached offline weights; this establishes integration, not answer accuracy.
+
+The base production dependency audit reports zero known vulnerabilities. A separate clean optional-model install exposed an older transitive image-processing dependency; the [documented consumer override](LOCAL-MODELS.md) selects the patched release and the optional-install audit now also reports zero known vulnerabilities. A startup guard checks the dependency actually resolved by the inference runtime before loading it. The measured frozen benchmark engine predates this provider-only guard; the retrieval and evaluation code are unchanged.
+
+Semgrep found no issues in 17 changed/new source files and three supplemental JavaScript/Python targets. The later dependency helper and worker passed an additional two-file scan with no findings or parse errors. A pre-existing TypeScript partial-parse warning remains in the wider scan; its compiled equivalent scanned without errors. Snyk could not run without authentication. The [briefing audit](EXTERNAL-REVIEW.md) keeps unimplemented capabilities and unmeasured claims explicit.
+
+## Verified rc7 local source checkpoint
+
+The rc7 source passed **948 tests in 45 files on both Node 22.16.0 and Node 24.21.0**, source/example typechecking and build. The unchanged Python client passed **8 tests each on Python 3.10.19 and Python 3.13.12**. New coverage exercises host turns and SDK events, durable replay protection, bounded background work, adaptive context and exact-source expansion, complete generation-state validation, typed profiles, four additional migration profiles, operator backup/restore, a matched-reader experiment harness and packaged command-line workflows.
+
+Independent review found and verified fixes for stale nested summaries, incomplete dependency capture, incorrect transfer scoring, model-claimed usage, background versus per-drain budgets, durable backup publication, profile schema handling and replacement ordering. Context replacement now uses fresh generation identities after retirement, including policy A → B → A and invalidated-predecessor cases. Profiles reject direct or transitive use of their own prior projection before dispatch, preserve conflicts/unknown fields and withhold stale values. No actionable findings remained in the reviewed changes.
+
+The dependency audit reported zero known vulnerabilities. Semgrep applied the security-audit rules to **118 source, script and example files** with zero findings. Two rules that initially timed out completed in a focused rescan with no findings or errors. One existing partial parse warning remains on a type-only export in `src/local/index.ts`. Snyk was attempted on the new modules and source tree but could not run without authentication; this is not a completed Snyk check.
+
+The new [matched experiment](AGENT-EVALUATION.md) example completed 36 scripted reader invocations over four conditions and three trials with zero external model calls. It validates isolation, updates, erasure, scoring and budget plumbing. It is not a real-model performance score, an official public benchmark result or a competitor ranking. The prior public retrieval measurement below is unchanged. The source checkpoint is distinct from the separately recorded final-package, clean-client/Docker simulation and publication state.
+
+README/site checks covered 123 local/repository links and eight desktop/mobile page combinations, including demo controls and documentation anchors. No JavaScript errors or horizontal overflow were observed in those checks. The website is still a local candidate until publication is authorized.
+
+## Verified rc6 local readiness checkpoint
+
+The rc6 source passed **703 tests on Node 22.16.0 and 24.21.0**, source/example typechecking and build. The Python client passed **8 tests each on Python 3.10.19 and 3.13.12**. New coverage checks source-bearing job history erasure, invalidation before provider dispatch, legacy HTTP redirect rejection, command-line policy enforcement and the shared package verifier.
+
+Independent reviewers reproduced and checked fixes for retained private text in failed/retried jobs, callbacks receiving a source after deletion or correction, redirects forwarding backend credentials or embedding text, and restrictive CLI flags being silently ignored. Checks include imported sources, hidden dependent jobs, guarded rollback, historical retrieval and process-boundary command execution. These tests use synthetic data and do not make paid model calls or alter production memory.
+
+CI and publishing now use one installed-artifact verifier covering every declared export and type file, the installed executable, version agreement, tarball integrity and both deterministic demonstrations. A local whole-source Semgrep scan applied 22 matching security rules to 92 files with zero findings; its existing partial parse warning on a type-only export remains. The full dependency audit reports zero known vulnerabilities. Snyk was attempted but remains unavailable without authentication. Local results are separate from remote CI, publication and live-provider validation.
+
 ## Verified rc5 local checkpoint
 
 The rc5 source passed **580 TypeScript tests on Node 22.16.0 and 24.21.0**, plus source/example typechecking and build. New coverage includes 15 exact JSON parser tests, 44 migration planning tests, 60 migration service tests, 14 kernel rollback tests, 25 freshness/read-set tests and 51 migration/health CLI subprocess tests.

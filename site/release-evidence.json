@@ -1,0 +1,62 @@
+{
+  "title": "Mnemosyne Recall — recorded evaluation",
+  "release": "2.0.0-rc.8 source candidate; publication pending",
+  "protocol": "mnemosyne-corpus-retrieval-v1",
+  "dataset": {
+    "sourceUrl": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json",
+    "revision": "98d7416c24c778c2fee6e6f3006e7a073259d48f",
+    "license": "MIT",
+    "sourceSha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+    "sourceBytes": 277383467
+  },
+  "reportSha256": "508d78ffd585e9af75359c377c6bd88cca6bcfc660714a92704571008152ef1a",
+  "measuredImplementationSha256": "781e7e538a49910d25673c3d8b1f8f5b40e29b912f57195417fe3a16e4d0eac3",
+  "questions": 500,
+  "positiveAnnotatedQuestions": 470,
+  "abstentionQuestions": 30,
+  "conditions": [
+    {
+      "name": "Previous lexical scoring",
+      "allSessionsRetrieved": 386,
+      "allSessionsInPackedContext": 367
+    },
+    {
+      "name": "Mnemosyne upgraded lexical scoring",
+      "allSessionsRetrieved": 425,
+      "allSessionsInPackedContext": 382
+    }
+  ],
+  "settings": {
+    "retrievedChunks": 20,
+    "sourceChunkBytes": 4096,
+    "contextEnvelopeBytes": 8192
+  },
+  "calls": {
+    "embedding": 0,
+    "embeddingInputBytes": 0,
+    "generation": 0,
+    "judge": 0
+  },
+  "answerQuality": "not-evaluated",
+  "limits": [
+    "Session-level source coverage does not prove answer-bearing passage coverage or answer correctness.",
+    "Question-day compatibility includes 1475 source sessions later than their question instant on the same day.",
+    "All 500 full-context baselines exceeded the context envelope.",
+    "Frozen project build; later provider-only dependency validation did not change measured retrieval or evaluation code."
+  ],
+  "lifecycleDiagnostic": {
+    "scenarios": 16,
+    "before": {
+      "passed": 9,
+      "failed": 1,
+      "errors": 6
+    },
+    "after": {
+      "passed": 15,
+      "failed": 1,
+      "errors": 0
+    },
+    "openCase": "Unrelated source-field edits can conservatively retire valid dependent guidance. Alternative sufficient evidence is not supported."
+  },
+  "dataPolicy": "Aggregate measurements only. No source conversations, private memory, credentials or local filesystem paths are included."
+}

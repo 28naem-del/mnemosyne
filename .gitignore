@@ -21,8 +21,18 @@ Thumbs.db
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local tooling and Python build caches
+.Codex/
+__pycache__/
+*.py[cod]
+*.egg-info/
+python/build/
+python/dist/
 
 # Logs
 *.log

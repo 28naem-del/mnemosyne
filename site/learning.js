@@ -74,8 +74,12 @@
       byId('learning-content').hidden = false;
     } catch {
       byId('learning-score').textContent = 'Recording unavailable';
-      byId('learning-loading').textContent = 'Serve this site over HTTP to load the recording, or run npm run demo:learning locally. The raw evidence link below remains available.';
-    } finally { window.clearTimeout(timeout); }
+      byId('learning-loading').textContent = 'Serve this site over HTTP to load the recording. Once the matching source release is published, run npm run demo:learning locally. The raw evidence link below remains available.';
+    } finally {
+      window.clearTimeout(timeout);
+      root.dataset.initialLayout = 'settled';
+      window.dispatchEvent(new CustomEvent('mnemosyne:demoready'));
+    }
   }
   void load();
 })();

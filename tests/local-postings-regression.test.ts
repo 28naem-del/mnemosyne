@@ -28,8 +28,8 @@ describe('posting-driven lexical retrieval regression', () => {
       }
       return statement;
     });
-    expect(db.recall({ query: 'NeedleIdentifier' }).map(result => result.memory.id)).toEqual([expected.id]);
-    expect(db.recall({ query: 'catalogue approval', limit: 5 })).toHaveLength(5);
+    expect(db.recall({ query: 'NeedleIdentifier', lexicalScoring: 'overlap' }).map(result => result.memory.id)).toEqual([expected.id]);
+    expect(db.recall({ query: 'catalogue approval', limit: 5, lexicalScoring: 'overlap' })).toHaveLength(5);
     expect(plans).toHaveLength(2);
     for (const plan of plans) {
       expect(plan.some(step => step.includes('local_terms_term') && step.includes('(term=?)'))).toBe(true);
@@ -43,15 +43,15 @@ describe('posting-driven lexical retrieval regression', () => {
     const db = memory(path); const winner = db.store(fact('Café release APPROVAL'));
     const partial = db.store(fact('Release and additional descriptive words'));
     db.store(fact('café release approval', { metadata: { advisory: false } }));
-    const initial = db.recall({ query: 'cafe release approval', limit: 10 });
+    const initial = db.recall({ query: 'cafe release approval', limit: 10, lexicalScoring: 'overlap' });
     expect(initial.map(result => result.memory.id)).toEqual([winner.id, partial.id]);
     expect(initial[0].score).toBeCloseTo(2 / (1 + Math.log1p(3) * 0.1), 12);
     expect(initial[1].score).toBeCloseTo((1 + 1 / 3) / (1 + Math.log1p(5) * 0.1), 12);
     const bob = memory(path, 'bob'), other = memory(path, 'alice', 'other');
     bob.atomic(() => { for (let i = 0; i < 300; i++) bob.store(fact(`Café release APPROVAL ${i}`)); });
     other.store(fact('Café release APPROVAL', { visibility: 'workspace' }));
-    expect(db.recall({ query: 'cafe release approval', limit: 10 })).toEqual(initial);
-    expect(db.recall({ query: 'cafe release approval', limit: 1, maxCandidates: 1 }).map(result => result.memory.id)).toEqual([winner.id]);
+    expect(db.recall({ query: 'cafe release approval', limit: 10, lexicalScoring: 'overlap' })).toEqual(initial);
+    expect(db.recall({ query: 'cafe release approval', limit: 1, maxCandidates: 1, lexicalScoring: 'overlap' }).map(result => result.memory.id)).toEqual([winner.id]);
     const untrusted = db.store(fact('Café release APPROVAL', { trust: 'untrusted', kind: 'decision' }));
     expect(db.recall({ query: 'approval', kinds: ['decision'] })).toEqual([]);
     expect(db.recall({ query: 'approval', kinds: ['decision'], includeUntrusted: true }).map(result => result.memory.id)).toEqual([untrusted.id]);
@@ -66,7 +66,9 @@ describe('posting-driven lexical retrieval regression', () => {
     const revised = db.correct(original.id, { text: 'ReleaseIdentifier revised condition', source: { uri: 'test:revision' }, reason: 'Late correction', validFrom: date(5) });
     expect(db.recall({ query: 'ReleaseIdentifier', asOf: date(6), knownAt: date(7) }).map(result => result.memory.id).sort()).toEqual([original.id, derived.id].sort());
     expect(db.recall({ query: 'ReleaseIdentifier', asOf: date(6), knownAt: date(8) }).map(result => result.memory.id)).toEqual([revised.id]);
-    expect(db.recall({ query: 'ReleaseIdentifier', asOf: date(3), knownAt: date(8) }).map(result => result.memory.id)).toEqual([original.id]);
+    // Advice remains valid before the correction's effective interval, even
+    // once the later correction is known. Current advice remains invalidated.
+    expect(db.recall({ query: 'ReleaseIdentifier', asOf: date(3), knownAt: date(8) }).map(result => result.memory.id).sort()).toEqual([original.id, derived.id].sort());
     expect(db.compile({ query: 'ReleaseIdentifier', maxTokens: 4096 }).items.map(item => item.id)).toEqual([revised.id]);
     day = 9; db.recordOutcome({ memoryId: revised.id, success: false, evidence: 'Explicit failing replay', verifier: 'test', taskId: 'trial' });
     expect(db.recall({ query: 'ReleaseIdentifier', knownAt: date(8) })[0].outcomes.failures).toBe(0);

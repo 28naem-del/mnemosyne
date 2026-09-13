@@ -35,6 +35,20 @@ afterEach(async () => {
 });
 
 describe('real MCP stdio conformance', () => {
+  it('exposes historical context over the actual MCP transport', async () => {
+    const { path } = fixture(); let day = 2;
+    const at = (value: number) => `2026-01-${String(value).padStart(2, '0')}T00:00:00.000Z`;
+    const db = createLocalMemory({ path, workspaceId: 'test', agentId: 'agent-a', now: () => new Date(at(day)) });
+    let oldId: string;
+    try {
+      const old = db.store({ text: 'Atlas quota is 10', source: { uri: 'test:quota' }, trust: 'observed', validFrom: at(1) }); oldId = old.id;
+      day = 10; db.correct(old.id, { text: 'Atlas quota is 20', source: { uri: 'test:quota' }, reason: 'Late update', validFrom: at(5) });
+    } finally { db.close(); }
+    const client = await connect(path);
+    const context = payload(await client.callTool({ name: 'memory_context', arguments: { query: 'Atlas quota', maxTokens: 4096, asOf: at(6), knownAt: at(7), lexicalScoring: 'bm25' } }));
+    expect(context.items.map((item: { id: string }) => item.id)).toEqual([oldId]);
+    expect(JSON.parse(context.text).temporal.knownAt).toBe(at(7));
+  }, 15_000);
   it('discovers tools, persists evidence and compiles cited context across process restarts', async () => {
     const { path } = fixture();
     const first = await connect(path);

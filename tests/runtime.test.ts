@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { createLocalMemory, type LocalMemory } from '../src/local/index.js';
-import { MemoryRuntime, parseTranscriptJsonl, type RuntimeProposer, type SkillValidation } from '../src/runtime/index.js';
+import { canonical } from '../src/local/validation.js';
+import { MemoryRuntime, parseTranscriptJsonl, RECOMMENDED_SKILL_PROMOTION_POLICY, type RuntimeProposer, type SkillValidation } from '../src/runtime/index.js';
 
 const opened: LocalMemory[] = [];
 const roots: string[] = [];
@@ -281,6 +283,109 @@ describe('fresh source-backed mental models', () => {
 });
 
 describe('verified skill lifecycle and outcome attribution', () => {
+  const policy = { id: 'release-independent-v1', minimumDistinctTasks: 2, minimumDistinctVerifiers: 2 };
+
+  it('requires both persisted distinct-task and distinct-verifier thresholds before making a skill actionable', async () => {
+    const db = memory(), runtime = new MemoryRuntime(db, { skillPromotionPolicy: policy });
+    const source = capture(runtime), skill = candidate(runtime, [source.id]);
+    const first = await runtime.trialSkill({ id: skill.id, validation: passed });
+    expect(first).toMatchObject({ state: 'candidate', promotionPolicy: policy, trials: [passed] });
+    expect(db.get(first.recordId)).toMatchObject({ trust: 'untrusted', metadata: { advisory: false } });
+    expect(db.getOutcomeSummary(first.recordId)).toEqual({ successes: 0, failures: 0 });
+    expect(db.isEligible(first.recordId)).toBe(false);
+    expect(db.compile({ query: 'Safe release', maxTokens: 10000 }).items.map(item => item.id)).not.toContain(first.recordId);
+    const second = await runtime.trialSkill({ id: skill.id, validation: { ...passed, taskId: 'trial-2', evidence: 'A different task passed with the same verifier.' } });
+    expect(second.state).toBe('candidate'); expect(second.trials).toHaveLength(2);
+    const third = await runtime.trialSkill({ id: skill.id, validation: { ...passed, taskId: 'trial-3', evidence: 'Independent verifier checked a third task.', verifier: 'independent-harness' } });
+    expect(third.state).toBe('active'); expect(db.isEligible(third.recordId)).toBe(true);
+    expect(third.trials).toHaveLength(3); expect(runtime.getSkill(skill.id)).toEqual(third);
+  });
+
+  it('preserves candidate requirements across restart with weaker options and copied option mutations', async () => {
+    const path = location(), db = memory(path), configured = { ...policy };
+    const runtime = new MemoryRuntime(db, { skillPromotionPolicy: configured });
+    configured.minimumDistinctTasks = 1; configured.minimumDistinctVerifiers = 1;
+    const source = capture(runtime), skill = candidate(runtime, [source.id]);
+    const first = await runtime.trialSkill({ id: skill.id, validation: passed }); db.close();
+    const reopened = memory(path), weaker = new MemoryRuntime(reopened, { skillPromotionPolicy: { ...policy, minimumDistinctTasks: 1, minimumDistinctVerifiers: 1 } });
+    expect(weaker.getSkill(skill.id)).toMatchObject({ state: 'candidate', recordId: first.recordId, promotionPolicy: policy });
+    expect((await weaker.trialSkill({ id: skill.id, validation: { ...passed, taskId: 'trial-2', evidence: 'Second independent task, same verifier.' } })).state).toBe('candidate');
+    expect((await weaker.trialSkill({ id: skill.id, validation: { ...passed, taskId: 'trial-3', verifier: 'second-verifier', evidence: 'Third independent task and independent verifier.' } })).state).toBe('active');
+  });
+
+  it('does not replace the task threshold with a verifier threshold or trust callback policy edits', async () => {
+    expect(RECOMMENDED_SKILL_PROMOTION_POLICY).toMatchObject({ minimumDistinctTasks: 2, minimumDistinctVerifiers: 2 });
+    expect(Object.isFrozen(RECOMMENDED_SKILL_PROMOTION_POLICY)).toBe(true);
+    const db = memory(), runtime = new MemoryRuntime(db, { skillPromotionPolicy: { ...policy, minimumDistinctTasks: 3 } });
+    const source = capture(runtime), skill = candidate(runtime, [source.id]);
+    const first = await runtime.trialSkill({ id: skill.id, verifier: async ({ skill: copy }) => {
+      copy.promotionPolicy!.minimumDistinctTasks = 1; copy.promotionPolicy!.minimumDistinctVerifiers = 1;
+      return passed;
+    } });
+    expect(first.state).toBe('candidate');
+    const second = await runtime.trialSkill({ id: skill.id, validation: { ...passed, taskId: 'trial-2', verifier: 'other-verifier', evidence: 'Another independently verified task.' } });
+    expect(second.state).toBe('candidate'); expect(second.promotionPolicy?.minimumDistinctTasks).toBe(3);
+    await expect(runtime.trialSkill({ id: skill.id, verifier: async () => {
+      db.correct(source.id, { text: 'Changed before final approval', source: { uri: 'test:changed' }, reason: 'Evidence changed while checking' });
+      return { ...passed, taskId: 'trial-3', evidence: 'Result from an obsolete final check.' };
+    } })).rejects.toThrow('changed during trial');
+    expect(runtime.getSkill(skill.id)?.state).toBe('retired');
+  });
+
+  it('binds normalized policy contents into identity and rejects altered persisted requirements', () => {
+    const db = memory(), runtime = new MemoryRuntime(db, { skillPromotionPolicy: { ...policy, id: `  ${policy.id}  ` } });
+    const source = capture(runtime), skill = candidate(runtime, [source.id]);
+    expect(skill.promotionPolicy).toEqual(policy);
+    expect(candidate(new MemoryRuntime(db, { skillPromotionPolicy: policy }), [source.id]).id).toBe(skill.id);
+    expect(candidate(new MemoryRuntime(db, { skillPromotionPolicy: { ...policy, minimumDistinctVerifiers: 1 } }), [source.id]).id).not.toBe(skill.id);
+    const record = db.get(skill.recordId)!, payload = JSON.parse(record.text);
+    payload.promotionPolicy.minimumDistinctVerifiers = 1;
+    db.correct(record.id, { text: JSON.stringify(payload), source: record.source, metadata: record.metadata, reason: 'Altered persisted policy without changing bound identity.' });
+    expect(runtime.getSkill(skill.id)).toBeNull();
+  });
+
+  it('never counts duplicate task or evidence assertions as additional promotion support', async () => {
+    const db = memory(), runtime = new MemoryRuntime(db, { skillPromotionPolicy: policy });
+    const skill = candidate(runtime, [capture(runtime).id]), first = await runtime.trialSkill({ id: skill.id, validation: passed });
+    expect(await runtime.trialSkill({ id: skill.id, validation: passed })).toEqual(first);
+    await expect(runtime.trialSkill({ id: skill.id, validation: { ...passed, verifier: 'other', evidence: 'New evidence reusing the first task.' } })).rejects.toThrow('identity payload conflict');
+    await expect(runtime.trialSkill({ id: skill.id, validation: { ...passed, verifier: 'other', taskId: 'other-task' } })).rejects.toThrow('identity payload conflict');
+    expect(runtime.getSkill(skill.id)).toMatchObject({ state: 'candidate', trials: [passed] });
+  });
+
+  it.each([false, true])('retires a partly tested candidate when failure or prerequisites fail (passed=%s)', async passedValue => {
+    const db = memory(), runtime = new MemoryRuntime(db, { skillPromotionPolicy: policy });
+    const skill = candidate(runtime, [capture(runtime).id]); await runtime.trialSkill({ id: skill.id, validation: passed });
+    const retired = await runtime.trialSkill({ id: skill.id, validation: { ...passed, passed: passedValue, prerequisitesSatisfied: !passedValue, taskId: 'failed-trial', evidence: 'A required check did not pass.' } });
+    expect(retired.state).toBe('retired'); expect(db.isEligible(retired.recordId)).toBe(false);
+    expect(runtime.getSkill(skill.id)?.state).toBe('retired');
+  });
+
+  it('reads existing policy-free skills with their original identity and one-trial semantics', async () => {
+    const db = memory(), runtime = new MemoryRuntime(db, { skillPromotionPolicy: policy });
+    const modern = candidate(runtime, [capture(runtime).id]);
+    const legacyId = createHash('sha256').update(canonical({ definition: modern.definition, fingerprint: modern.fingerprint })).digest('hex');
+    const payload = { id: legacyId, state: 'candidate', definition: modern.definition, fingerprint: modern.fingerprint, trials: [] };
+    const record = db.store({ text: JSON.stringify(payload), kind: 'procedure', trust: 'untrusted', dependencies: modern.definition.evidenceIds, source: { uri: `runtime:skill:${legacyId}`, revision: modern.fingerprint }, metadata: { runtimeType: 'skill', skillId: legacyId, skillState: 'candidate', advisory: false, generation: 1 } });
+    expect(runtime.getSkill(legacyId)).toMatchObject({ recordId: record.id, state: 'candidate' });
+    const active = await runtime.trialSkill({ id: legacyId, validation: passed });
+    expect(active.state).toBe('active'); expect(active.id).toBe(legacyId); expect(active.promotionPolicy).toBeUndefined();
+    expect(new MemoryRuntime(db).getSkill(legacyId)).toEqual(active);
+  });
+
+  it('validates controller policy limits and retains a 32-trial history budget', async () => {
+    const db = memory();
+    for (const minimumDistinctTasks of [0, 33, 1.5, Number.NaN]) expect(() => new MemoryRuntime(db, { skillPromotionPolicy: { ...policy, minimumDistinctTasks } })).toThrow();
+    for (const minimumDistinctVerifiers of [0, 33, 1.5, Number.NaN]) expect(() => new MemoryRuntime(db, { skillPromotionPolicy: { ...policy, minimumDistinctVerifiers } })).toThrow();
+    const runtime = new MemoryRuntime(db, { skillPromotionPolicy: { ...policy, minimumDistinctTasks: 32, minimumDistinctVerifiers: 32 } });
+    const skill = candidate(runtime, [capture(runtime).id]);
+    for (let index = 0; index < 32; index++) await runtime.trialSkill({ id: skill.id, validation: { ...passed, taskId: `task-${index}`, evidence: `Task ${index} acceptance evidence.` } });
+    const full = runtime.getSkill(skill.id)!;
+    expect(full.state).toBe('candidate'); expect(full.trials).toHaveLength(32);
+    expect(await runtime.trialSkill({ id: skill.id, validation: full.trials[0] })).toEqual(full);
+    await expect(runtime.trialSkill({ id: skill.id, validation: { ...passed, taskId: 'task-33', evidence: 'Additional evidence beyond the history cap.' } })).rejects.toThrow('budget exhausted');
+  });
+
   it('keeps a candidate non-advisory, activates after an explicit trial and retires immediately on failure', async () => {
     const db = memory(); const runtime = new MemoryRuntime(db); const source = capture(runtime); const skill = candidate(runtime, [source.id]);
     expect(skill.state).toBe('candidate'); expect(db.isEligible(skill.recordId)).toBe(false);

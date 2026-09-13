@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import { MemoryRuntime, type EnqueueInput, type RunJobsOptions, type SkillDefinition, type SkillTrialInput } from '../runtime/index.js';
 import { LocalSourceConnector, readLocalText, type LocalSourceOptions } from '../connectors/index.js';
-import { createCompatibleEmbedder, createCompatibleProposer } from '../providers/index.js';
+import { createCompatibleEmbedder, createCompatibleProposer, createCompatibleBenchmarkReader, createCompatibleAgentResponder } from '../providers/index.js';
 import { startMemoryHttp } from '../http/index.js';
 import { MemoryBranches, type BranchChange } from '../branches/index.js';
 import { MemoryRelations, type EntityInput } from '../relations/index.js';
@@ -16,6 +16,7 @@ import { runMemoryDemo } from '../evaluation/demo.js';
 import { requireExistingDatabase, runMigrationCommand } from './migration.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseJsonWithSpans } from '../migration/json-spans.js';
+import { MemoryAgent } from '../agent/index.js';
 
 const HELP = `Mnemosyne ${VERSION} — portable agent memory
 
@@ -23,6 +24,14 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy learning-demo            Run isolated capture-to-skill replay checks
   mnemosy evaluate --file FILE [--out FILE] [--limit 20] [--json JSON]
                    [--provider-config FILE]  Evaluate supplied LongMemEval v1 retrieval
+  mnemosy benchmark-agent --file FILE --provider-config FILE --out FILE [--json JSON]
+  mnemosy operations --action backup --db DATABASE --out BUNDLE
+  mnemosy operations --action verify --file BUNDLE
+  mnemosy operations --action restore --file BUNDLE --out NEW_DATABASE
+                   Run a matched reader experiment; explicit configured model calls
+  mnemosy agent [scope] --action context|turn|capture-events|work|status [--json JSON]
+  mnemosy agent [scope] --action turn --session NAME --key TURN_ID --text TEXT
+                   --provider-config FILE [--tokens 4096]
   mnemosy demo --record FILE       Save real demo evidence as JSON
   mnemosy mcp [scope]              Start the MCP stdio server
   mnemosy store [scope] --text TEXT --source URI [--share]
@@ -78,8 +87,16 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
            Shortcut settings cannot override a manifest or a saved plan during apply.
 
   Scope: --db FILE --workspace NAME --agent NAME (all required)
-  MCP/HTTP: --read-only, --allow-destructive (forget is disabled by default)
-            --no-capture, --no-recall set separate runtime policies
+  Policies: --read-only blocks all direct memory mutations, including erasure.
+            --no-capture blocks new writes; --no-recall blocks stored-state reads
+            and source processing. store/import can run with --no-recall.
+            Confirmed forget and migration rollback remain available with capture
+            and recall disabled; erasure never returns stored source content.
+            Invalid commands/actions and policy denials fail before opening SQLite.
+            Isolated demo/evaluate commands do not accept restrictive policies.
+            Migration preview accepts no policy flags; it opens no database.
+  MCP/HTTP: all three policies configure server capabilities instead.
+            --allow-destructive enables forget (disabled by default).
             --provider-config FILE explicitly enables hybrid recall
   Store: --kind fact|preference|decision|procedure|observation
          --trust untrusted|observed|verified (default observed)
@@ -107,6 +124,80 @@ function jsonInput(value?: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(value ?? '{}');
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('--json must contain an object.');
   return parsed as Record<string, unknown>;
+}
+
+type CliAccess = 'read' | 'write' | 'erase';
+type CliValues = Record<string, string | boolean | undefined>;
+
+// Every executable route needs an explicit policy. A write that reads existing
+// sources (including replay or provider input) needs both capabilities. Privacy
+// erasure needs neither capture nor recall, but still requires a writable policy
+// and the command handler's explicit confirmation/destructive authorization.
+const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
+  store: ['write'], import: ['write'],
+  recall: ['read'], context: ['read'], inspect: ['read'], export: ['read'], jobs: ['read'],
+  correct: ['read', 'write'], forget: ['erase'], capture: ['read', 'write'],
+  observe: ['read', 'write'], 'run-jobs': ['read', 'write'], index: ['read', 'write'],
+  // These routes enforce per-request policies and must accept valid combinations.
+  mcp: [], serve: [],
+  // Isolated evaluations create and read temporary memory, even without an output file.
+  demo: ['read', 'write'], 'learning-demo': ['read', 'write'], evaluate: ['read', 'write'], 'benchmark-agent': ['read', 'write'],
+};
+const ACTION_ACCESS: Readonly<Record<string, { defaultAction?: string; actions: Readonly<Record<string, readonly CliAccess[]>> }>> = {
+  agent: { defaultAction: 'context', actions: { context: ['read'], turn: ['read', 'write'], 'capture-events': ['read', 'write'], work: ['read', 'write'], status: ['read'] } },
+  operations: { defaultAction: 'verify', actions: { backup: ['read', 'write'], verify: ['read'], restore: ['read', 'write'] } },
+  model: { defaultAction: 'get', actions: { get: ['read'], context: ['read'], refresh: ['read', 'write'] } },
+  skill: { actions: { create: ['read', 'write'], get: ['read'], trial: ['read', 'write'], retire: ['read', 'write'] } },
+  branch: { actions: { create: ['read', 'write'], stage: ['read', 'write'], preview: ['read'], merge: ['read', 'write'] } },
+  entity: { actions: { create: ['read', 'write'], resolve: ['read'], relate: ['read', 'write'], traverse: ['read'] } },
+  health: { defaultAction: 'scan', actions: { scan: ['read'], recall: ['read'], watch: ['read', 'write'], check: ['read', 'write'] } },
+  // The migration handler additionally checks action-specific flags and confirmation.
+  // Preview reads supplied files only, and rejects all policy flags itself.
+  migrate: { defaultAction: 'plan', actions: { plan: [], apply: ['read', 'write'], inspect: ['read'], source: ['read'], rollback: ['erase'], forget: ['erase'] } },
+};
+
+function validateCommandPolicy(command: string, values: CliValues): void {
+  let access: readonly CliAccess[];
+  let route = command;
+  if (Object.hasOwn(ACTION_ACCESS, command)) {
+    const policy = ACTION_ACCESS[command];
+    const action = values.action ?? policy.defaultAction;
+    if (typeof action !== 'string' || !Object.hasOwn(policy.actions, action)) {
+      throw new Error(`${command} requires --action ${Object.keys(policy.actions).join('|')}.`);
+    }
+    access = policy.actions[action];
+    route += ` ${action}`;
+  } else {
+    if (!Object.hasOwn(COMMAND_ACCESS, command)) throw new Error(`Unknown command: ${command}`);
+    if (values.action !== undefined) throw new Error(`${command} does not support --action.`);
+    access = COMMAND_ACCESS[command];
+  }
+  if ((access.includes('write') || access.includes('erase')) && values['read-only']) throw new Error(`${route}: memory mutations are disabled by --read-only.`);
+  if (access.includes('write') && values['no-capture']) throw new Error(`${route}: memory writes are disabled by --no-capture.`);
+  if (access.includes('read') && values['no-recall']) throw new Error(`${route}: stored-state reads are disabled by --no-recall.`);
+}
+
+function agentCommand(values: CliValues) {
+  const action = String(values.action ?? 'context');
+  if (values.watch && action !== 'work') throw new Error('--watch is only valid for agent work.');
+  const shared = ['action', 'db', 'workspace', 'agent', 'read-only', 'no-capture', 'no-recall', 'json'];
+  const allowed = [...shared, ...(action === 'context' ? ['query', 'tokens'] : action === 'turn' ? ['session', 'key', 'text', 'query', 'tokens', 'trust', 'share', 'provider-config'] : action === 'capture-events' ? ['session', 'file', 'adapter', 'trust', 'share'] : action === 'work' ? ['watch', 'provider-config'] : [])];
+  if (Object.entries(values).some(([key, value]) => value !== undefined && !allowed.includes(key))) throw new Error('Unsupported option for this agent action.');
+  const context = { requireWatched: z.boolean().optional(), taskId: z.string().min(1).max(160).optional() };
+  const background = { intervalMs: z.number().int().min(10).max(60000).optional(), maxCycles: z.number().int().min(1).max(10000).optional(), maxDurationMs: z.number().int().min(1).max(3600000).optional(), maxCalls: z.number().int().min(0).max(10000).optional(), maxTotalInputBytes: z.number().int().min(0).max(67108864).optional() };
+  const drain = { maxJobs: z.number().int().min(1).max(64).optional(), maxCalls: z.number().int().min(0).max(64).optional(), maxTotalInputBytes: z.number().int().min(0).max(4194304).optional(), maxInputBytes: z.number().int().min(1024).max(262144).optional(), maxOutputBytes: z.number().int().min(256).max(65536).optional(), timeoutMs: z.number().int().min(10).max(60000).optional(), leaseMs: z.number().int().min(1).max(300000).optional(), maxAttempts: z.number().int().min(1).max(10).optional() };
+  const settings = action === 'context' ? z.object(context).strict().parse(jsonInput(values.json as string | undefined))
+    : action === 'turn' ? z.object({ ...context, timeoutMs: z.number().int().min(1).max(300000).optional() }).strict().parse(jsonInput(values.json as string | undefined))
+    : action === 'work' ? (values.watch ? z.object(background) : z.object(drain)).strict().parse(jsonInput(values.json as string | undefined))
+    : z.object({}).strict().parse(jsonInput(values.json as string | undefined));
+  if (action === 'context') required(values.query as string | undefined, '--query');
+  if (action === 'turn') { required(values.session as string | undefined, '--session'); required(values.key as string | undefined, '--key'); required(values.text as string | undefined, '--text'); }
+  if (action === 'capture-events') { required(values.session as string | undefined, '--session'); required(values.file as string | undefined, '--file'); if (!['codex', 'claude'].includes(String(values.adapter))) throw new Error('--adapter must be codex or claude.'); }
+  if (values.trust !== undefined) z.enum(['observed', 'untrusted']).parse(values.trust);
+  const jobBudgets = action === 'work' && !values.watch ? z.object(drain).strict().parse(settings) : undefined;
+  if (jobBudgets?.leaseMs !== undefined && jobBudgets.leaseMs <= (jobBudgets.timeoutMs ?? 30000)) throw new Error('Lease must exceed the proposer timeout.');
+  const provider = ['turn', 'work'].includes(action) ? providerConfig(required(values['provider-config'] as string | undefined, '--provider-config')) : undefined;
+  return { action, settings, jobBudgets, provider };
 }
 
 function healthCommand(values: Record<string, string | boolean | undefined>) {
@@ -197,7 +288,39 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (values.help || !positionals.length) { process.stdout.write(HELP); return; }
   if (positionals.length !== 1) throw new Error('Specify exactly one command.');
   const command = positionals[0];
+  validateCommandPolicy(command, values);
   if (command === 'migrate') { runMigrationCommand(values); return; }
+  if (command === 'operations') {
+    const action = values.action ?? 'verify';
+    const allowed = ['action', 'json', 'read-only', 'no-capture', 'no-recall', ...(action === 'backup' ? ['db', 'out'] : action === 'restore' ? ['file', 'out'] : ['file'])];
+    if (Object.entries(values).some(([key, value]) => value !== undefined && !allowed.includes(key))) throw new Error('Operations work on a whole database; scoped and unrelated options are unsupported.');
+    const limits = z.object({ maxBytes: z.number().int().min(4096).max(4294967296).optional(), timeoutMs: z.number().int().min(1).max(3600000).optional() }).strict().parse(jsonInput(values.json));
+    const { backupLocalDatabase, verifyLocalBackup, restoreLocalBackup } = await import('../operations/index.js');
+    const stop = signalController();
+    try {
+      if (action === 'backup') print(await backupLocalDatabase({ ...limits, sourcePath: required(values.db, '--db'), backupPath: required(values.out, '--out'), signal: stop.signal }));
+      else if (action === 'restore') print(await restoreLocalBackup({ ...limits, backupPath: required(values.file, '--file'), targetPath: required(values.out, '--out'), signal: stop.signal }));
+      else print(await verifyLocalBackup({ ...limits, backupPath: required(values.file, '--file'), signal: stop.signal }));
+    } finally { stop.dispose(); }
+    return;
+  }
+  if (command === 'benchmark-agent') {
+    const config = providerConfig(required(values['provider-config'], '--provider-config'));
+    const revision = required(config.revision, 'provider revision');
+    const settings = z.object({ trials: z.number().int().min(1).max(20).optional(), seed: z.number().int().nonnegative().max(2147483647).optional(), maxContextUnits: z.number().int().min(128).max(262144).optional(), maxOutputTokens: z.number().int().min(1).max(16384).optional(), maxReaderCalls: z.number().int().min(1).max(10000).optional(), timeoutMs: z.number().int().min(1).max(3600000).optional(), operationTimeoutMs: z.number().int().min(1).max(300000).optional(), includeResponses: z.boolean().optional() }).strict().parse(jsonInput(values.json));
+    const path = resolve(required(values.out, '--out'));
+    // Reserve the report before any provider call; never spend then discover an output collision.
+    const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    const stop = signalController();
+    try {
+      const { runAgentBenchmark, noMemoryCondition, recentHistoryCondition, lexicalMemoryCondition, adaptiveMemoryCondition } = await import('../evaluation/index.js');
+      const report = await runAgentBenchmark(readLocalText(required(values.file, '--file'), 16_777_216), { ...settings, reader: createCompatibleBenchmarkReader({ ...config, revision }), conditions: [noMemoryCondition(), recentHistoryCondition(), lexicalMemoryCondition(), adaptiveMemoryCondition()], signal: stop.signal });
+      writeFileSync(fd, `${JSON.stringify(report, null, 2)}\n`);
+      if (!report.complete) process.exitCode = 1;
+      print({ file: path, complete: report.complete, readerCalls: report.readerCalls, summaries: report.summaries });
+    } finally { closeSync(fd); stop.dispose(); }
+    return;
+  }
   if (command === 'evaluate') {
     const settings = jsonInput(values.json);
     if (['embedder', 'signal', 'tempParent'].some(key => key in settings)) throw new Error('Evaluation JSON accepts dataset labels and numeric budgets; use --provider-config for embeddings.');
@@ -227,8 +350,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     } else print(report);
     return;
   }
-  if (!['mcp', 'store', 'recall', 'context', 'inspect', 'correct', 'forget', 'export', 'import', 'serve', 'capture', 'observe', 'jobs', 'run-jobs', 'index', 'model', 'skill', 'branch', 'entity', 'health'].includes(command)) throw new Error(`Unknown command: ${command}`);
   const health = command === 'health' ? healthCommand(values) : undefined;
+  const agentOptions = command === 'agent' ? agentCommand(values) : undefined;
   if (health) requireExistingDatabase(resolve(required(values.db, '--db')));
   const memory = createLocalMemory({ path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') });
   const runtime = new MemoryRuntime(memory, { captureEnabled: !values['no-capture'], recallEnabled: !values['no-recall'] });
@@ -250,6 +373,25 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   }
   try {
     switch (command) {
+      case 'agent': {
+        const { action, settings, jobBudgets, provider } = agentOptions!;
+        const stop = signalController();
+        const agent = new MemoryAgent(runtime, { readOnly: !!values['read-only'], jobBudgets, ...(provider ? { proposer: createCompatibleProposer(provider) } : {}) });
+        try {
+          if (action === 'context') print(await agent.beforeTurn({ query: required(values.query, '--query'), maxTokens: integer(values.tokens, 4096, 262144), ...settings, signal: stop.signal }));
+          else if (action === 'status') print(runtime.jobs());
+          else if (action === 'capture-events') {
+            const events: unknown = JSON.parse(readLocalText(required(values.file, '--file')));
+            if (!Array.isArray(events) || !['codex', 'claude'].includes(String(values.adapter))) throw new Error('Supply an event array and --adapter codex|claude.');
+            print(agent.afterEvents({ sessionId: required(values.session, '--session'), adapter: values.adapter as 'codex' | 'claude', events, visibility: values.share ? 'workspace' : 'private', ...(values.trust ? { trust: z.enum(['observed', 'untrusted']).parse(values.trust) } : {}) }));
+          } else if (action === 'turn') {
+            const result = await agent.runTurn({ ...settings, sessionId: required(values.session, '--session'), turnId: required(values.key, '--key'), input: required(values.text, '--text'), query: values.query ?? required(values.text, '--text'), maxTokens: integer(values.tokens, 4096, 262144), ...(values.trust ? { trust: z.enum(['observed', 'untrusted']).parse(values.trust) } : {}), visibility: values.share ? 'workspace' : 'private', signal: stop.signal }, createCompatibleAgentResponder(provider!));
+            print(result);
+          } else if (values.watch) print(await agent.start({ ...settings, signal: stop.signal }).done);
+          else print(await agent.drain({ signal: stop.signal }));
+        } finally { await agent.close(); stop.dispose(); }
+        break;
+      }
       case 'health': {
         const maintenance = new MemoryMaintenance(runtime);
         if (health!.action === 'scan') print(maintenance.scan());

@@ -100,7 +100,7 @@
   "externalModelCalls": 0,
   "scriptedProposerCalls": 1,
   "trialCasesPassed": 2,
-  "storage": "New temporary SQLite database; connections closed and files removed after this run.",
+  "storage": "New temporary local database; connections closed and files removed after this run.",
   "limitations": [
     "Hand-authored source, proposer and trial fixtures; no LLM was invoked or trained.",
     "Checks establish these integration behaviors, not general task improvement, AGI, or competitor superiority.",

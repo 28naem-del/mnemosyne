@@ -1,6 +1,6 @@
 {
   "name": "mnemosy-ai",
-  "version": "2.0.0-rc.5",
+  "version": "2.0.0-rc.8",
   "description": "Evidence-backed agent memory with observation, hybrid recall, temporal history, tested skills, and local MCP/HTTP",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,6 +29,10 @@
     "./providers": {
       "types": "./dist/providers/index.d.ts",
       "import": "./dist/providers/index.js"
+    },
+    "./providers/local": {
+      "types": "./dist/providers/local.d.ts",
+      "import": "./dist/providers/local.js"
     },
     "./branches": {
       "types": "./dist/branches/index.d.ts",
@@ -93,6 +97,26 @@
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
       "import": "./dist/adapters/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js"
+    },
+    "./context": {
+      "types": "./dist/context/index.d.ts",
+      "import": "./dist/context/index.js"
+    },
+    "./operations": {
+      "types": "./dist/operations/index.d.ts",
+      "import": "./dist/operations/index.js"
+    },
+    "./profiles": {
+      "types": "./dist/profiles/index.d.ts",
+      "import": "./dist/profiles/index.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge/index.d.ts",
+      "import": "./dist/bridge/index.js"
     }
   },
   "files": [
@@ -102,7 +126,8 @@
     "NOTICE.md",
     "docs",
     "site",
-    "python"
+    "python",
+    "examples"
   ],
   "scripts": {
     "build": "tsc",
@@ -121,8 +146,11 @@
     "pretest:coverage": "npm run build",
     "test:watch": "vitest",
     "pretest:watch": "npm run build",
-    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts",
-    "evaluate": "node dist/cli/index.js evaluate"
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts examples/agent-loop.ts examples/adaptive-context.ts examples/agent-benchmark.ts examples/backup-restore.ts examples/profiles.ts examples/gradual-migration.ts examples/local-semantic.ts",
+    "evaluate": "node dist/cli/index.js evaluate",
+    "benchmark:agent": "node dist/cli/index.js benchmark-agent",
+    "benchmark:corpus": "node dist/evaluation/corpus-cli.js",
+    "benchmark:evidence": "node dist/evaluation/evidence-benchmark.js"
   },
   "keywords": [
     "ai",
@@ -131,18 +159,22 @@
     "cognitive",
     "vector",
     "knowledge-graph",
-    "qdrant",
     "llm",
     "embeddings",
     "multi-agent",
     "self-improving",
-    "openai",
-    "anthropic",
-    "langchain",
-    "crewai"
+    "mcp",
+    "local-first",
+    "temporal-memory",
+    "memory-migration",
+    "agent-memory"
   ],
   "license": "MIT",
-  "author": "Mnemosyne Team",
+  "author": {
+    "name": "Aristotle Intelligence Inc.",
+    "email": "28naime@gmail.com",
+    "url": "https://mnemosy.ai"
+  },
   "homepage": "https://mnemosy.ai",
   "repository": {
     "type": "git",
@@ -157,9 +189,13 @@
     "zod": "^4.6.2"
   },
   "peerDependencies": {
+    "@huggingface/transformers": "3.8.1",
     "ioredis": "^5.0.0"
   },
   "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    },
     "ioredis": {
       "optional": true
     }

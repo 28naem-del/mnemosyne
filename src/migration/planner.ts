@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
+import { migrationOriginIdentity } from './origins.js';
 import { MEMORY_TYPES } from '../core/types.js';
 import { parseJsonWithSpans, JsonSpanError, type JsonSpanNode } from './json-spans.js';
-import { MigrationPlanError, type MigrationArtifact, type MigrationFamily, type MigrationFieldMapping, type MigrationFieldStatus, type MigrationInputReport, type MigrationIssue, type MigrationPlan, type MigrationPlannedRecord, type MigrationPlanOptions, type MigrationProfile, type NormalizedMigrationOptions } from './types.js';
+import { MIGRATION_PROFILES, MigrationPlanError, type MigrationArtifact, type MigrationFamily, type MigrationFieldMapping, type MigrationFieldStatus, type MigrationInputReport, type MigrationIssue, type MigrationPlan, type MigrationPlannedRecord, type MigrationPlanOptions, type MigrationProfile, type NormalizedMigrationOptions } from './types.js';
 
-const PROFILES: readonly MigrationProfile[] = ['mnemosyne-memcell-array', 'mnemosyne-qdrant-scroll', 'markdown', 'mem0-array', 'mem0-results', 'mem0-page', 'letta-blocks'];
 const DEFAULT_LIMITS = Object.freeze({ maxInputBytes: 4 * 1024 * 1024, maxRecords: 1000, maxSourceBytes: 65536, maxArtifacts: 256 });
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const byteLengthGetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'byteLength')!.get!;
@@ -11,7 +11,7 @@ const bufferGetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8
 const hash = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 const bytesOf = (value: string): number => Buffer.byteLength(value, 'utf8');
 const issue = (code: string, message: string, severity: 'warning' | 'error' = 'error'): MigrationIssue => ({ code, message, severity });
-const familyOf = (profile: MigrationProfile): MigrationFamily => profile.startsWith('mnemosyne-') ? 'mnemosyne' : profile.startsWith('mem0-') ? 'mem0' : profile === 'letta-blocks' ? 'letta' : 'markdown';
+const familyOf = (profile: MigrationProfile): MigrationFamily => profile.split('-')[0] as MigrationFamily;
 const pointerPart = (key: string): string => key.replace(/~/g, '~0').replace(/\//g, '~1');
 type ObjectNode = Extract<JsonSpanNode, { kind: 'object' }>;
 type MutableRecord = { -readonly [K in keyof MigrationPlannedRecord]: MigrationPlannedRecord[K] };
@@ -43,6 +43,19 @@ function instant(value: unknown): string | undefined {
   if (!Number.isFinite(time)) return undefined;
   const normalized = new Date(time).toISOString();
   return normalized === value.replace(/Z$/, value.includes('.') ? 'Z' : '.000Z') ? normalized : undefined;
+}
+/** Explicit RFC3339 source timestamps, compared without rounding microseconds. */
+function foreignInstant(value: unknown): bigint | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  if (!match) return undefined;
+  const base = Date.parse(`${match[1]}Z`);
+  if (!Number.isFinite(base) || new Date(base).toISOString().slice(0, 19) !== match[1]) return undefined;
+  const hours = Number(match[5] ?? 0), minutes = Number(match[6] ?? 0);
+  // RFC3339 -00:00 means an unknown local offset, not an assertion of UTC.
+  if (hours > 23 || minutes > 59 || match[3] === '-00:00') return undefined;
+  const offset = (hours * 60 + minutes) * (match[4] === '-' ? -1 : 1);
+  return BigInt(base - offset * 60000) * 1000000n + BigInt((match[2] ?? '').padEnd(9, '0'));
 }
 function normalizeOptions(input: MigrationPlanOptions): NormalizedMigrationOptions {
   const data = plain(input, ['sourceStore', 'collection', 'sourceOwner', 'destination', 'trust', 'evaluatedAt', 'acknowledgePartial', 'qdrantTextField', 'limits'], 'E_OPTIONS');
@@ -84,7 +97,7 @@ function ownArtifacts(input: readonly MigrationArtifact[], options: NormalizedMi
     const data = plain(value, ['name', 'bytes', 'profile', 'logicalPath', 'page'], 'E_INPUT');
     const name = label(data.name, 'E_INPUT');
     if (names.has(name)) reject('E_INPUT', 'Artifact diagnostic names must be unique.'); names.add(name);
-    if (!PROFILES.includes(data.profile as MigrationProfile)) reject('E_INPUT', 'Select an explicitly supported source profile.');
+    if (!MIGRATION_PROFILES.includes(data.profile as MigrationProfile)) reject('E_INPUT', 'Select an explicitly supported source profile.');
     const profile = data.profile as MigrationProfile;
     if (!(data.bytes instanceof Uint8Array)) reject('E_INPUT', 'Artifact bytes must be a Uint8Array.');
     const length = byteLengthGetter.call(data.bytes) as number;
@@ -130,10 +143,38 @@ function canonical(node: JsonSpanNode, bytes: Uint8Array): string {
   if (node.kind !== 'number') return JSON.stringify(node.value);
   return canonicalNumber(decoder.decode(bytes.subarray(node.startByte, node.endByte)));
 }
-function selectRecords(artifact: OwnedArtifact, root: JsonSpanNode): { nodes: readonly JsonSpanNode[]; prefix: string; reportedTotal?: number; hasNext?: boolean; hasPrevious?: boolean } {
+function exactCount(node: JsonSpanNode | undefined, artifact: OwnedArtifact, minimum = 0): number {
+  if (node?.kind !== 'number' || !Number.isSafeInteger(node.value) || node.value < minimum || canonical(node, artifact.bytes) !== canonicalNumber(String(node.value))) throw issue('E_PROFILE', 'Pagination requires exact bounded integer counts, limits and offsets.');
+  return node.value;
+}
+function selectRecords(artifact: OwnedArtifact, root: JsonSpanNode): { nodes: readonly JsonSpanNode[]; prefix: string; reportedTotal?: number; hasNext?: boolean; hasPrevious?: boolean; offset?: number; pageLimit?: number } {
   const profile = artifact.profile;
-  if (['mnemosyne-memcell-array', 'mem0-array', 'letta-blocks'].includes(profile)) return { nodes: requireArray(root), prefix: '' };
+  if (['mnemosyne-memcell-array', 'mem0-array', 'letta-blocks', 'langgraph-store-items', 'graphiti-edges'].includes(profile)) return { nodes: requireArray(root), prefix: '' };
   const object = requireObject(root);
+  if (profile === 'hindsight-memories' || profile === 'supermemory-documents') {
+    // Read only the documented list envelope. Neither a recall result nor a summary
+    // response is a substitute for the original selected records.
+    const hindsight = profile === 'hindsight-memories';
+    if (['next', 'previous', 'nextCursor', 'next_cursor', 'hasMore', 'has_more'].some(key => member(object, key))) throw issue('E_PROFILE', 'This profile supports offset/page pagination only; cursor or continuation wrappers require an explicit adapter and are never followed.');
+    const nodes = requireArray(member(object, hindsight ? 'items' : 'memories'));
+    const pagination = hindsight ? object : requireObject(member(object, 'pagination'));
+    const total = exactCount(member(pagination, hindsight ? 'total' : 'totalItems'), artifact);
+    const limit = exactCount(member(pagination, 'limit'), artifact, 1);
+    let offset: number;
+    if (hindsight) {
+      offset = exactCount(member(pagination, 'offset'), artifact);
+      if (artifact.page && (offset !== artifact.page.index * limit || artifact.page.totalPages !== Math.max(1, Math.ceil(total / limit)))) throw issue('E_PROFILE', 'Hindsight offset/limit/total contradict the declared pages; provide the matching complete page set or omit page assertions and acknowledge a partial selection.');
+    } else {
+      if (member(object, 'documents')) throw issue('E_PROFILE', 'This profile supports the documented memories envelope only; do not combine alternate document lists.');
+      const currentPage = exactCount(member(pagination, 'currentPage'), artifact, 1);
+      const totalPages = exactCount(member(pagination, 'totalPages'), artifact);
+      if (totalPages !== Math.ceil(total / limit) || currentPage > Math.max(1, totalPages)) throw issue('E_PROFILE', 'Supermemory pagination is inconsistent with its total and limit.');
+      if (artifact.page && (artifact.page.index !== currentPage - 1 || artifact.page.totalPages !== Math.max(1, totalPages))) throw issue('E_PROFILE', 'Supermemory page metadata contradicts the caller page declaration.');
+      offset = (currentPage - 1) * limit;
+    }
+    if (!Number.isSafeInteger(offset) || offset > total || nodes.length > limit || offset + nodes.length > total) throw issue('E_PROFILE', 'The list size, offset and total are inconsistent; supply an unmodified supported list response.');
+    return { nodes, prefix: hindsight ? '/items' : '/memories', reportedTotal: total, hasNext: offset + nodes.length < total, hasPrevious: offset > 0, offset, pageLimit: limit };
+  }
   if (profile === 'mnemosyne-qdrant-scroll') {
     const result = requireObject(member(object, 'result'));
     const next = member(result, 'next_page_offset');
@@ -162,6 +203,20 @@ const RAW_REASONS: Record<string, string> = {
   updatedAt: 'Claimed source timestamp does not establish validity.', updated_at: 'Claimed source timestamp does not establish validity.',
   eventTime: 'Claimed event timestamp remains reference data.', event_time: 'Claimed event timestamp remains reference data.',
   expiration_date: 'Lifecycle metadata is interpreted conservatively; no validity date is inferred.',
+  namespace: 'Namespace participates in source identity; it grants no destination ownership or sharing.',
+  group_id: 'Graph group participates in source identity; it grants no destination ownership or sharing.',
+  fact_embedding: 'Vectors remain exact source bytes; no foreign embedding is installed.',
+  episodes: 'Foreign episode IDs are retained without inventing local evidence dependencies.',
+  source_memory_ids: 'Foreign fact IDs are retained without inventing local evidence dependencies.',
+  source_node_uuid: 'Graph endpoints remain raw data; no entity or relation is silently created.',
+  target_node_uuid: 'Graph endpoints remain raw data; no entity or relation is silently created.',
+  valid_at: 'Foreign validity is checked conservatively at preview; no local temporal interval is installed.',
+  invalid_at: 'Foreign validity is checked conservatively at preview; no local temporal interval is installed.',
+  expired_at: 'Foreign invalidation is checked conservatively at preview; historical records remain raw-only.',
+  memories: 'Nested foreign memory histories remain raw data, not independent local memories or profiles.',
+  containerTags: 'Container tags remain raw data; they do not establish source ownership or destination sharing.',
+  proof_count: 'A foreign evidence count does not constitute local verification.',
+  score: 'A source search score is not a local relevance score or confidence.',
 };
 function mappingsFor(node: JsonSpanNode | undefined, profile: MigrationProfile, textKey: string): MigrationFieldMapping[] {
   if (!node) return [{ pointer: '', status: 'preserved-active', reason: 'Literal UTF-8 Markdown becomes an ordinary observation; no frontmatter or code executes.' }];
@@ -197,6 +252,32 @@ function lifecycle(body: ObjectNode | undefined, family: MigrationFamily, option
       if (!parsed || parsed <= options.evaluatedAt) reasons.push(issue(parsed ? 'Q_EXPIRED' : 'Q_EXPIRATION_UNKNOWN', parsed ? 'Expired source is retained as raw-only data.' : 'Expiration lacks an unambiguous supported UTC instant; retained as raw-only data.', 'warning'));
     }
   }
+  if (family === 'graphiti') {
+    const expired = member(body, 'expired_at');
+    if (expired && expired.kind !== 'null') reasons.push(issue('Q_INVALIDATED', 'A graph edge with transaction invalidation remains raw-only data.', 'warning'));
+    for (const field of ['valid_at', 'invalid_at'] as const) {
+      const value = member(body, field);
+      if (!value || value.kind === 'null') continue;
+      const parsed = foreignInstant(value.value), at = BigInt(Date.parse(options.evaluatedAt)) * 1000000n;
+      if (parsed === undefined || (field === 'valid_at' ? parsed > at : parsed <= at)) reasons.push(issue('Q_TEMPORAL', 'A graph edge outside the preview validity window or with an unsupported instant remains raw-only data; explicit RFC3339 offsets or Z are required.', 'warning'));
+    }
+    reasons.push(issue('W_GRAPH_SEMANTICS', 'Only fact text is projected. Foreign graph endpoints, episodes, embeddings and temporal intervals are not installed; future expiry needs a host freshness policy.', 'warning'));
+  }
+  if (family === 'hindsight') {
+    const state = member(body, 'state'), invalidated = member(body, 'invalidated_at');
+    if (state?.value !== 'valid' || invalidated && invalidated.kind !== 'null' && invalidated.value !== '') reasons.push(issue('Q_CURATION', 'Invalidated, missing or unknown Hindsight curation state remains raw-only; export explicit valid state before projecting assertions.', 'warning'));
+    reasons.push(issue('W_FACT_SEMANTICS', 'Only fact text is projected. Foreign proof counts, source IDs, entities, event dates and observation models remain raw data without local evidence or profile authority.', 'warning'));
+  }
+  if (family === 'supermemory') {
+    if (member(body, 'status')?.value !== 'done') reasons.push(issue('Q_DOCUMENT_STATE', 'A document without explicit completed processing remains raw-only source data.', 'warning'));
+    const histories = member(body, 'memories');
+    if (histories && histories.kind !== 'null' && (histories.kind !== 'array' || histories.elements.some(history => {
+      const forgotten = member(history, 'isForgotten'), latest = member(history, 'isLatest');
+      return history.kind !== 'object' || forgotten?.value !== false || latest?.value !== true;
+    }))) reasons.push(issue('Q_EMBEDDED_HISTORY', 'Nested forgotten, non-current or ambiguous memory histories keep the entire source raw-only; no historical claim becomes advice.', 'warning'));
+    reasons.push(issue('W_DOCUMENT_SEMANTICS', 'Only literal content is projected; URLs are never fetched. Foreign extracted memories, profiles, links, tags and connector synchronization are not recreated.', 'warning'));
+  }
+  if (family === 'langgraph') reasons.push(issue('W_STRUCTURED_VALUE', 'The entire JSON value is projected literally; no arbitrary property is selected as fact text. Foreign namespaces, indexing, TTL refresh, checkpoints and executable state are not installed.', 'warning'));
   return reasons;
 }
 function normalizeRecord(artifact: OwnedArtifact, artifactIndex: number, node: JsonSpanNode | undefined, pointer: string, options: NormalizedMigrationOptions): MutableRecord {
@@ -210,9 +291,19 @@ function normalizeRecord(artifact: OwnedArtifact, artifactIndex: number, node: J
   let body: ObjectNode | undefined, externalId: string;
   if (node) {
     if (node.kind !== 'object') return fail('E_RECORD', 'The source record must be an object.');
-    const id = member(node, 'id');
+    const id = member(node, family === 'langgraph' ? 'key' : family === 'graphiti' ? 'uuid' : 'id');
     if (!(id?.kind === 'string' && id.value.trim() && bytesOf(id.value) <= 1024 && !/[\u0000-\u001f\u007f]/u.test(id.value)) && !(family === 'mnemosyne' && id?.kind === 'number' && Number.isSafeInteger(id.value) && id.value >= 0 && canonical(id, artifact.bytes) === canonicalNumber(String(id.value)))) return fail('E_ID', 'A stable bounded external ID is required; numeric IDs must be exact nonnegative safe integers.');
     externalId = String(id!.value);
+    if (family === 'langgraph') {
+      const namespace = member(node, 'namespace');
+      if (namespace?.kind !== 'array' || namespace.elements.length > 32 || namespace.elements.some(part => part.kind !== 'string' || !part.value.trim() || bytesOf(part.value) > 512 || /[\u0000-\u001f\u007f]/u.test(part.value))) return fail('E_NAMESPACE', 'LangGraph requires a bounded namespace array of literal strings; no path splitting or owner inference is performed.');
+      externalId = JSON.stringify([namespace.value, externalId]);
+    }
+    if (family === 'graphiti') {
+      const group = member(node, 'group_id');
+      if (group?.kind !== 'string' || bytesOf(group.value) > 512 || /[\u0000-\u001f\u007f]/u.test(group.value)) return fail('E_GROUP', 'Graphiti requires its explicit group_id, including an empty default group if used upstream.');
+      externalId = JSON.stringify([group.value, externalId]);
+    }
     if (artifact.profile === 'mnemosyne-qdrant-scroll') {
       const payload = member(node, 'payload');
       if (payload?.kind !== 'object') return fail('E_RECORD', 'The Mnemosyne Qdrant profile requires an object payload.');
@@ -224,23 +315,25 @@ function normalizeRecord(artifact: OwnedArtifact, artifactIndex: number, node: J
   base.externalId = externalId;
   const field = options.sourceOwner.field ?? (family === 'mnemosyne' ? 'agent' : family === 'mem0' ? 'user' : 'creator');
   const ownerKey = field === 'creator' ? 'creator_id' : artifact.profile === 'mnemosyne-memcell-array' ? `${field}Id` : `${field}_id`;
-  const ownerNode = member(body, ownerKey);
+  // Only the original profiles publish these owner fields. Never interpret a
+  // foreign arbitrary metadata key, namespace, graph group or container tag as one.
+  const ownerNode = ['mnemosyne', 'mem0', 'letta'].includes(family) ? member(body, ownerKey) : undefined;
   let sourceOwner: string | undefined;
   if (!ownerNode || ownerNode.kind === 'null') { sourceOwner = options.sourceOwner.assumeMissing; base.ownerAssumed = sourceOwner !== undefined; }
   else if (ownerNode.kind === 'string' && ownerNode.value.trim() && bytesOf(ownerNode.value) <= 512 && !/[\u0000-\u001f\u007f]/u.test(ownerNode.value)) sourceOwner = ownerNode.value;
   else return fail('E_OWNER', 'Selected source ownership field has an invalid value.');
   if (sourceOwner === undefined) return fail('E_OWNER_MISSING', 'Missing source ownership requires an explicit selected export-scope assumption.');
   base.sourceOwner = sourceOwner;
-  base.identity = hash(JSON.stringify([family, options.sourceStore, family === 'mnemosyne' ? options.collection : '', sourceOwner, externalId]));
+  base.identity = migrationOriginIdentity({ family, sourceStore: options.sourceStore, collection: options.collection, sourceOwner, externalId });
   base.canonicalHash = node ? hash(canonical(node, artifact.bytes)) : base.rawHash;
-  const textKey = family === 'mem0' ? 'memory' : family === 'letta' ? 'value' : options.qdrantTextField && artifact.profile === 'mnemosyne-qdrant-scroll' ? options.qdrantTextField : 'text';
+  const textKey = family === 'mem0' ? 'memory' : family === 'letta' || family === 'langgraph' ? 'value' : family === 'graphiti' ? 'fact' : family === 'supermemory' ? 'content' : options.qdrantTextField && artifact.profile === 'mnemosyne-qdrant-scroll' ? options.qdrantTextField : 'text';
   base.mappings = mappingsFor(node, artifact.profile, textKey);
   if (!options.sourceOwner.allowedIds.includes(sourceOwner)) {
     base.disposition = 'excluded'; base.issues = [issue('X_OWNER', 'Source owner is outside the explicit selection; no source content is retained.', 'warning')]; return base;
   }
   const textNode = member(body, textKey);
-  const text = node ? textNode?.kind === 'string' ? textNode.value : undefined : rawText;
-  if (text === undefined) return fail('E_TEXT', 'The selected profile requires its documented text field to contain a string.');
+  const text = family === 'langgraph' ? textNode?.kind === 'object' ? decoder.decode(artifact.bytes.subarray(textNode.startByte, textNode.endByte)) : undefined : node ? textNode?.kind === 'string' ? textNode.value : undefined : rawText;
+  if (text === undefined) return fail('E_TEXT', family === 'supermemory' ? 'Supermemory requires string content; export documents.list with includeContent: true. Summaries, URLs in other fields and metadata are not a content substitute.' : family === 'langgraph' ? 'LangGraph Item.value must be a JSON object; checkpoint/state dumps and scalar values are unsupported.' : 'The selected profile requires its documented text field to contain a string.');
   base.originalTextBytes = bytesOf(text);
   const issues = lifecycle(body, family, options);
   if (rawText.includes('\0')) issues.push(issue('Q_NUL_SOURCE', 'Literal NUL source bytes require raw-only encoding controls; no active assertion is created.', 'warning'));
@@ -283,7 +376,7 @@ export function planMigration(artifacts: readonly MigrationArtifact[], suppliedO
       const inputRecords: MutableRecord[] = [];
       for (const [index, node] of selection.nodes.entries()) { rawBytes += node.endByte - node.startByte; inputRecords.push(normalizeRecord(artifact, artifactIndex, node, `${selection.prefix}/${index}`, options)); }
       records.push(...inputRecords);
-      inputs.push({ ...base, recordCount: selection.nodes.length, framingBytes: artifact.bytes.length - rawBytes, rejectedInputBytes: 0, issues: [], ...(selection.reportedTotal === undefined ? {} : { reportedTotal: selection.reportedTotal }), ...(selection.hasNext === undefined ? {} : { hasNext: selection.hasNext }), ...(selection.hasPrevious === undefined ? {} : { hasPrevious: selection.hasPrevious }) });
+      inputs.push({ ...base, recordCount: selection.nodes.length, framingBytes: artifact.bytes.length - rawBytes, rejectedInputBytes: 0, issues: [], ...(selection.reportedTotal === undefined ? {} : { reportedTotal: selection.reportedTotal }), ...(selection.hasNext === undefined ? {} : { hasNext: selection.hasNext }), ...(selection.hasPrevious === undefined ? {} : { hasPrevious: selection.hasPrevious }), ...(selection.offset === undefined ? {} : { offset: selection.offset, pageLimit: selection.pageLimit }) });
     } catch (error) {
       if (error instanceof MigrationPlanError) throw error;
       const failure: MigrationIssue = error instanceof JsonSpanError ? { ...issue(error.code, 'JSON input was rejected; no source content from this input is retained.'), byteOffset: error.byteOffset } : error && typeof error === 'object' && 'code' in error && error.code === 'E_PROFILE' ? error as MigrationIssue : issue('E_INPUT', 'Source input could not be parsed safely.');
@@ -329,6 +422,14 @@ export function planMigration(artifacts: readonly MigrationArtifact[], suppliedO
   for (const input of inputs) if (input.hasPrevious !== undefined) {
     if (input.page && input.hasPrevious !== (input.page.index > 0)) { completeness = 'partial'; reasons.push('An upstream previous-page marker contradicts the declared page position.'); }
     else if (!input.page && input.hasPrevious) { completeness = 'partial'; reasons.push('An upstream previous-page marker declares earlier records; no URL was followed.'); }
+  }
+  const offsetPages = inputs.filter(input => input.offset !== undefined).sort((a, b) => a.offset! - b.offset!);
+  if (offsetPages.length) {
+    let expectedOffset = 0;
+    for (const input of offsetPages) {
+      if (input.offset !== expectedOffset) { completeness = 'partial'; reasons.push('Upstream offset ranges have missing or overlapping records; supply contiguous unmodified pages.'); }
+      expectedOffset = input.offset! + input.recordCount;
+    }
   }
   if (upstreamTotals.length > 1 || upstreamTotals.length === 1 && upstreamTotals[0] !== suppliedUniqueIds) { completeness = 'partial'; reasons.push('Reported upstream totals do not agree with the supplied unique source identities.'); }
   if (family !== 'markdown' && new Set(inputs.map(input => `${input.profile}:${input.sha256}`)).size < inputs.length) { completeness = 'partial'; reasons.push('An identical input page was supplied more than once.'); }

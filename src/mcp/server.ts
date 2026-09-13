@@ -6,7 +6,7 @@ import { MemoryRuntime } from '../runtime/index.js';
 import { MemoryRelations } from '../relations/index.js';
 import { MemoryBranches } from '../branches/index.js';
 
-export const VERSION = '2.0.0-rc.5';
+export const VERSION = '2.0.0-rc.8';
 
 export interface MemoryServerOptions {
   /** Launch-time capability policy, never controlled by tool arguments. */
@@ -71,13 +71,13 @@ export function createMemoryServer(memory: LocalMemory, options: MemoryServerOpt
 
   server.registerTool('memory_recall', {
     description: options.hybrid ? 'Find scoped memories with controller-configured semantic and lexical retrieval. Corrections and provenance restrictions apply to every result.' : 'Find scoped memories with local lexical retrieval. Semantic retrieval requires a controller-configured embedding adapter.',
-    inputSchema: z.object({ query: queryText, limit: z.number().int().min(1).max(50).default(10), kinds: z.array(kinds).max(6).optional(), includeUntrusted: z.boolean().default(false), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional() }).strict(),
+    inputSchema: z.object({ query: queryText, limit: z.number().int().min(1).max(50).default(10), kinds: z.array(kinds).max(6).optional(), includeUntrusted: z.boolean().default(false), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional(), lexicalScoring: z.enum(['bm25', 'overlap']).optional() }).strict(),
     annotations: readAnnotations,
   }, (input) => asyncResult(async () => { requireRecall(); return options.hybrid ? memory.recallHybrid(input, options.hybrid) : memory.recall(input); }));
 
   server.registerTool('memory_context', {
     description: 'Compile cited, scoped context with contradictions and abstention under a conservative byte-based token budget. Pass only packet.text as context; diagnostics are outside the budget.',
-    inputSchema: z.object({ query: queryText, maxTokens: z.number().int().min(64).max(32_768).default(4_096), taskId: shortText.optional() }).strict(),
+    inputSchema: z.object({ query: queryText, maxTokens: z.number().int().min(64).max(32_768).default(4_096), taskId: shortText.optional(), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional(), lexicalScoring: z.enum(['bm25', 'overlap']).optional() }).strict(),
     annotations: readAnnotations,
   }, (input) => asyncResult(async () => { requireRecall(); return options.hybrid ? memory.compileHybrid(input, options.hybrid) : memory.compile(input); }));
 

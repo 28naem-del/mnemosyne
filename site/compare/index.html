@@ -1,12 +1,93 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Compare memory systems — Mnemosyne</title><meta name="description" content="A source-linked comparison of documented memory approaches in Mnemosyne, Graphiti, Mem0, Letta, Cognee, Mastra and EverOS. No unmeasured winner claims."><meta name="theme-color" content="#ffffff"><link rel="icon" href="../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../styles.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../" aria-label="Mnemosyne home"><svg class="brand-symbol" viewBox="0 0 34 38" aria-hidden="true"><path d="M4 30V16a6.5 6.5 0 0 1 13 0v14m0-14a6.5 6.5 0 0 1 13 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>mnemosyne</a><nav class="nav" aria-label="Main navigation"><a href="../features/">Features</a><a href="../docs/">Docs</a><a href="./" aria-current="page">Compare</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav></header><main id="main" class="wrap"><div class="page-intro"><span class="version">Research reviewed September 12, 2026</span><h1>Choose the memory<br>your agent needs.</h1><p>There are useful ideas across this field. Here is what informed Mnemosyne, and how its current local engine fits among them.</p></div><div class="compare-intro"><p>This compares documented approaches, not independently measured performance. Features and deployments change. Follow each primary source before choosing a system; no competitor benchmark was run for this release.</p></div>
-<div class="comparison" role="table" aria-label="Documented memory approaches"><div class="comparison-row comparison-head" role="row"><div role="columnheader">System</div><div role="columnheader">Documented emphasis</div><div role="columnheader">What to examine</div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>Mnemosyne v2</h2><a href="https://github.com/28naem-del/mnemosyne/tree/codex/mnemosyne-2-local-learning">Source preview</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Local SQLite memory with original sources, correction cascades, bounded observation jobs, topic models, externally tested skills and scoped handoffs.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>Reproduce the lifecycle demo. Optional configured embeddings add hybrid recall. Scopes and trial validation require a trusted application controller. Agent performance remains to be evaluated.</p></div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>Graphiti</h2><a href="https://github.com/getzep/graphiti">Official repository</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Temporal knowledge graphs, episode provenance, contradiction handling and hybrid retrieval.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>Its graph model and retrieval pipeline for relationships and facts that change over time.</p></div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>Mem0</h2><a href="https://github.com/mem0ai/mem0">Official repository</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Memory extraction and retrieval for applications that need persistent personalization and context.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>The exact open-source or hosted configuration you plan to use. Published numbers from different configurations are not interchangeable.</p></div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>Letta</h2><a href="https://www.letta.com/blog/context-repositories/">Context repositories</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Stateful agents and inspectable persistent context, with versioning and collaboration through context repositories.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>How its agent runtime and persistent context workflow fit your existing application.</p></div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>Cognee</h2><a href="https://docs.cognee.ai/core-concepts/main-operations/improve">Improve documentation</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Knowledge processing with feedback, trace filtering and curated reusable guidance.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>The route from feedback to revised guidance and how your application will validate those updates.</p></div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>Mastra</h2><a href="https://mastra.ai/docs/memory/observational-memory">Observational memory</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Compact observations and source recall to manage the context available to an agent.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>Its observation and context workflow, including what remains recoverable after compression.</p></div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>EverOS</h2><a href="https://github.com/EverMind-AI/EverOS">Official repository</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Portable memory with separate user episodes and reusable agent cases or skills.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>The distinction between personal history and procedural experience for your use case.</p></div></div>
-<div class="comparison-row" role="row"><div role="rowheader"><h2>OpenViking</h2><a href="https://github.com/volcengine/OpenViking">Official repository</a></div><div role="cell"><span class="mobile-label">Documented emphasis</span><p>Unified agent context, procedures, rollout evaluation and experience updates.</p></div><div role="cell"><span class="mobile-label">What to examine</span><p>Its context organization, evaluation loop, deployment requirements and current licensing terms.</p></div></div>
-</div>
-<section class="research-note"><h2>Evaluate the failure cases, too.</h2><p>Recall is only one part of useful memory. Test what happens when a fact changes, two sources disagree, a procedure fails, a private record must stay private, or a task moves to another agent.</p><p><a href="https://github.com/xiaowu0162/LongMemEval">LongMemEval</a> and <a href="https://aclanthology.org/2024.acl-long.747/">LoCoMo</a> inform long-term memory evaluation. <a href="https://arxiv.org/abs/2509.25140">ReasoningBank</a> informs reusable external experience. These do not establish that adding memory produces AGI.</p><p>Read the <a href="https://github.com/28naem-del/mnemosyne/blob/codex/mnemosyne-2-local-learning/docs/RESEARCH-2026-09-12.md">full research review</a> for source links, practitioner reports, evaluation limits and corrections to earlier assumptions. Mnemosyne’s new local kernel was implemented without copying code from these systems.</p></section><section class="final-cta"><div><h2>Start with a behavior you can verify.</h2><p>The demo exposes every recorded check and its limits.</p></div><a class="button" href="../#demo">Explore the memory demo</a></section></main><footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../features/">Features</a></div></footer></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Mnemosyne approach — Mnemosyne</title>
+  <meta name="description" content="Memory that evolves with evidence: measured recall, world and knowledge time, optional on-device intelligence, tested skills and gradual adoption.">
+  <meta name="theme-color" content="#070b12">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../styles.css?v=393e7f5af4af">
+<link rel="stylesheet" href="../launch.css?v=738ae631e707">
+<link rel="stylesheet" href="../cinematic.css?v=2f181b8028fc">
+<script src="../launch.js?v=372430739e42" defer></script>
+
+<link rel="canonical" href="https://mnemosy.ai/compare/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="The Mnemosyne approach — Mnemosyne">
+<meta property="og:description" content="Memory that evolves with evidence: measured recall, world and knowledge time, optional on-device intelligence, tested skills and gradual adoption.">
+<meta property="og:url" content="https://mnemosy.ai/compare/">
+<meta property="og:image" content="https://mnemosy.ai/assets/memory-architecture.png">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header wrap">
+    <a class="brand" href="../" aria-label="Mnemosyne home"><svg class="brand-symbol" viewBox="0 0 34 38" aria-hidden="true"><path d="M4 30V16a6.5 6.5 0 0 1 13 0v14m0-14a6.5 6.5 0 0 1 13 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>mnemosyne</a>
+    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="../features/">Features</a><a href="../docs/">Docs</a><a href="./" aria-current="page">Approach</a><a href="../#company">Company</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
+  </header>
+  <main id="main">
+    <section class="page-hero wrap" aria-labelledby="page-title">
+      <p class="feature-kicker">The Mnemosyne approach</p>
+      <h1 id="page-title">Memory should<br>earn your trust.</h1>
+      <p>Find the evidence. Know when it held. Test what deserves reuse. Mnemosyne turns these requirements into one inspectable lifecycle, from your first source to the next agent’s decision.</p>
+      <div class="actions"><a class="button" href="../features/">Explore Mnemosyne</a><a class="button secondary" href="../docs/#evaluation">Evaluate on your tasks</a></div>
+    </section>
+    <div class="wrap">
+      <aside class="comparison-note" aria-label="Our principle"><p><strong>The next decision deserves more than a similar sentence.</strong> Mnemosyne connects relevance, source history, ownership and tested experience. Your application can inspect what was recalled, what supports it and whether it is eligible for reuse.</p></aside>
+      <section class="section feature-section" id="context" aria-labelledby="context-title">
+        <div class="feature-lead"><p class="feature-kicker">Mnemosyne Recall</p><h2 id="context-title">Find more evidence.<br>Carry more forward.</h2><p>Retrieval quality matters twice: when memories are selected, and when they must fit into the next turn.</p></div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Relevance within your scope</h3><p>Default local scoring accounts for rare terms, repetition and document length using only authorized, time-eligible records under the query’s trust settings. Optional semantic retrieval searches the full indexed scope, then fusion and optional reranking select candidates under explicit limits.</p></article>
+          <article class="feature-item"><h3>Optional intelligence, on device</h3><p>Mnemosyne On-Device Intelligence runs embeddings and reranking on your CPU. Provision runtime and model weights explicitly, then use their cache offline. No model is needed for the local store or default lexical search.</p><a class="text-link" href="../docs/#local-intelligence">Explore on-device intelligence</a></article>
+          <article class="feature-item"><h3>The source is still there</h3><p>Expand an issued source handle into the exact original text in bounded pages. Corrections and changed evidence invalidate affected generated context and old handles.</p><a class="text-link" href="../docs/#adaptive">Explore adaptive context</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="persistence" aria-labelledby="persistence-title">
+        <div class="feature-lead"><p class="feature-kicker">Persistent facts and clear ownership</p><h2 id="persistence-title">Choose what<br>becomes memory.</h2><p>Preserve useful context with its source, scope and uncertainty intact.</p></div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Experience with an identity</h3><p>Capture selected documents and visible conversations with stable source identities. Keep records private by default and share deliberately across agent identities in the same workspace.</p></article>
+          <article class="feature-item"><h3>Known, unknown or in conflict</h3><p>Typed profiles keep supported values and competing candidates tied to their sources. Preview additions and corrections in private change sets, then merge against current evidence.</p><a class="text-link" href="../docs/#profiles">Explore evidence-backed profiles</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="change" aria-labelledby="change-title">
+        <div class="feature-lead"><p class="feature-kicker">Mnemosyne Timeline</p><h2 id="change-title">A past you can trace.<br>A present you can check.</h2><p>Separate when a fact held in the world from when the system learned it. Carry that distinction through recall and compiled context.</p></div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Change with an effective date</h3><p>An evidenced correction preserves relevant earlier guidance until its effective boundary, then withholds obsolete descendants. Recorded correction causes support historical reads; ambiguous legacy invalidations remain withheld. This is conservative source-level retirement, not yet selective repair of every independent claim.</p></article>
+          <article class="feature-item"><h3>Freshness before reuse</h3><p>Explicit source checks distinguish confirmed, changed and unavailable evidence. Action read sets revalidate declared local dependencies immediately before your application considers the action.</p><a class="text-link" href="../docs/#freshness">Explore freshness and action checks</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="experience" aria-labelledby="experience-title">
+        <div class="feature-lead"><p class="feature-kicker">Mnemosyne Evidence Gate</p><h2 id="experience-title">Learn from the work.<br>Keep the evidence.</h2><p>Turn selected experience into reusable guidance with a visible path from proposal to trial to outcome.</p></div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Propose, then test</h3><p>Candidate skills accumulate controller-run trials before becoming ordinary advice. The recommended policy requires at least two distinct tasks and two distinct verifiers; the compatibility default remains one of each. Saved requirements survive restarts and cannot be lowered by weaker reopening options.</p></article>
+          <article class="feature-item"><h3>Confidence can change</h3><p>Attribute success and failure to the memories actually used. Recheck supporting evidence before reuse, and retire dependent guidance when its sources change or fail.</p><a class="text-link" href="../docs/#reflection">Explore learning and validation</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="adoption" aria-labelledby="adoption-title">
+        <div class="feature-lead"><p class="feature-kicker">Mnemosyne Migration</p><h2 id="adoption-title">Move forward.<br>Keep your history.</h2><p>Start beside the memory system your agents already use, and increase adoption as evidence accumulates.</p></div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Begin with coexistence</h3><p>Connect a read-only adapter to existing search. Copy records your agents retrieve, then use policy-gated paired recall checks to move from shadow to assist to local preference. The old store remains checked on every query and is never changed by the bridge.</p></article>
+          <article class="feature-item"><h3>Keep control of the transition</h3><p>Return routing to the existing system when needed. Choose a reviewed full export import, inspect source bytes, undo unchanged batches and rehearse whole-database recovery. Progress reports cover the queries observed so far.</p><a class="text-link" href="../docs/#gradual-migration">Explore gradual migration and rollback</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="evidence" aria-labelledby="evidence-title">
+        <div class="feature-lead"><p class="feature-kicker">Evidence before claims</p><h2 id="evidence-title">Progress you can<br>put a number on.</h2><p>A frozen, matched 500-question corpus measures our recall upgrade against our earlier scorer. It does not establish a ranking against other products.</p></div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>90.43% complete retrieval coverage</h3><p>All annotated source sessions were retrieved for 425 of 470 answerable questions, up from 386 (82.13%) with the earlier scorer. Both conditions use the same corpus and top-20 chunk limit; all 500 questions were processed.</p></article>
+          <article class="feature-item"><h3>81.28% complete packed coverage</h3><p>Under the same 8,192-byte context budget, complete source-session coverage rises from 367 to 382 of 470 answerable questions. Stronger scoring adds CPU work; the protocol reports retrieval timing alongside coverage.</p></article>
+          <article class="feature-item"><h3>What those numbers establish</h3><p>These are session-level evidence scores, not generated-answer accuracy. A returned chunk can earn source-session credit without containing the answer sentence. Same-day-compatible timing permits later sources on the question’s calendar day, so this is not a strict no-future-evidence experiment.</p><a class="text-link" href="../docs/#evaluation">Inspect the protocol and limits</a></article>
+          <article class="feature-item"><h3>Benefit and failure stay visible</h3><p>The separate agent harness compares no memory, recent history, lexical memory and adaptive context using a matched reader and budgets. It can track answer quality, grounding, stale actions and negative transfer. Scripted examples check the mechanics; generated-answer quality still needs measurement with your reader and tasks.</p><a class="text-link" href="../docs/#evaluation">Explore the evaluation protocol</a></article>
+        </div>
+      </section>
+      <aside class="comparison-note" aria-labelledby="fit-title">
+        <h2 id="fit-title">A memory lifecycle you can own.</h2>
+        <p>These capabilities are implemented in the 2.0.0-rc.8 source candidate; its GitHub upgrade and package publication are pending. Mnemosyne gives your application source recovery, correction history, explicit learning controls and gradual adoption. You choose sources, sharing, providers and permitted actions.</p>
+        <p>Inspect the <a href="../features/">complete capability guide</a> and <a href="../docs/#boundaries">operating boundaries</a> to choose a configuration for your application. Source citations and controller trials make evidence visible; your own evaluation establishes whether that evidence improves the work.</p>
+      </aside>
+      <section class="final-cta"><div><h2>See continuity<br>in action.</h2><p>Follow a source through capture, reuse, correction and the next agent handoff.</p></div><a class="button" href="../#demo">Explore the memory demo</a></section>
+    </div>
+  </main>
+  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../features/">Features</a></div><div class="company-footer"><a href="../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naime@gmail.com">Contact</a></div></footer>
+</body>
+</html>

@@ -1,59 +1,43 @@
-# What the v2 candidates add, and what remains to prove
+# Release status: 2.0.0-rc.8
 
-The experience runtime builds on the rc1 evidence kernel. These are implemented paths in the source candidate; npm and production website release are separate steps. [The executable guide](RUNTIME.md) and [evaluation evidence](EVALUATION.md) distinguish working behavior from performance hypotheses.
+Mnemosyne 2.0.0-rc.8 is a source release candidate for developer evaluation. The [README quickstart](../README.md#start-with-a-working-demonstration) builds the tagged GitHub source. npm and PyPI publication are separate release actions; a source prerelease does not mean the same version is available from either registry.
 
-## Capture and recover original evidence
+## Implemented in this candidate
 
-Selected text files can be synchronized or watched. Generic, Codex and Claude JSONL parsers preserve visible message text and replay identities; Codex analysis channels and tool-directed messages are excluded. Original text remains available in bounded UTF-8 pages after an observation or source correction. A document changed from A to B and back to A gets a new current revision, while old derived advice stays invalidated.
+| Area | Available behavior | Important boundary |
+|---|---|---|
+| Evidence kernel | Scoped memory, explicit sharing, correction cascades, conflicts, source history, outcomes and replay-aware forgetting. | Controller-provided provenance and trust do not authenticate truth. |
+| Host lifecycle | `MemoryAgent` context preparation, supplied-turn capture, durable jobs, finite workers and action bindings. | The host installs the integration, selects providers and starts work. |
+| Context and profiles | Budgeted source-backed observations and summaries, original-byte expansion, typed profiles with unknown/conflict states. | Generated assertions remain fallible; default budgeting uses UTF-8 bytes. |
+| Retrieval | Scoped BM25 default, explicit overlap compatibility, full eligible vector scans, optional fusion and reranking. | Dense search is bounded exact scanning, not an ANN index. |
+| Local intelligence | Explicitly provisioned, pinned CPU embedding and reranking providers with cached offline inference. | Optional runtime and model licenses remain separate; use the documented patched dependency. |
+| Temporal memory | Independent `asOf` and `knownAt` through SDK, HTTP, MCP and Python; causal correction history and scheduled changes. | Current access and erasure still apply; ambiguous legacy invalidations remain withheld. |
+| Skill promotion | Persisted promotion requirements, distinct task/verifier thresholds, failed-evidence retirement and usage traces. | Compatibility defaults to one task/verifier; the recommended two-of-each policy is explicit. |
+| Gradual migration | Read-only legacy adapter, used-record capture, paired coverage checks, staged preference and routing rollback. | Observed workload coverage is not complete-store migration; legacy reconciliation continues. |
+| Full migration | Eleven explicit export profiles, exact originals, preview, atomic apply, retries, guarded undo and replay tombstones. | Foreign embeddings, graphs and unsupported policy semantics are not automatically converted. |
+| Freshness | Explicit source recheck policies, last-confirmed evidence, bounded probes and dependency validation before actions. | Age does not rewrite facts; the host supplies verification, scheduling and complete dependencies. |
+| Operations | Scope-bound HTTP credentials, revocation, live inspector, Python client and verified whole-database recovery. | Backups are plaintext; remote identity, TLS and deployment isolation remain application work. |
 
-This is explicit file and SDK integration. It does not discover every application's chat history, install host hooks, or capture conversations without a configured caller.
+Follow the [runtime](RUNTIME.md), [agent](AGENT.md), [context](CONTEXT.md), [profile](PROFILES.md), [migration](MIGRATION.md), [bridge](BRIDGE.md), [freshness](MAINTENANCE.md), [local model](LOCAL-MODELS.md) and [operator](OPERATIONS.md) guides for the actual interfaces. Existing backend users should read [version migration](MIGRATION-v2.md); no existing database is automatically moved or deleted.
 
-## Process experience with budgets
+## What the measurements establish
 
-Durable observation/model jobs have leases, bounded attempts, call/input/output/time limits, stale-source rejection and inspectable results. A caller-selected proposer turns supplied sources into compact observations. Topic models can expose overview/detail tiers and source freshness; concurrent refreshes with unchanged evidence share one active generation.
+The paired corpus report includes all 500 LongMemEval S questions, with positive retrieval scores on 470 answerable annotated cases. At 20 retrieved chunks, complete annotated-session coverage is 386/470 for the earlier overlap scorer and 425/470 for BM25. Under the same 8,192-byte packing budget, the respective results are 367/470 and 382/470. All 30 abstention questions stay in attempt counts; all 500 full-history controls overflow that budget.
 
-This brings background memory processing into the same evidence lifecycle as direct storage. Running jobs remains an explicit controller action. There is no hidden scheduler, default paid provider or claim that every observation is useful merely because it passes structural validation.
+This is an offline retrieval experiment without model calls. It uses same-day timestamp compatibility and includes 1,475 sessions later than the stated question instant. Session-level credit does not prove delivery of the answer-bearing passage. See [reports, hashes and conditions](evaluation/BENCHMARKS.md) and the [corpus protocol](evaluation/CORPUS_PROTOCOL.md). The older 499-question protocol pins overlap explicitly and remains a separate historical baseline.
 
-## Reuse skills only after a trial
+The synthetic [evidence lifecycle diagnostic](evaluation/EVIDENCE-PROTOCOL.md) separately measures valid retention, obsolete exposure and citation identity. Its reviewed candidate report retains one known failure: an unrelated source-field change can invalidate a still-correct dependent rule. Deterministic demos and this diagnostic establish exercised behavior, not general agent task improvement. The [matched agent harness](AGENT-EVALUATION.md) is available for explicitly configured model experiments; a representative held-out generated-answer comparison has not been completed.
 
-A candidate skill records steps, prerequisites, parameters and evidence dependencies. It stays out of ordinary context until the controller supplies a passed trial. Task traces distinguish retrieved memories from memories actually used, so merely appearing in retrieval does not earn positive feedback. Source changes and failed evidence suppress dependent advice.
+## Remaining engineering work
 
-The recorded demonstration executes two trial cases and a two-agent handoff. It establishes those integration behaviors. Trial callbacks are trusted controller assertions; they are not cryptographic proof, reinforcement learning, model-weight training or general intelligence.
+- **More precise retention:** reconcile changed assertions inside a source and represent alternative sufficient evidence, so an unrelated edit need not retire every dependent rule.
+- **Semantic and answer evaluation:** run pinned local semantic providers and stronger summary baselines on held-out tasks, measuring quality, cost, latency and negative transfer together.
+- **Native integration validation:** generic protocols and explicit event adapters are available; six native framework lifecycle integrations have not been validated end to end.
+- **Managed operations:** database/backup encryption, enterprise identity, bidirectional synchronization and a hosted service are not included.
+- **Larger collections:** measure the new BM25 default on representative large workloads and evaluate an ANN path without weakening scope, time or erasure behavior. Historical 100,000-record overlap timings do not describe BM25 performance.
 
-## Retrieve words, meaning, time and relationships
+## Evaluate before adopting
 
-The same SQLite store supports lexical retrieval and explicit embedding-based hybrid retrieval with optional reranking. Persisted vectors track model identity, dimensions and source hashes. Historical queries distinguish valid time from knowledge time. Explicit entities and aliases connect through evidence-backed relationships with bounded traversal.
+Run the source checks and examples against temporary data, then exercise your own correction, replay, failure and recovery scenarios. Preview full imports before applying them, or begin gradual migration in shadow mode with your original store available. Use [SECURITY.md](../SECURITY.md) for trust boundaries and [deployment](deployment.md) for host configuration. Repository CI and local measurements are evidence for the tested conditions, not a production certification.
 
-The lexical query planner was repaired and measured at 100,000 synthetic records. Local vector retrieval is bounded and brute-force, not an ANN index. Entity resolution uses explicit aliases, not a learned coreference system. Historical record projection does not reconstruct every possible mutable field transition. Semantic quality still needs a selected model and a matched task evaluation.
-
-## Stage changes and control access
-
-Memory branches stage proposed additions/corrections outside ordinary context. Merge rechecks base evidence and applies changes atomically with replay receipts. The HTTP service binds each credential to a fixed scope, supports revocation and independent capture/recall/destructive controls, and serves a live inspector. MCP, CLI and Python expose narrower operations over the same store.
-
-These branches are memory change sets, not distributed Git repositories or CRDT replication. HTTP defaults to loopback bearer authentication; remote TLS, user account management and enterprise identity integration are application work.
-
-## Forget the source and its consequences
-
-Forgetting captured evidence removes its live correction chain and dependent content. Hashed tombstones prevent the same transcript identity or document URI from being imported again by capture/watch after restart. Capture and recall can be disabled independently; disabling capture also blocks ordinary HTTP writes.
-
-Erasure covers this live store. Existing exports, device snapshots and context already delivered to a model remain separate copies.
-
-## Documents and adoption
-
-Plain text, Markdown and JSON work directly. An explicit OpenAI-compatible vision adapter can extract text from selected PNG/JPEG/WebP images. Other binary documents require a caller-selected extractor. The repository now includes a live inspector, Python client, runtime guide, executable SDK example, and a second recorded website demo.
-
-The [native Anthropic memory adapter](ANTHROPIC-MEMORY.md) maps six text commands to private virtual files, source revisions and forgetting. The [Responses and Gemini wrappers](PROVIDER-TOOLS.md) share a fresh generic namespace while preserving provider call identities and separate wire protocols. Their protocol examples run locally; no provider model session has been evaluated. Built-in PDF extraction and managed source connectors remain gaps.
-
-The [rc5 migration service](MIGRATION.md) adds seven explicit export profiles covering Mem0, Letta blocks, legacy Mnemosyne/Qdrant and Markdown. It previews supplied files without opening a destination database, retains exact selected record bytes, applies atomically, detects stable identity conflicts/replays and guards undo against later work. Privacy forgetting purges dependent live content and blocks the same source identity after restart. It is a bounded offline export importer, not a universal account-archive parser or live synchronization service. Local snapshot compatibility remains documented [separately](MIGRATION-v2.md).
-
-## Check facts that quietly become stale
-
-The [freshness service](MAINTENANCE.md) persists explicit recheck policies and last-confirmed source evidence. A bounded caller-supplied probe can record confirmed, changed or unavailable results. Freshness-aware lexical recall checks watched ancestors; stale evidence stays out of that path without rewriting its text or trust. Host-bound action read sets validate exact local dependencies, check state and outcomes immediately before the host considers an action.
-
-The host supplies source verification, scheduling and complete action dependencies. These checks do not authenticate factual truth, detect arbitrary implicit contradictions, or lock external actions. Existing generic recall/hybrid/MCP/HTTP operations are not automatically governed by the new service. The executable example uses a simulated clock and scripted source checks, with zero model calls.
-
-## Research and evidence
-
-The [provider research review](PROVIDER-MEMORY-RESEARCH.md) distinguishes consumer memory, developer memory services, prompt caching and model-architecture research. Public sources informed source recovery, selective consolidation, topic models, deletion and independent controls. Comparable features already exist elsewhere; assembling them does not establish novelty or superiority.
-
-An offline [LongMemEval v1 retrieval adapter](LONGMEMEVAL.md) now accepts caller-supplied batches and separates evidence-session metrics from answer quality. It does not download data or invoke a judge. A [public cleaned S baseline](evaluation/LONGMEMEVAL-S-BASELINE.md) now covers 499 of 500 questions with explicit day-level compatibility and one oversized-turn exclusion; answer quality is unmeasured. The next evidence step is matched task evaluation: no-memory and strong baseline comparisons, separate retrieval and answer scoring, held-out tasks, temporal corrections, negative transfer, privacy and cost. The current source candidate does not establish AGI or a public benchmark advantage.
+Mnemosyne is developed by Aristotle Intelligence Inc., a Delaware company, and has been fully self-funded to date. For advanced memory requirements, integration support or investor enquiries, contact [28naime@gmail.com](mailto:28naime@gmail.com). Reproducible non-sensitive bugs belong in [GitHub issues](https://github.com/28naem-del/mnemosyne/issues).

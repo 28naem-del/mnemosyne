@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalMemory, type LocalMemory } from '../dist/local/index.js';
 import { MemoryRuntime } from '../dist/runtime/index.js';
-import { MigrationService, MigrationServiceError, planMigration, type MigrationArtifact, type MigrationPlanOptions } from '../dist/migration/index.js';
+import { MigrationService, MigrationServiceError, planMigration, type MigrationArtifact, type MigrationPlanOptions, type MigrationProfile } from '../dist/migration/index.js';
 
 const now = () => new Date('2026-09-13T00:00:00.000Z');
 const destination = { workspaceId: 'migration-example', agentId: 'assistant' };
@@ -74,6 +74,25 @@ try {
   assert.equal(rolledBack.deletedCount, importedDraft.createdCount);
   assert.throws(() => service.applyMigration(markdownRequest), hasCode('E_CONFLICT'));
 
+  // Published object/list shapes, supplied by the host. Each source bank/store is
+  // named explicitly; no namespaces, graph groups or tags authenticate ownership.
+  const competitorFixtures: { profile: MigrationProfile; value: unknown }[] = [
+    { profile: 'langgraph-store-items', value: [{ namespace: ['users', 'example-owner'], key: 'preference', value: { preference: 'Synthetic Tuesday walks.' } }] },
+    { profile: 'graphiti-edges', value: [{ uuid: 'synthetic-edge', group_id: 'example-graph', fact: 'Synthetic Tuesday walks.', valid_at: '2026-09-12T00:00:00Z', invalid_at: null, expired_at: null }] },
+    { profile: 'hindsight-memories', value: { items: [{ id: 'synthetic-fact', text: 'Synthetic Tuesday walks.', state: 'valid', fact_type: 'world' }], total: 1, limit: 10, offset: 0 } },
+    { profile: 'supermemory-documents', value: { memories: [{ id: 'synthetic-document', content: 'Synthetic Tuesday walks.', status: 'done' }], pagination: { currentPage: 1, limit: 10, totalItems: 1, totalPages: 1 } } },
+  ];
+  for (const fixture of competitorFixtures) {
+    const selected: MigrationArtifact[] = [{ name: `${fixture.profile}.json`, profile: fixture.profile, bytes: new TextEncoder().encode(JSON.stringify(fixture.value)) }];
+    const configuration: MigrationPlanOptions = { ...options, sourceStore: `synthetic-${fixture.profile}`, sourceOwner: { allowedIds: ['example-owner'], assumeMissing: 'example-owner' }, acknowledgePartial: true };
+    const preview = planMigration(selected, configuration);
+    assert.equal(preview.report.readyToApply, true);
+    assert.equal(preview.records[0].visibility, 'private');
+    const result = service.applyMigration({ artifacts: selected, options: configuration, planHash: preview.planHash, batchId: fixture.profile });
+    assert.equal(service.inspectMigrationSource(result.batchId, result.sources[0].identity).text, preview.records[0].rawText);
+    assert.equal(service.rollbackMigration(result.batchId, result.manifestRevision).state, 'rolled-back');
+  }
+
   const projection = memory.list({ includeUntrusted: true, metadata: { migrationRole: 'projection' } }).items.find(record => record.metadata.migrationIdentity === identity);
   assert.ok(projection);
   const later = memory.store({ text: 'Synthetic itinerary depends on the imported preference.', source: { uri: 'example:later-work' }, dependencies: [projection.id] });
@@ -103,7 +122,7 @@ try {
   console.log(JSON.stringify({ kind: 'synthetic offline migration', privateImport: true, trust: original.trust,
     exactSourceBytes: original.totalBytes, replayAfterReopen: replay.replay, unchangedImportUndo: rolledBack.state,
     laterWorkProtected: true, sourceAndDependentsForgotten: true, renamedRetryBlockedAfterReopen: true,
-    externalModelCalls: 0 }, null, 2));
+    additionalCompetitorProfiles: competitorFixtures.map(fixture => fixture.profile), externalModelCalls: 0 }, null, 2));
 } finally {
   try { memory?.close(); } finally { rmSync(directory, { recursive: true, force: true }); }
 }

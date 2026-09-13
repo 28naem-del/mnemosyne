@@ -1,4 +1,4 @@
-# package.json "files" is the release allowlist: dist, docs, site, README,
+# package.json "files" is the release allowlist: dist, docs, site, python, README,
 # LICENSE, and NOTICE. Do not exclude docs or NOTICE here.
 node_modules/
 src/

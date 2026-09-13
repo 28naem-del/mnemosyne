@@ -5,10 +5,10 @@ contact_links:
     url: https://github.com/28naem-del/mnemosyne#readme
     about: Read the full README and API reference before opening an issue.
 
-  - name: 💬 Discord Community
-    url: https://discord.gg/Sp6ZXD3X
-    about: Ask questions and get help from the community on Discord.
+  - name: Product, partnership and custom memory enquiries
+    url: mailto:28naime@gmail.com
+    about: Contact Aristotle Intelligence Inc. about Mnemosyne.
 
   - name: 🔒 Security Vulnerability
-    url: mailto:team@mnemosy.ai
+    url: mailto:28naime@gmail.com
     about: Please report security vulnerabilities privately via email — do NOT open a public issue.

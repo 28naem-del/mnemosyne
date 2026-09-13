@@ -1,12 +1,139 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Features — Mnemosyne</title><meta name="description" content="Inspect the implemented Mnemosyne v2 features: source-aware records, correction cascades, agent handoffs, bounded context and controller-gated reflection."><meta name="theme-color" content="#ffffff"><link rel="icon" href="../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../styles.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../" aria-label="Mnemosyne home"><svg class="brand-symbol" viewBox="0 0 34 38" aria-hidden="true"><path d="M4 30V16a6.5 6.5 0 0 1 13 0v14m0-14a6.5 6.5 0 0 1 13 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>mnemosyne</a><nav class="nav" aria-label="Main navigation"><a href="./" aria-current="page">Features</a><a href="../docs/">Docs</a><a href="../compare/">Compare</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav></header><main id="main" class="wrap"><div class="page-intro"><span class="version">Implemented in the v2 source preview</span><h1>Memory with<br>a chain of evidence.</h1><p>Useful experience has a source, a context and an expiry condition. Keep those relationships intact as agents and facts change.</p></div>
-<section class="feature-story"><div><h2>Source-aware records</h2><p class="feature-meta">Facts, preferences, decisions and procedures</p></div><div><p>Every record has an owner, a workspace, a source and an explicit trust state. Link procedures to the facts they depend on. Record artifact revisions when your application has them.</p><p>Source references stay inspectable. The engine does not fetch a URI or independently verify a claim just because the record includes one.</p><div class="flow" aria-label="A source supports a fact which supports a lesson"><span>Source</span><i aria-hidden="true">→</i><span>Fact</span><i aria-hidden="true">→</i><span>Derived lesson</span></div></div></section>
-<section class="feature-story"><div><h2>Corrections that propagate</h2><p class="feature-meta">Explicit supersession and dependency invalidation</p></div><div><p>When an owner corrects a source, its earlier version becomes superseded. Dependent records become inactive so stale advice does not remain in active recall.</p><p>History remains inspectable. Similar wording alone does not make two facts identical. Conflicting active facts with the same explicit key remain visible as a conflict.</p><a class="text-link" href="../#demo">Inspect a real correction in the demo</a></div></section>
-<section class="feature-story"><div><h2>Scoped handoffs</h2><p class="feature-meta">Durable checkpoints across agent identities</p></div><div><p>Carry forward completed work, open tasks, decisions, constraints, rejected approaches and the next action. A new agent can resume explicitly shared work after the original connection closes. Link the checkpoint to its source or procedure: a correction retires the obsolete handoff, and failed or conflicted evidence prevents resume.</p><p>Records are private by default. Sharing makes a record readable within its workspace; ownership still controls edits. These are library-level access rules, so protect the database itself with your application and operating system.</p></div></section>
-<section class="feature-story"><div><h2>Budgeted context</h2><p class="feature-meta">Citations, conflicts and uncertainty</p></div><div><p>Compile eligible memories into one context packet that fits a declared budget. Inspect its citations, omitted records and reasons for uncertainty.</p><p>Failed evidence and invalidated dependencies do not become quiet recommendations. Conflicting source groups are kept together when they fit, or withheld when they cannot be represented safely. Local retrieval starts with lexical matching. Explicitly configured embeddings add semantic candidates and optional reranking within the same source and scope checks.</p></div></section>
-<section class="feature-story"><div><h2>Outcome-aware reflection</h2><p class="feature-meta">Optional proposer, explicit controller validation</p></div><div><p>Record success or failure with a task, verifier and evidence. Use a caller-selected model to propose reusable lessons in one bounded pass, then validate before committing.</p><p>Reflection has input, output and time limits. It rejects duplicate proposals and invented source IDs, and rechecks source revisions before a commit. This updates external memory records; it does not train the underlying model.</p><div class="flow" aria-label="Evidence is used for a proposal which a controller validates before commit"><span>Evidence</span><i aria-hidden="true">→</i><span>Proposal</span><i aria-hidden="true">→</i><span>Validation</span><i aria-hidden="true">→</i><span>Commit</span></div></div></section>
-<section class="feature-story"><div><h2>Local control</h2><p class="feature-meta">SQLite, inspection and logical snapshots</p></div><div><p>Run the local engine without an embedding service or database server. Inspect records through TypeScript, Python, CLI, MCP or the authenticated HTTP inspector. Export owned records with their complete owned provenance and restore them into the same scope.</p><p>Forgetting purges memory text and related live-store data. It does not reach existing exports, backups or already delivered context. Keep those copies under your own retention policy.</p></div></section>
-<section class="feature-story"><div><h2>Evidence through the whole learning cycle</h2><p class="feature-meta">Capture, observations, topic models and tested skills</p></div><div><p>Capture selected files or visible chat exports. Recover the original text after summarization. Process source-cited observations with a durable queue and explicit model, input, output and time budgets.</p><p>Refresh a topic model when its evidence changes. Keep proposed skills out of advice until your controller records a passed trial. Attribute outcomes to the memories actually used. A corrected source retires its dependent advice immediately.</p><a class="text-link" href="../#learn">Inspect the recorded learning cycle</a></div></section>
-<section class="feature-story"><div><h2>Time, relationships and proposed changes</h2><p class="feature-meta">Historical queries, evidence-backed links and atomic drafts</p></div><div><p>Ask what was valid at a date and what the store knew then. Link explicit entities and aliases through cited relationships, then traverse a bounded neighborhood.</p><p>Stage additions and corrections in a private draft. Preview the changes and merge only if their base evidence is still current. Drafts and background job state stay out of ordinary agent advice.</p><p>These are explicit SDK operations. Entity extraction and merging are not silently delegated to a model.</p></div></section>
-<section class="feature-story"><div><h2>Bring your existing memories</h2><p class="feature-meta">Selected exports, reviewed before import</p></div><div><p>Move Mem0 records, Letta blocks, legacy Mnemosyne/Qdrant exports and Markdown into a private local store. Preview the exact source plan, then apply it atomically. Original record bytes remain inspectable, and renamed repeat exports reuse their stable identities.</p><p>Undo protects later work. Forget removes dependent live content and blocks the same source identity from returning. Imports are untrusted by default; seven explicit export shapes are supported.</p><a class="text-link" href="../docs/#migration">Follow the migration guide</a></div></section>
-<section class="feature-story"><div><h2>Notice silent staleness</h2><p class="feature-meta">Last confirmation, source checks and action evidence</p></div><div><p>A fact can become outdated without anyone sending a correction. Give important evidence an explicit recheck policy. Freshness-aware recall withholds stale dependencies, while short-lived action read sets catch changed evidence before the host considers the next step.</p><p>Your controller supplies source checks and action dependencies. Age never rewrites a fact, and a read-set check does not authorize or lock an external action.</p><a class="text-link" href="../docs/#freshness">Use source freshness checks</a></div></section>
-<section class="final-cta"><div><h2>Read the code behind the behavior.</h2><p>Start with the isolated demo, then connect one agent.</p></div><a class="button" href="../docs/">Build the source preview</a></section></main><footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../compare/">Compare systems</a></div></footer></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capabilities — Mnemosyne</title>
+  <meta name="description" content="Explore Mnemosyne Recall, Timeline, On-Device Intelligence, Evidence Gate and Migration. Evidence-aware memory, from original sources to tested agent skills.">
+  <meta name="theme-color" content="#070b12">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../styles.css?v=393e7f5af4af">
+<link rel="stylesheet" href="../launch.css?v=738ae631e707">
+<link rel="stylesheet" href="../cinematic.css?v=2f181b8028fc">
+<script src="../launch.js?v=372430739e42" defer></script>
+
+<link rel="canonical" href="https://mnemosy.ai/features/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Capabilities — Mnemosyne">
+<meta property="og:description" content="Explore Mnemosyne Recall, Timeline, On-Device Intelligence, Evidence Gate and Migration. Evidence-aware memory, from original sources to tested agent skills.">
+<meta property="og:url" content="https://mnemosy.ai/features/">
+<meta property="og:image" content="https://mnemosy.ai/assets/memory-architecture.png">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header wrap">
+    <a class="brand" href="../" aria-label="Mnemosyne home"><svg class="brand-symbol" viewBox="0 0 34 38" aria-hidden="true"><path d="M4 30V16a6.5 6.5 0 0 1 13 0v14m0-14a6.5 6.5 0 0 1 13 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>mnemosyne</a>
+    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="./" aria-current="page">Features</a><a href="../docs/">Docs</a><a href="../compare/">Approach</a><a href="../#company">Company</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
+  </header>
+  <main id="main">
+    <section class="page-hero wrap" aria-labelledby="page-title">
+      <p class="feature-kicker">The complete memory lifecycle</p>
+      <h1 id="page-title">Every memory.<br>A living history.</h1>
+      <p>Build experience that stays useful. Find stronger evidence, revisit what was known, run optional intelligence on your device and make every reusable skill earn its place.</p>
+      <div class="actions"><a class="button" href="../docs/">Explore the docs</a><a class="button secondary" href="../docs/#gradual-migration">Keep your current memory system</a></div>
+      <nav class="feature-index" aria-label="Explore capabilities"><a href="#remember">Remember &amp; resume</a><a href="#find">Find evidence</a><a href="#current">Keep current</a><a href="#learn">Learn from experience</a><a href="#connect">Bring across tools</a><a href="#control">Inspect &amp; control</a></nav>
+    </section>
+    <div class="wrap">
+      <section class="section feature-section" id="remember" aria-labelledby="remember-title">
+        <div class="feature-lead">
+          <p class="feature-kicker">Across turns and agents</p>
+          <h2 id="remember-title">Remember &amp; resume.</h2>
+          <p>Preserve what happened, what matters and what comes next. Give the next turn a starting point grounded in the work already done.</p>
+          <a class="text-link" href="../docs/#agent">Connect your agent loop</a>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Original evidence</h3><p>Capture selected documents and visible conversations with stable source identities. Direct text, Markdown and JSON retain their exact text; explicit extractors handle images and other binary documents. Selected file watches track revisions.</p></article>
+          <article class="feature-item"><h3>Memory in the host loop</h3><p>Prepare context before a turn, capture the visible exchange after it, and queue bounded follow-up work. Explicit event adapters accept selected, completed agent messages. Durable reservations guard against repeating an ambiguously completed turn.</p></article>
+          <article class="feature-item"><h3>Handoffs with a next step</h3><p>Carry completed work, open tasks, decisions, constraints and rejected approaches across sessions and explicitly shared agents. Source-dependent checkpoints stop being resumable when their evidence becomes invalid.</p></article>
+          <article class="feature-item"><h3>Profiles with uncertainty</h3><p>Define typed preferences or project state. Each field reports a supported value, an unknown, or conflicting candidates with source citations. Reads recheck the source state before returning values.</p><a class="text-link" href="../docs/#profiles">Explore typed profiles</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="find" aria-labelledby="find-title">
+        <div class="feature-lead">
+          <p class="feature-kicker">Mnemosyne Recall</p>
+          <h2 id="find-title">Find what matters.<br>Keep the source.</h2>
+          <p>Select the right level of detail for the task. Keep the original within reach when a summary leaves something out.</p>
+          <a class="text-link" href="../docs/#adaptive">Build adaptive context</a>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Stronger recall, by default</h3><p>Local relevance scoring weighs rare terms, repeated terms and document length across the memories authorized for the query. Records outside the query’s authorized scope do not influence those statistics. Untrusted and time-ineligible records are excluded by default. The earlier overlap scorer remains an explicit compatibility option.</p></article>
+          <article class="feature-item"><h3>Meaning beyond exact words</h3><p>Combine lexical and semantic candidates, then optionally rerank them. Semantic retrieval considers the full authorized indexed scope with bounded candidate memory and a deadline. Vectors retain their model identity and source revision; eligibility is rechecked after provider work.</p></article>
+          <article class="feature-item"><h3>Mnemosyne On-Device Intelligence</h3><p>Run optional embeddings and reranking on your CPU. Provision the supported runtime and model weights explicitly, then use cached models offline. The default local store and lexical recall need no model. Observation and reflection use separately configured providers.</p><a class="text-link" href="../docs/#local-models">Set up local intelligence</a></article>
+          <article class="feature-item"><h3>A complete context budget</h3><p>Assemble eligible observations, hierarchical summaries and original excerpts into a bounded prompt. Supply your tokenizer or use the labelled conservative byte count. Building context and reusing its selection starts no model call.</p></article>
+          <article class="feature-item"><h3>Exact source expansion</h3><p>Follow an issued source handle to the original UTF-8 text in bounded pages. Selection caches retain references and ranges. Changed evidence invalidates old handles and generated context.</p></article>
+          <article class="feature-item"><h3>Relationships with provenance</h3><p>Connect explicit entities and aliases through cited relationships. Explore a bounded neighborhood while retaining the sources and ownership behind each connection.</p><a class="text-link" href="../docs/#runtime">Explore retrieval options</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="current" aria-labelledby="current-title">
+        <div class="feature-lead">
+          <p class="feature-kicker">Mnemosyne Timeline</p>
+          <h2 id="current-title">Keep current.</h2>
+          <p>Keep two clocks: when something held in the world, and when the system learned it. Make the next turn current without losing the history behind it.</p>
+          <a class="text-link" href="../docs/#freshness">Inspect freshness checks</a>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Context at two points in time</h3><p>Choose a world-time date and a knowledge-time cutoff for recall and compiled context. Dependency, conflict and outcome checks follow those clocks together. Historical results do not restore erased evidence or make failed outcomes successful.</p><a class="text-link" href="../docs/#timeline">Explore temporal context</a></article>
+          <article class="feature-item"><h3>Corrections with a cause</h3><p>Preserve the history and recorded cause of a correction. With sufficient evidence, prior guidance remains available before the correction’s effective time while obsolete dependent guidance is withheld afterward. Ambiguous legacy invalidations stay withheld; changed sources may conservatively retire more guidance than necessary.</p></article>
+          <article class="feature-item"><h3>Visible disagreements</h3><p>Different active claims sharing an explicit fact key remain a conflict. Profiles can retain competing source-backed candidates. Similar wording alone never silently establishes that two facts are identical.</p></article>
+          <article class="feature-item"><h3>Checks for silent staleness</h3><p>Set a recheck policy and supply bounded source probes. Confirmed, changed and unavailable results feed freshness-aware recall. A fact's age prompts a check; it does not invent a replacement or increase trust.</p></article>
+          <article class="feature-item"><h3>Evidence checked before action</h3><p>Bind an action to its declared memory dependencies. Revalidate revisions, source-check state and outcomes immediately before the host callback. The application still supplies complete dependencies and controls the external action.</p><a class="text-link" href="../#demo">Follow a correction in the demo</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="learn" aria-labelledby="learn-title">
+        <div class="feature-lead">
+          <p class="feature-kicker">Mnemosyne Evidence Gate</p>
+          <h2 id="learn-title">Experience.<br>Earned, then reused.</h2>
+          <p>Turn selected experience into observations and tested procedures, with evidence that can be inspected, challenged and retired.</p>
+          <a class="text-link" href="../#learn">Inspect the recorded learning cycle</a>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Durable observation jobs</h3><p>An explicit proposer turns supplied sources into cited observations. Jobs retain state through restarts, with leases, bounded retries and call, byte and time limits. Start one drain or a finite worker when your application needs it.</p></article>
+          <article class="feature-item"><h3>Reusable topic models</h3><p>Build overview and detail representations from selected evidence. Reuse unchanged generations and refresh when inputs change. Full generation checks include ancestor records, source verification and successful or failed outcomes.</p></article>
+          <article class="feature-item"><h3>Skills that earn reuse</h3><p>Describe a procedure’s prerequisites, steps, parameters and evidence. We recommend promotion after passed trials across at least two distinct tasks and two distinct verifiers. Candidate skills accumulate trials while remaining outside ordinary advice; duplicate task or evidence submissions do not add promotion credit.</p></article>
+          <article class="feature-item"><h3>A policy that survives restart</h3><p>Promotion requirements are saved with each new skill. Reopening the store with weaker options cannot lower them. The compatibility default and legacy skills retain one-task, one-verifier requirements; configure the stronger policy for new candidates. Failed trials or prerequisites retire a skill.</p></article>
+          <article class="feature-item"><h3>Outcomes and reflection</h3><p>Record which memories were actually used and how the task ended. Bounded reflection proposes lessons, rejects invented citations and checks source revisions before commit. These operations update external memory; the host supplies the outcome evidence.</p><a class="text-link" href="../docs/#reflection">Explore reflection and validation</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="connect" aria-labelledby="connect-title">
+        <div class="feature-lead">
+          <p class="feature-kicker">Mnemosyne Migration</p>
+          <h2 id="connect-title">Bring across tools.</h2>
+          <p>Connect an agent where it already works. Start beside an existing memory system or make a deliberate, reviewed import.</p>
+          <a class="text-link" href="../docs/#gradual-migration">Explore gradual migration</a>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Migrate through use</h3><p>A read-only legacy search adapter copies the records your agent retrieves. Policy-gated paired recall checks can move routing from shadow to assist to local preference. The old store is checked on every query and stays unchanged, with immediate legacy-routing rollback. Progress covers observed queries, without assuming the whole store has migrated.</p></article>
+          <article class="feature-item"><h3>A reviewed full import</h3><p>Preview and atomically apply memories through 11 selected export profiles. Inspect original record bytes, replay safely and undo unchanged batches without discarding later work.</p><a class="text-link" href="../docs/#migration">See supported export formats</a></article>
+          <article class="feature-item"><h3>One store, several interfaces</h3><p>Use the TypeScript SDK, CLI, MCP server, authenticated HTTP service or bundled Python client. Share selected workspace records across agent identities while ownership continues to govern edits.</p><a class="text-link" href="../docs/#mcp">Connect through MCP</a></article>
+          <article class="feature-item"><h3>Provider memory tools</h3><p>Expose scoped virtual memory files through provider memory tools and supported function-calling interfaces. Your host keeps control of model requests, conversation state and permissions.</p><a class="text-link" href="/docs/reference/PROVIDER-TOOLS.html">Read the provider integration guide</a></article>
+        </div>
+      </section>
+      <section class="section feature-section" id="control" aria-labelledby="control-title">
+        <div class="feature-lead">
+          <p class="feature-kicker">An inspectable local system</p>
+          <h2 id="control-title">Inspect &amp; control.</h2>
+          <p>Own the store and the decisions around it. Review proposed changes, set boundaries and rehearse recovery before relying on memory.</p>
+          <a class="text-link" href="../docs/#boundaries">Read the operating boundaries</a>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-item"><h3>Local storage and access controls</h3><p>Run the local engine without a separate database server. Records are private by default. The HTTP inspector uses scoped, revocable credentials, with independent capture, recall, read-only and destructive-operation controls.</p></article>
+          <article class="feature-item"><h3>Changes you can preview</h3><p>Stage additions and corrections in a private memory branch. Inspect the proposed change, then merge atomically only while its base evidence remains current. Drafts and controller job records stay out of ordinary advice.</p></article>
+          <article class="feature-item"><h3>Backup and recovery</h3><p>Take a consistent whole-database snapshot, verify its digest and database integrity, then restore to a new path. Preserve workspaces, pending jobs and erasure tombstones. Scoped exports remain a separate transfer option.</p><a class="text-link" href="../docs/#recovery">Rehearse recovery</a></article>
+          <article class="feature-item"><h3>Forgetting across the lifecycle</h3><p>Erase source generations and dependent live content. Hashed tombstones block replay after restart, including across full and gradual migration when the source identity matches. Legacy stores and existing external copies remain under your own retention controls.</p></article>
+          <article class="feature-item"><h3>Measured evidence, inspectable outcomes</h3><p>The 500-question matched corpus run reports complete source-session coverage on 425/470 answerable questions at retrieval and 382/470 after 8,192-byte packing. This is evidence coverage, not answer accuracy, with same-day-compatible source timing. The separate agent harness can measure answer quality, stale actions and negative transfer with your own reader.</p><a class="text-link" href="../docs/#evaluation">Inspect the evaluation protocol</a></article>
+          <article class="feature-item"><h3>Mnemosyne Vector Engine</h3><p>Keep vector and hybrid recall with improved relevance scoring, broader startup indexing and scoped cache revalidation. The Mnemosyne Vector Engine remains separate from the local engine, with explicit migration when you choose to move records.</p><a class="text-link" href="/docs/reference/MIGRATION-v2.html">Read the existing-user guide</a></article>
+        </div>
+      </section>
+      <aside class="comparison-note legacy-architecture" aria-labelledby="legacy-architecture-title"><span id="l1" class="anchor-alias" aria-hidden="true"></span><span id="l2" class="anchor-alias" aria-hidden="true"></span><span id="l3" class="anchor-alias" aria-hidden="true"></span><span id="l4" class="anchor-alias" aria-hidden="true"></span><span id="l5" class="anchor-alias" aria-hidden="true"></span><h2 id="legacy-architecture-title">Already using the Mnemosyne Vector Engine?</h2><p>Older feature links point to the Mnemosyne Vector Engine. It remains available alongside the local engine, with upgraded retrieval and explicit controls for maintenance and erasure. The two backends are separate and their data is not automatically synchronized.</p><p><a href="../docs/#existing-qdrant">Read the existing-user guidance</a> or <a href="../#architecture">explore the current memory loop</a>.</p></aside>
+      <aside class="comparison-note" aria-labelledby="scope-title">
+        <h2 id="scope-title">Know what you are building on.</h2>
+        <p>These capabilities are implemented in the <strong>2.0.0-rc.8 source candidate</strong>. Your application supplies trusted scope, selected source checks and model callbacks. Provider tools do not transfer consumer account memories; export profiles do not recreate every upstream feature.</p>
+        <p>Gradual adoption measures the queries seen so far and continues to check the old backend. Recovery files are plaintext, erasure cannot reach existing backups, and production identity, remote TLS and managed synchronization remain application work. The <a href="../docs/#boundaries">documentation</a> makes those boundaries explicit.</p>
+      </aside>
+      <section class="final-cta"><div><h2>Start with one agent.<br>Keep the evidence.</h2><p>Build from the tagged source, follow the integration guides and run the included examples.</p></div><a class="button" href="../docs/">Start building</a></section>
+    </div>
+  </main>
+  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../compare/">The Mnemosyne approach</a></div><div class="company-footer"><a href="../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naime@gmail.com">Contact</a></div></footer>
+</body>
+</html>

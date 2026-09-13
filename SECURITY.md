@@ -1,24 +1,29 @@
-# Security policy and boundaries
+# Security policy
 
-This branch is the 2.0.0-rc.1 release candidate. Security-related breaking changes are described in [migration notes](docs/MIGRATION-v2.md). A passing test suite or dependency audit is not a security certification.
+Mnemosyne 2.0.0-rc.8 is a release candidate. Review [migration notes](docs/MIGRATION-v2.md) before upgrading existing applications. Report security issues affecting this candidate or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
 
-## Report a vulnerability
+## Report a vulnerability privately
 
-Use the repository's existing private contact, [team@mnemosy.ai](mailto:team@mnemosy.ai), with the subject `[SECURITY]` and a short description. Include affected version, reproduction, impact, and a minimal proof of concept. Do not include real credentials, private memories, or another person's data in a public issue.
+Email **[28naime@gmail.com](mailto:28naime@gmail.com)** with a subject beginning `[SECURITY] Mnemosyne`. Include the affected version or commit, expected and observed behavior, reproduction steps, impact and a minimal proof of concept using synthetic data. Do not disclose an unpatched vulnerability or put credentials, private memories or someone else's data in a public issue.
 
-## Trust model
+## Controller and access boundaries
 
-- The SDK runs inside a trusted controller. Workspace/agent IDs are selectors chosen by that controller, not login credentials or tenant authentication.
-- Anyone who can read the SQLite database or its snapshots can access their content. The package provides no encryption, remote identity provider, or isolation from privileged local processes.
-- Memories are fallible reference data. A stored instruction never creates authority to run a command, send a message, or change access. Prompt wrapping and schema validation reduce accidental misuse; they cannot guarantee model compliance against every injection.
-- Verified trust and successful outcomes are controller assertions. The package requires evidence fields but cannot authenticate their contents. MCP models cannot promote themselves, record successful outcomes, import snapshots, or commit reflection.
-- Sharing is explicit. Do not give an untrusted caller a controller SDK handle or a backend administrator credential. Run separate processes/databases where stronger isolation is needed.
-- Model providers are selected by caller code. Reflection is bounded and signals cancellation, but cannot stop billing or work at a remote service that ignores that signal.
+The TypeScript SDK runs inside a trusted controller. Workspace and agent IDs select records; they are not login credentials, tenant authentication or protection from a process that can read the database. Give untrusted callers a constrained transport interface, not a controller SDK handle. Use separate processes or databases where stronger isolation is needed.
 
-## Deletion and copies
+The HTTP service binds bearer credentials to configured scopes and supports revocation and separate capture, recall and destructive-operation controls. It defaults to loopback. Remote TLS, identity management and deployment perimeter controls are application responsibilities. Keep token files private and outside version control. MCP authority is fixed at launch: models cannot choose arbitrary identities, claim verified trust, report successful trials or import snapshots.
 
-Local forgetting removes live content and dependent content from the kernel's records, versions, search entries, outcomes, audit/retry payloads. It does not purge old exports, backups, copied prompts, logs outside the kernel, swap, or physical storage remnants. Qdrant forgetting checks scope and erases explicit points; graph/cache copies elsewhere are not a distributed erasure guarantee. Cache revalidation prevents stale records from being returned through the tested recall path.
+Memories are fallible reference data. Stored instructions do not authorize commands, messages, access changes or other actions. Verified trust, source confirmation and successful trials are controller assertions; evidence fields and distinct verifier IDs cannot authenticate the underlying claims. Prompt boundaries and schema validation do not guarantee immunity to prompt injection. Action checks validate complete **declared** local dependencies at dispatch; they do not lock an external system or replace its authorization.
 
-## Verification
+## Storage, backups and erasure
 
-CI runs tests, package checks, and dependency auditing. Tests use isolated local databases and mocked Qdrant/graph transports unless explicitly labeled otherwise. Keep live infrastructure tests separate from production data. Never use shared production volumes for destructive test fixtures.
+The local database and whole-database backups are **plaintext**. Anyone able to read them can access their contents, including private records and multiple workspaces. Protect storage permissions and use deployment-level encryption where required. Backup checksums and SQLite integrity checks detect corruption; they are not signatures, encryption or sender authentication. Restore goes to a new path and does not perform a service cutover.
+
+Local forgetting removes covered live content, correction history and dependent payloads, and uses tombstones to block replay of known source identities. It cannot erase old exports, backups, copied prompts, external logs, swap or physical storage remnants. Restoring an older backup cannot contain tombstones created after that backup. Maintain an appropriate recovery and deletion process. See [operations](docs/OPERATIONS.md).
+
+The existing Qdrant path performs scoped explicit-point erasure and recall cache revalidation. Other graph, cache or exported copies are not covered by a distributed erasure guarantee. Do not test destructive behavior against a production database or shared volume.
+
+## Providers and dependencies
+
+The host explicitly chooses providers, endpoints and processing budgets. Timeout and cancellation signals cannot stop work or billing at a remote service that ignores them. Optional local model provisioning downloads selected artifacts only when requested; cached inference can run offline. Follow the pinned runtime, patched dependency and license requirements in [LOCAL-MODELS.md](docs/LOCAL-MODELS.md).
+
+CI runs correctness, packaging and dependency checks. Most integration tests use isolated databases or mocked transports unless labeled otherwise. Passing them does not establish production isolation, semantic correctness or security against every threat. Preserve dependency notices and report new vulnerabilities through the private contact above.

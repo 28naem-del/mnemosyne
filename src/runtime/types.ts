@@ -21,6 +21,10 @@ export interface RuntimeOptions {
   now?: () => Date;
   /** Fail closed if a bounded inventory cannot be fully inspected. */
   maxScanRecords?: number;
+  /** Controller-owned requirements for new skills, persisted with each skill.
+   * Defaults to one distinct task and verifier for compatibility. Prefer
+   * RECOMMENDED_SKILL_PROMOTION_POLICY (two of each) for stronger promotion. */
+  skillPromotionPolicy?: SkillPromotionPolicy;
 }
 export interface RuntimeSource { id: string; text: string; source: MemorySource; trust: MemoryTrust }
 export interface RuntimeProposalRequest {
@@ -86,12 +90,22 @@ export interface SkillDefinition {
   parameters: Record<string, { description: string; required: boolean }>;
   evidenceIds: string[];
 }
+export interface SkillPromotionPolicy {
+  /** Controller-assigned policy revision. Requirements are also bound into identity. */
+  id: string;
+  /** Integer from 1 to 32. Repeated task/evidence assertions cannot add support. */
+  minimumDistinctTasks: number;
+  /** Integer from 1 to 32. Verifier identifiers are controller assertions, not authentication. */
+  minimumDistinctVerifiers: number;
+}
 export interface RuntimeSkill {
   id: string;
   recordId: string;
   state: 'candidate' | 'active' | 'retired';
   definition: SkillDefinition;
   fingerprint: string;
+  /** Missing only on existing legacy skills, whose policy is one task and verifier. */
+  promotionPolicy?: SkillPromotionPolicy;
   reason?: string;
   trials: { passed: boolean; evidence: string; verifier: string; taskId: string; prerequisitesSatisfied: boolean }[];
 }
@@ -123,3 +137,6 @@ export interface IngestInput extends ProposalBudgets {
   revision?: string;
   trust?: 'untrusted' | 'observed';
 }
+
+/** The synchronous direct-text subset of document ingestion. */
+export type IngestTextInput = Omit<IngestInput, 'data' | 'extractor' | 'text'> & { text: string };

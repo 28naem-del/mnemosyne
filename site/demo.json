@@ -1,7 +1,7 @@
 {
   "mode": "recorded",
   "title": "One experience. A better starting point.",
-  "description": "A reproducible memory-engine demonstration using two agent identities and a real temporary SQLite database. No language model or paid API is involved.",
+  "description": "A recorded memory-engine demonstration using two synthetic agent identities and a temporary local database. Every record, including the private-note example, is fictional. No language model or paid API is involved.",
   "generatedAt": "2026-09-12T20:06:53.528Z",
   "steps": [
     {
@@ -1312,7 +1312,7 @@
   "limitations": [
     "This tests memory semantics, not autonomous agent competence or AGI.",
     "Outcome evidence is supplied by the caller/controller; the library does not authenticate it.",
-    "Local retrieval is lexical. Semantic retrieval remains available through the separate Qdrant API.",
+    "This recorded run exercises lexical retrieval. The current source candidate also supports explicitly configured local semantic retrieval and reranking; those are evaluated separately.",
     "Deleted data may remain in external exports, backups, or previously delivered context."
   ]
 }

@@ -1,4 +1,4 @@
-# Research lineage and dependencies
+# Attribution and dependencies
 
 Mnemosyne is distributed under the existing MIT license. This upgrade implements its new local kernel and reflection controls independently; it does not copy upstream memory-system source code.
 
@@ -13,8 +13,14 @@ The design draws on established work rather than claiming exclusive invention:
 - [ReasoningBank](https://github.com/google-research/reasoning-bank): external experience distilled from successful and failed trajectories.
 - [Voyager](https://voyager.minedojo.org/): reusable skill libraries validated in an environment.
 
-The September 8 workspace notes attribute parts of the original project's inspiration to Graphiti, Cognee, EverMemOS, Mastra and Mem0. That historical record does not establish which upstream code was copied or prove production parity. The original license and authorship remain intact.
+These references describe research influences, not performance rankings or proof of production parity. The original license and authorship remain intact.
 
 Runtime third-party dependencies: the official MCP TypeScript server SDK (MIT), Zod (MIT), and uuid (MIT, legacy backend). SQLite is supplied by Node.js; the local entry point uses Node built-ins. Each dependency retains its own license. Research discussion of OpenViking does not import its AGPL server code into this distribution.
 
-See [the research review](docs/RESEARCH-2026-09-12.md) for primary sources, corrections to older notes, and how the findings affected implementation.
+Optional CPU inference uses separately installed third-party software and separately provisioned models. Their identities, pinned revisions, Apache-2.0 licenses and source model cards are listed in [local-model attribution](docs/LOCAL-MODELS.md#reproducibility-and-attribution). Mnemosyne supplies the integration and memory lifecycle; it does not claim authorship of those inference libraries or model weights.
+
+Evaluation reports retain dataset attribution, revisions and result metadata. The public benchmark conversation corpora are not bundled; users acquire them separately under their upstream terms. See the [corpus protocol](docs/evaluation/CORPUS_PROTOCOL.md) for dataset sources and license distinctions. Included synthetic fixtures and recorded demonstrations are first-party examples, not user memory exports.
+
+See [the research review](docs/RESEARCH-2026-09-12.md) for primary sources and the design decisions they informed.
+
+The static website vendors the official Three.js 0.185.1 browser modules under the MIT license. Its license, official archive URL and verified checksums are retained in [site/vendor/three](site/vendor/three/SOURCE.md). This renderer is used only for the illustrative interactive sculpture, independently of the memory engine.

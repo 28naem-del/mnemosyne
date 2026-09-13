@@ -1,8 +1,12 @@
 name: Publish to npm
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish to npm (separate from a GitHub release)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,6 +20,8 @@ jobs:
     steps:
       - name: Checkout release
         uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -27,20 +33,16 @@ jobs:
       - name: Verify release identity and channel
         id: release
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           node --input-type=module <<'NODE'
           import { appendFileSync, readFileSync } from 'node:fs';
           const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
           if (pkg.name !== 'mnemosy-ai') throw new Error('Unexpected package name');
-          if (![pkg.version, `v${pkg.version}`].includes(process.env.RELEASE_TAG)) {
-            throw new Error('Release tag must equal package.json version, optionally prefixed with v');
+          if (`v${pkg.version}` !== process.env.RELEASE_TAG) {
+            throw new Error('Release tag must equal v plus package.json version');
           }
           const prerelease = pkg.version.includes('-');
-          if ((process.env.RELEASE_PRERELEASE === 'true') !== prerelease) {
-            throw new Error('GitHub prerelease status must match the package version');
-          }
           const tag = prerelease ? 'next' : 'latest';
           appendFileSync(process.env.GITHUB_OUTPUT, `dist-tag=${tag}\n`);
           console.log(`Validated ${pkg.name}@${pkg.version} for npm tag ${tag}`);
@@ -61,22 +63,13 @@ jobs:
         run: |
           npm pack --json --ignore-scripts > "$RUNNER_TEMP/mnemosyne-pack.json"
           PACK_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/mnemosyne-pack.json")
-          node --input-type=module - "$RUNNER_TEMP/mnemosyne-pack.json" <<'NODE'
-          import { appendFileSync, readFileSync } from 'node:fs';
-          const pack = JSON.parse(readFileSync(process.argv[2], 'utf8'))[0];
-          const files = new Set(pack.files.map(file => file.path));
-          for (const path of ['README.md', 'LICENSE', 'NOTICE.md', 'docs/deployment.md', 'dist/cli/index.js', 'dist/local/index.js', 'dist/mcp/server.js', 'dist/reflection/index.js']) {
-            if (!files.has(path)) throw new Error(`Package is missing ${path}`);
-          }
-          appendFileSync(process.env.GITHUB_OUTPUT, `filename=${pack.filename}\n`);
-          NODE
           MNEMOSYNE_SMOKE_DIR=$(mktemp -d "$RUNNER_TEMP/mnemosyne-package.XXXXXX")
+          trap 'rm -rf "$MNEMOSYNE_SMOKE_DIR"' EXIT
           npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund "$PWD/$PACK_NAME"
-          "$MNEMOSYNE_SMOKE_DIR/node_modules/.bin/mnemosy" --version
-          "$MNEMOSYNE_SMOKE_DIR/node_modules/.bin/mnemosy" demo > "$MNEMOSYNE_SMOKE_DIR/demo.json"
-          cd "$MNEMOSYNE_SMOKE_DIR"
-          node --input-type=module -e "await Promise.all(['mnemosy-ai', 'mnemosy-ai/local', 'mnemosy-ai/mcp', 'mnemosy-ai/reflection'].map(specifier => import(specifier)));"
-          node -e "const report = require('./demo.json'); if (!report.checksTotal || report.checksPassed !== report.checksTotal) process.exit(1); console.log(report.checksPassed + '/' + report.checksTotal + ' demo checks passed');"
+          node scripts/verify-package.mjs --source package.json \
+            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
+            --tarball "$PWD/$PACK_NAME"
+          printf 'filename=%s\n' "$PACK_NAME" >> "$GITHUB_OUTPUT"
 
       # Publish the exact tarball just installed and checked, with no rebuild.
       - name: Publish with provenance
