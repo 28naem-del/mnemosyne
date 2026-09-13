@@ -202,7 +202,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@types/node": "^25.9.6",
+    "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^5.0.0",
     "ioredis": "^5.11.1",
     "typescript": "^6.0.3",
