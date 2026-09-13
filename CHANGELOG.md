@@ -7,13 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-rc.9] — packaging and release documentation, 2026-09-13
+
+This candidate packages the tested RC8 memory engine with the repository and contact corrections below. It adds no new engine capabilities or benchmark claims. npm publication is a separate release step; Python package metadata follows this version without asserting PyPI publication.
+
 - Refresh the repository logo, sharing artwork and README; add a documentation index and task-oriented gallery for all 15 examples.
 - Align architecture, historical context, skill policy, onboarding and deployment guides with the implemented release.
 - Check local documentation paths and anchors in CI, with regression fixtures for broken images, renamed headings and illustrative code.
 - Include branding and root guides in future packages, verify their presence, and include license notices in the runtime container.
 - Update issue forms for current interfaces and private reporting; clarify the demo's optional semantic retrieval capability.
+- Correct current support, security and partnership contacts to `28naem@gmail.com`; check public identity, support links and release status consistently in CI.
+- Direct website setup links to runnable instructions and correct the published evidence status while preserving recorded measurements.
+- Require documentation and public metadata checks before npm packaging, validate trusted-publishing CLI compatibility, and publish the exact verified tarball with provenance.
 
-The published `v2.0.0-rc.8` tag and its download assets remain unchanged. These follow-up improvements are available on `main`.
+The published `v2.0.0-rc.8` tag and its download assets remain unchanged; its release notes flag the obsolete contact address in those immutable downloads.
 
 ## [2.0.0-rc.8] — source release candidate, 2026-09-13
 

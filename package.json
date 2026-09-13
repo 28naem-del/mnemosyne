@@ -1,6 +1,6 @@
 {
   "name": "mnemosy-ai",
-  "version": "2.0.0-rc.8",
+  "version": "2.0.0-rc.9",
   "description": "Evidence-backed agent memory with observation, hybrid recall, temporal history, tested skills, and local MCP/HTTP",
   "type": "module",
   "main": "./dist/index.js",

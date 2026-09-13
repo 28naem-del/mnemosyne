@@ -2,7 +2,7 @@
 
 Mnemosyne 2 has two storage paths. The local engine, MCP server and authenticated HTTP service use SQLite and BM25 retrieval by default. The existing `createMnemosyne()` API uses a separately configured vector service and embedding endpoint. Starting a local service does not connect optional legacy databases. It makes no model-provider calls by default; an explicit `--provider-config` enables hybrid queries that send query text to the configured embedding endpoint. See [semantic indexing and hybrid recall](RUNTIME.md#hybrid-retrieval) for provider setup and data flow.
 
-This guide describes the **2.0.0-rc.8 source release**. Use the [tagged quickstart](quickstart.md) for a fresh clone. GitHub release assets, source updates and npm/PyPI publications are separate channels.
+This guide describes **2.0.0-rc.9**. Use the [quickstart](quickstart.md) for an exact-version npm installation or a fresh clone of the matching tag. With the npm package installed, replace `node dist/cli/index.js` below with `npx --no-install mnemosy`; the remaining flags are identical. Python registry publication remains separate.
 
 ## Build and run locally
 
