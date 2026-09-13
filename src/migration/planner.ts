@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { migrationOriginIdentity } from './origins.js';
 import { MEMORY_TYPES } from '../core/types.js';
 import { parseJsonWithSpans, JsonSpanError, type JsonSpanNode } from './json-spans.js';
 import { MIGRATION_PROFILES, MigrationPlanError, type MigrationArtifact, type MigrationFamily, type MigrationFieldMapping, type MigrationFieldStatus, type MigrationInputReport, type MigrationIssue, type MigrationPlan, type MigrationPlannedRecord, type MigrationPlanOptions, type MigrationProfile, type NormalizedMigrationOptions } from './types.js';
@@ -323,7 +324,7 @@ function normalizeRecord(artifact: OwnedArtifact, artifactIndex: number, node: J
   else return fail('E_OWNER', 'Selected source ownership field has an invalid value.');
   if (sourceOwner === undefined) return fail('E_OWNER_MISSING', 'Missing source ownership requires an explicit selected export-scope assumption.');
   base.sourceOwner = sourceOwner;
-  base.identity = hash(JSON.stringify([family, options.sourceStore, family === 'mnemosyne' ? options.collection : '', sourceOwner, externalId]));
+  base.identity = migrationOriginIdentity({ family, sourceStore: options.sourceStore, collection: options.collection, sourceOwner, externalId });
   base.canonicalHash = node ? hash(canonical(node, artifact.bytes)) : base.rawHash;
   const textKey = family === 'mem0' ? 'memory' : family === 'letta' || family === 'langgraph' ? 'value' : family === 'graphiti' ? 'fact' : family === 'supermemory' ? 'content' : options.qdrantTextField && artifact.profile === 'mnemosyne-qdrant-scroll' ? options.qdrantTextField : 'text';
   base.mappings = mappingsFor(node, artifact.profile, textKey);

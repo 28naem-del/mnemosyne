@@ -29,9 +29,9 @@ beforeAll(() => {
   } };
   write(join(source, 'package.json'), JSON.stringify(declaration));
   for (const file of ['README.md', 'LICENSE', 'NOTICE.md', 'docs/deployment.md', 'docs/RUNTIME.md', 'docs/MIGRATION.md', 'docs/MAINTENANCE.md', 'docs/EVALUATION.md', 'docs/LONGMEMEVAL.md',
-    'docs/AGENT.md', 'docs/CONTEXT.md', 'docs/AGENT-EVALUATION.md', 'docs/OPERATIONS.md', 'docs/PROFILES.md',
+    'docs/AGENT.md', 'docs/CONTEXT.md', 'docs/AGENT-EVALUATION.md', 'docs/OPERATIONS.md', 'docs/PROFILES.md', 'docs/BRIDGE.md',
     'dist/operations/worker.js', 'dist/evaluation/agent-benchmark.js', 'dist/evaluation/benchmark-memory.js',
-    'examples/agent-loop.ts', 'examples/adaptive-context.ts', 'examples/agent-benchmark.ts', 'examples/backup-restore.ts', 'examples/profiles.ts',
+    'examples/agent-loop.ts', 'examples/adaptive-context.ts', 'examples/agent-benchmark.ts', 'examples/backup-restore.ts', 'examples/profiles.ts', 'examples/gradual-migration.ts',
     'dist/adapters/anthropic-memory.js', 'dist/adapters/provider-memory-tools.js', 'dist/evaluation/learning-demo.js', 'dist/evaluation/longmemeval.js', 'python/pyproject.toml', 'python/mnemosyne_memory/__init__.py',
     'dist/index.d.ts', 'dist/mcp.d.ts', 'dist/future.d.ts']) write(join(source, file), '// synthetic package fixture\n');
   write(join(source, 'dist/index.js'), 'export const value = true;\n');
@@ -62,7 +62,7 @@ describe('shared installed artifact verifier', () => {
   it('rejects a declaration missing from the installed package', () => {
     rmSync(installed('dist/future.d.ts')); const result = verify(); expect(result.status).toBe(1); expect(result.stderr).toContain('dist/future.d.ts');
   });
-  it.each(['dist/operations/worker.js', 'docs/PROFILES.md', 'examples/agent-loop.ts'])('rejects an omitted required rc7 asset %s', path => {
+  it.each(['dist/operations/worker.js', 'docs/PROFILES.md', 'examples/agent-loop.ts', 'docs/BRIDGE.md', 'examples/gradual-migration.ts'])('rejects an omitted required candidate asset %s', path => {
     const value = json(pack); value[0].files = value[0].files.filter((file: { path: string }) => file.path !== path); write(pack, JSON.stringify(value));
     const result = verify(); expect(result.status).toBe(1); expect(result.stderr).toContain(`missing ${path}`);
   });

@@ -16,6 +16,14 @@ export interface BeforeTurnInput {
   requireWatched?: boolean;
   signal?: AbortSignal;
 }
+/** Trusted host integration with a synchronous final dispatch check. */
+export interface AgentContextProvider {
+  build(input: BeforeTurnInput & { maxTokens: number; signal: AbortSignal }): Promise<AgentContext>;
+  /** Throw if the exact packet or its source state is no longer valid. No async work. */
+  validate(context: AgentContext): void;
+  /** Providers that stage source records must opt in to capture policy checks. */
+  requiresCapture?: boolean;
+}
 export interface BeforeTurnResult { enabled: boolean; context: AgentContext }
 export interface AfterTurnResult extends CaptureResult {
   jobs: RuntimeJob[];

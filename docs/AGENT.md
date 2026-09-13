@@ -41,6 +41,14 @@ If the host returned a response but capture failed, `AgentOperationError.code` i
 
 The default capture trust is `untrusted`, which stays out of advisory recall and observation jobs. Set `captureTrust: 'observed'` only when your host witnessed the supplied messages. Observed content remains a source assertion, not independently verified truth. Sharing defaults to private; an explicit `visibility: 'workspace'` exposes the source to other agents in the same workspace. Generated observations remain private unless deliberately shared by another controller operation.
 
+## Gradual migration beside an existing memory system
+
+Pass `contextProvider: bridge.contextProvider` to use the [MemoryBridge](BRIDGE.md) inside the existing agent loop. Full export migration remains a separate option. The bridge reads the explicitly supplied legacy adapter and stages source records, so its provider declares `requiresCapture: true`; read-only or capture-disabled agents reject it before calling the adapter. Recall-disabled agents return disabled context without invoking it.
+
+A custom `AgentContextProvider` has an asynchronous `build` and a **synchronous** `validate(context)` that throws when its packet or supporting source state is no longer valid. The agent invokes validation after construction and again immediately before responder dispatch. The rendered context fields are bound against mutation. Asynchronous validation is rejected; it cannot authorize dispatch while still pending. Provider methods are bound at construction, and `contextBuilder` and `contextProvider` are mutually exclusive.
+
+The provider remains trusted host code and must bind all claims to complete source evidence. Use the supplied bridge provider to retain its additional origin, lease and freshness checks. A final validation checks locally recorded evidence; it does not make an external legacy database and host action one distributed transaction.
+
 ## Existing lifecycle and event streams
 
 For hosts that already control turn boundaries, call `beforeTurn({query,maxTokens})`, then `afterTurn({sessionId,messages})`. A message contains a stable `id`, visible `role` and exact `text`. These methods allow you to keep the host's own retry, streaming, approval and error semantics.

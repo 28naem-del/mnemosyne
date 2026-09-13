@@ -5,7 +5,7 @@ import { MemoryMaintenance } from '../maintenance/index.js';
 import { canonical, metadata } from '../local/validation.js';
 import { MemoryRuntime, parseTranscriptJsonl, type CaptureInput, type RuntimeProposer } from '../runtime/index.js';
 import { messagesFromAgentEvents } from './events.js';
-import type { AgentAction, AgentActionInput, AgentBackground, AgentContext, AgentDrainReport, AgentEventInput, AgentJobBudgets, AgentResponder, AfterTurnResult, BackgroundOptions, BackgroundReport, BeforeTurnInput, BeforeTurnResult, RunTurnInput, RunTurnResult } from './types.js';
+import type { AgentAction, AgentActionInput, AgentBackground, AgentContext, AgentContextProvider, AgentDrainReport, AgentEventInput, AgentJobBudgets, AgentResponder, AfterTurnResult, BackgroundOptions, BackgroundReport, BeforeTurnInput, BeforeTurnResult, RunTurnInput, RunTurnResult } from './types.js';
 export * from './types.js';
 export { messagesFromAgentEvents } from './events.js';
 
@@ -29,6 +29,8 @@ export interface MemoryAgentOptions {
   maintenance?: MemoryMaintenance;
   /** Trusted host callback; must bind every rendered claim to memoryIds. */
   contextBuilder?: (input: BeforeTurnInput & { maxTokens: number; signal: AbortSignal }) => Promise<AgentContext>;
+  /** Context with a final synchronous source-state check; exclusive with contextBuilder. */
+  contextProvider?: AgentContextProvider;
   proposer?: RuntimeProposer;
   readOnly?: boolean;
   /** Default untrusted. Set observed only when the host witnessed the supplied messages. */
@@ -63,6 +65,7 @@ export class MemoryAgent {
   readonly maintenance: MemoryMaintenance;
   readonly #context: AdaptiveContext;
   readonly #builder?: MemoryAgentOptions['contextBuilder'];
+  readonly #provider?: AgentContextProvider;
   readonly #proposer?: RuntimeProposer;
   readonly #readOnly: boolean;
   readonly #trust: NonNullable<CaptureInput['trust']>;
@@ -76,9 +79,14 @@ export class MemoryAgent {
 
   constructor(runtime: MemoryRuntime, options: MemoryAgentOptions = {}) {
     if (!(runtime instanceof MemoryRuntime)) throw new TypeError('MemoryAgent requires MemoryRuntime.');
-    const allowed = ['maintenance', 'contextBuilder', 'proposer', 'readOnly', 'captureTrust', 'jobBudgets'];
+    const allowed = ['maintenance', 'contextBuilder', 'contextProvider', 'proposer', 'readOnly', 'captureTrust', 'jobBudgets'];
     if (Object.keys(options).some(key => !allowed.includes(key))) throw new TypeError('Unknown memory agent option.');
     if ((options.proposer !== undefined && typeof options.proposer !== 'function') || (options.contextBuilder !== undefined && typeof options.contextBuilder !== 'function')) throw new TypeError('Invalid host callback.');
+    if (options.contextProvider !== undefined) {
+      const provider = options.contextProvider;
+      if (!provider || typeof provider !== 'object' || typeof provider.build !== 'function' || typeof provider.validate !== 'function' || (provider.requiresCapture !== undefined && typeof provider.requiresCapture !== 'boolean') || options.contextBuilder !== undefined) throw new TypeError('Invalid or ambiguous context provider.');
+      this.#provider = Object.freeze({ build: provider.build.bind(provider), validate: provider.validate.bind(provider), requiresCapture: provider.requiresCapture ?? false });
+    }
     this.runtime = runtime;
     this.maintenance = options.maintenance ?? new MemoryMaintenance(runtime);
     if (this.maintenance.runtime !== runtime) throw new TypeError('Maintenance must belong to this runtime.');
@@ -96,18 +104,35 @@ export class MemoryAgent {
   async beforeTurn(input: BeforeTurnInput): Promise<BeforeTurnResult> {
     this.#open(); const maxTokens = int(input.maxTokens, 4096, 0, 1_000_000);
     if (!this.runtime.recallEnabled) return { enabled: false, context: emptyContext(maxTokens) };
+    if (this.#provider?.requiresCapture && (this.#readOnly || !this.runtime.captureEnabled)) throw new AgentOperationError('context-failed');
     query.parse(input.query); if (input.taskId !== undefined) identifier.parse(input.taskId);
     try {
       const context = await bounded(async signal => {
         this.#open();
         const request = { ...input, maxTokens, signal };
-        const packet = this.#builder ? await this.#builder(request) : await this.#context.build({ ...request, maxCandidates: 64 });
+        const packet = this.#provider ? await this.#provider.build(request) : this.#builder ? await this.#builder(request) : await this.#context.build({ ...request, maxCandidates: 64 });
         this.#open();
         if (signal.aborted) throw new AgentOperationError('cancelled');
         if (typeof packet.text !== 'string' || !Number.isSafeInteger(packet.tokens) || packet.tokens < 0 || packet.tokens > maxTokens || packet.tokenBudget !== maxTokens || !Array.isArray(packet.memoryIds) || packet.memoryIds.length > 64) throw new Error();
         // Validate complete dependencies again after any asynchronous context builder.
         if (packet.memoryIds.length) this.maintenance.createReadSet({ memoryIds: packet.memoryIds, actionKey: 'agent:context', dependenciesComplete: true, requireWatched: input.requireWatched });
-        if (!this.#builder) {
+        if (this.#provider) {
+          const provider = this.#provider;
+          const contextIdentity = () => hash({ text: packet.text, tokens: packet.tokens, tokenBudget: packet.tokenBudget, memoryIds: packet.memoryIds, abstained: packet.abstained });
+          const expected = contextIdentity();
+          const valid = () => {
+            try {
+              if (contextIdentity() !== expected) return false;
+              const result: unknown = provider.validate(packet);
+              // TypeScript permits async callbacks in a void-returning slot. They
+              // cannot guard dispatch; observe rejection but never accept them.
+              if (result !== undefined) { void Promise.resolve(result).catch(() => undefined); return false; }
+              return contextIdentity() === expected;
+            } catch { return false; }
+          };
+          if (!valid()) throw new Error();
+          this.#contextChecks.set(packet, valid);
+        } else if (!this.#builder) {
           const built = packet as AdaptiveContextPacket;
           if (!this.#context.validate(built).valid) throw new Error();
           this.#contextChecks.set(packet, () => this.#context.validate(built).valid);

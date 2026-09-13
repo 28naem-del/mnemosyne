@@ -123,3 +123,6 @@ export interface IngestInput extends ProposalBudgets {
   revision?: string;
   trust?: 'untrusted' | 'observed';
 }
+
+/** The synchronous direct-text subset of document ingestion. */
+export type IngestTextInput = Omit<IngestInput, 'data' | 'extractor' | 'text'> & { text: string };

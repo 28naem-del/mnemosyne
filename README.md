@@ -6,9 +6,9 @@ Portable memory for agents that need to carry work forward, explain what they re
 
 Mnemosyne 2 combines a local SQLite memory engine with a host-controlled agent lifecycle, adaptive context, source capture, bounded observation jobs, source-backed project models, trial-gated skills, hybrid retrieval, and correction-aware provenance. Use it through TypeScript, MCP, the CLI, or an authenticated local HTTP service with a live inspector and Python client. The existing Qdrant integration remains available separately.
 
-**Status: 2.0.0-rc.7, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
+**Status: 2.0.0-rc.8, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
 
-[Quickstart](docs/quickstart.md) · [Agent lifecycle](docs/AGENT.md) · [Adaptive context](docs/CONTEXT.md) · [Typed profiles](docs/PROFILES.md) · [Runtime](docs/RUNTIME.md) · [Migration](docs/MIGRATION.md) · [Backup and restore](docs/OPERATIONS.md) · [Agent evaluation](docs/AGENT-EVALUATION.md) · [Security boundaries](SECURITY.md)
+[Quickstart](docs/quickstart.md) · [Agent lifecycle](docs/AGENT.md) · [Adaptive context](docs/CONTEXT.md) · [Typed profiles](docs/PROFILES.md) · [Runtime](docs/RUNTIME.md) · [Gradual migration](docs/BRIDGE.md) · [Full migration](docs/MIGRATION.md) · [Backup and restore](docs/OPERATIONS.md) · [Agent evaluation](docs/AGENT-EVALUATION.md) · [Security boundaries](SECURITY.md)
 
 ## See it work
 
@@ -121,7 +121,13 @@ node dist/cli/index.js migrate --action apply \
   --batch first-import --confirm
 ```
 
-The preview opens no destination database. Imports are private and untrusted by default; accepted source assertions can be planned with explicit `--trust observed`. The [migration guide](docs/MIGRATION.md) lists all 11 supported export profiles, page/owner declarations, exact-byte accounting, limits, inspection, undo and forgetting. There is no account discovery or automatic live migration.
+The preview opens no destination database. Imports are private and untrusted by default; accepted source assertions can be planned with explicit `--trust observed`. The [migration guide](docs/MIGRATION.md) lists all 11 supported export profiles, page/owner declarations, exact-byte accounting, limits, inspection, undo and forgetting. There is no account discovery. For an opt-in transition while the existing store stays active, use [gradual migration](docs/BRIDGE.md).
+
+### Move gradually while your agent keeps working
+
+`mnemosy-ai/bridge` wraps an explicitly supplied, read-only legacy search adapter. Used memories are copied with stable origins and revisions. Paired recall checks increase Mnemosyne preference from shadow to assist to preferred; missing legacy matches remain available. The bridge keeps querying the original store for reconciliation, never deletes it, and can return to legacy routing immediately. Progress describes observed workload coverage, not completion of the entire store. Full export migration remains available separately.
+
+See the [bridge contract and host integration](docs/BRIDGE.md), then run `node --experimental-strip-types examples/gradual-migration.ts` after building.
 
 Run the new synthetic examples after building to see migration and silent-staleness checks on temporary stores:
 

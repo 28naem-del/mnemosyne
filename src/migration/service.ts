@@ -2,6 +2,7 @@ import type { LocalMemory, MemoryRecord } from '../local/index.js';
 import { canonical } from '../local/validation.js';
 import type { MemoryRuntime } from '../runtime/index.js';
 import { planMigration } from './planner.js';
+import { isMigrationOriginForgotten, migrationOriginIdentity, registerMigrationOriginForgotten, type MigrationOrigin, type MigrationOriginOptions } from './origins.js';
 import type { MigrationArtifact, MigrationPlan, MigrationPlanOptions, MigrationPlannedRecord } from './types.js';
 import { bindingSchema, bytesHash, controlMetadata, controlSchema, controlUri, digest, journalKey, journalPageSchema, migrationHash, pageKey, rawPageSchema, type Batch, type Binding, type Control, type JournalPage, type Reference, type SourceEntry } from './journal.js';
 
@@ -219,7 +220,7 @@ export class MigrationService {
     const reused = new Map<string, ControlRecord<Binding>>();
     for (const record of records) {
       if (!record.identity || !record.canonicalHash || record.rawText === undefined) fail('E_PLAN', 'A retained source lacks its required identity or raw bytes.');
-      if (inventory.tombstones.has(record.identity)) fail('E_FORGOTTEN', 'A source identity was privacy-forgotten; replay is blocked.');
+      if (inventory.tombstones.has(record.identity) || isMigrationOriginForgotten(this.#memory, record.identity, { maxScanRecords: this.#limits.maxInventoryRecords })) fail('E_FORGOTTEN', 'A source identity was privacy-forgotten; replay is blocked.');
       const ingestKey = `capture:${migrationHash(['generic', `migration:${record.identity}`, 'raw'])}`;
       const ownedRuntimeRecord = (metadata: Record<string, string>): boolean => {
         const page = this.#memory.list({ metadata, includeInactive: true, includeUntrusted: true, limit: Math.min(1000, this.#limits.maxInventoryRecords) });
@@ -374,36 +375,68 @@ export class MigrationService {
       return { batchId, state: 'rolled-back' as const, manifestRevision: this.#reference(record).fingerprint, deletedCount: journal.created.length };
     }));
   }
+  #bridgeSources(identity: string): MemoryRecord[] {
+    const uri = `bridge:${identity}`, documentIdentity = migrationHash(['document', uri]);
+    const records: MemoryRecord[] = []; let cursor: string | undefined, scanned = 0;
+    do {
+      const page = this.#memory.list({ metadata: { runtimeType: 'source', adapter: 'document' }, includeInactive: true, includeUntrusted: true, limit: Math.min(1000, this.#limits.maxInventoryRecords), cursor });
+      scanned += page.items.length;
+      if (scanned > this.#limits.maxInventoryRecords || (page.nextCursor && scanned >= this.#limits.maxInventoryRecords)) fail('E_LIMIT', 'Bridge source inventory exceeds the scan budget.');
+      for (const record of page.items) {
+        if (record.agentId !== this.#memory.agentId || record.source.uri !== uri) continue;
+        if (record.workspaceId !== this.#memory.workspaceId || record.visibility !== 'private' || record.kind !== 'observation' || record.dependencies.length || typeof record.source.revision !== 'string' || record.metadata.documentIdentity !== documentIdentity || record.metadata.ingestKey !== `ingest:${migrationHash([uri, record.source.revision])}`) fail('E_STATE', 'Invalid bridge source identity or ownership.');
+        records.push(record);
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    return records;
+  }
   forgetMigratedSource(sourceIdentity: string, options: { signal?: AbortSignal | null } = {}) {
     plain(options, ['signal']);
     return this.#run('forget', options.signal, () => this.#memory.atomic(() => {
       const identity = checkedDigest(sourceIdentity), inventory = this.#inventory();
-      if (inventory.tombstones.has(identity)) return { identity, forgotten: true as const, deletedCount: 0 };
+      const wasForgotten = inventory.tombstones.has(identity) || isMigrationOriginForgotten(this.#memory, identity, { maxScanRecords: this.#limits.maxInventoryRecords });
       const history = inventory.historicalBindings.get(identity) ?? [];
       if (history.length > 1) fail('E_STATE', 'Source identity has conflicting bindings.');
-      const binding = history[0];
-      if (!binding) {
-        // An undo removes source bytes, but the caller can still explicitly
-        // turn that known prior identity into a permanent privacy deletion.
+      const binding = history[0], bridgeSources = this.#bridgeSources(identity);
+      if (!binding && !bridgeSources.length && !wasForgotten) {
+        // Undo removes bytes without recording a privacy deletion. The known
+        // prior identity may still be explicitly forgotten after a rollback.
         const rolledBack = [...inventory.batches.values()].some(batch => batch.data.state === 'rolled-back' && this.#journals(batch.data).sources.some(source => source.identity === identity && source.created));
         if (!rolledBack) fail('E_NOT_FOUND', 'Migrated source was not found.');
-        this.#permission('forget', options.signal);
-        this.#storeControl({ version: 1, type: 'tombstone', key: identity }, inventory);
-        this.#permission('forget', options.signal);
-        return { identity, forgotten: true as const, deletedCount: 0 };
       }
-      // Privacy deletion may remove corrected/invalidated source versions; it is
-      // deliberately broader than rollback and does not depend on old fingerprints.
-      const data = bindingSchema.parse(this.#control(binding.record));
-      const ids = [binding.record.id, ...(data.source ? [data.source.id] : []), ...data.rawPages.map(page => page.id), ...(data.projection ? [data.projection.id] : [])];
+      const data = binding && bindingSchema.parse(this.#control(binding.record));
+      const ids = data && binding ? [binding.record.id, ...(data.source ? [data.source.id] : []), ...data.rawPages.map(page => page.id), ...(data.projection ? [data.projection.id] : [])] : [];
       for (const id of ids) { const record = this.#memory.get(id); if (record && (record.agentId !== this.#memory.agentId || record.visibility !== 'private')) fail('E_CONFLICT', 'Source deletion ownership changed.'); }
       const deleted = new Set<string>();
+      // The exact common-origin URI recognizes only this bridge's documents.
+      // Runtime erasure also removes revision history and dependent text.
+      for (const source of bridgeSources) {
+        this.#permission('forget', options.signal);
+        if (this.#memory.get(source.id)) this.#runtime.forgetSource(source.id).deletedIds.forEach(id => deleted.add(id));
+      }
       for (const id of ids) { this.#permission('forget', options.signal); if (this.#memory.get(id)) this.#memory.forget(id).deletedIds.forEach(id => deleted.add(id)); }
-      // The outer transaction makes deletion and tombstoning inseparable. Check
-      // the post-deletion inventory so a full namespace can still forget data.
-      this.#storeControl({ version: 1, type: 'tombstone', key: identity }, this.#inventory());
+      // A prior tombstone does not bypass erasure of another existing copy.
+      // Source deletion and replay protection commit in the same transaction.
+      if (!inventory.tombstones.has(identity)) this.#storeControl({ version: 1, type: 'tombstone', key: identity }, this.#inventory());
       this.#permission('forget', options.signal);
       return { identity, forgotten: true as const, deletedCount: deleted.size };
     }));
   }
+}
+
+/** Privacy-erases either migration path, or prevents future capture of a not-yet-seen origin. */
+export function forgetMigrationOrigin(memory: LocalMemory, runtime: MemoryRuntime, origin: MigrationOrigin | string, options: MigrationOriginOptions = {}): { identity: string; forgotten: true; deletedCount: number } {
+  plain(options, ['maxScanRecords']);
+  const identity = typeof origin === 'string' ? checkedDigest(origin) : migrationOriginIdentity(origin);
+  const maxInventoryRecords = bounded(options.maxScanRecords, 10000, 100000);
+  const service = new MigrationService({ memory, runtime, limits: { maxInventoryRecords } });
+  return memory.atomic(() => {
+    try { return service.forgetMigratedSource(identity); }
+    catch (error) {
+      if (!(error instanceof MigrationServiceError) || error.code !== 'E_NOT_FOUND') throw error;
+      registerMigrationOriginForgotten(memory, identity, { maxScanRecords: maxInventoryRecords });
+      return { identity, forgotten: true, deletedCount: 0 };
+    }
+  });
 }

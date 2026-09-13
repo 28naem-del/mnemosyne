@@ -2,6 +2,12 @@
 
 The experience runtime builds on the rc1 evidence kernel. These are implemented paths in the source candidate; npm and production website release are separate steps. [The executable guide](RUNTIME.md) and [evaluation evidence](EVALUATION.md) distinguish working behavior from performance hypotheses.
 
+## rc8: migrate as the agent uses memory
+
+The optional `mnemosy-ai/bridge` runs beside a caller-supplied legacy search adapter. It copies used records, compares current legacy results with genuine local recall, and gradually increases local preference while retaining missing-result fallback and immediate legacy-routing rollback. Legacy records are never mutated by the bridge. Full export migration stays available. Progress covers observed queries only; no automatic full cutover or complete-store claim is made. See [BRIDGE.md](BRIDGE.md).
+
+The agent context-provider seam rechecks the exact packet before dispatch. Eligible native originals stay available alongside reconciled legacy matches, without inflating migration coverage. Shared origin erasure prevents full and gradual migration from reviving each other's forgotten identities. Focused and final validation results are reported separately in the release handoff.
+
 ## rc7: a complete opt-in host loop
 
 The [agent SDK](AGENT.md) puts recall before a host turn and durable capture/scheduling after it. Completed Codex and Claude SDK events can enter through explicit adapters. A finite background worker has aggregate call, byte, cycle and time limits; it starts only when requested. Durable turn reservations prevent automatic redispatch after ambiguous failures. Action bindings validate their complete declared memory dependencies immediately before the host callback.

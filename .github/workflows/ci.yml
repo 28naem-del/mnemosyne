@@ -80,6 +80,9 @@ jobs:
       - name: Run source-backed typed profiles
         run: node --experimental-strip-types examples/profiles.ts
 
+      - name: Run gradual migration beside a synthetic legacy store
+        run: node --experimental-strip-types examples/gradual-migration.ts
+
   python:
     name: Python client (Python ${{ matrix.python }})
     runs-on: ubuntu-latest

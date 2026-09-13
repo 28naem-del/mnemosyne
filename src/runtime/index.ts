@@ -4,7 +4,7 @@ import type { JsonValue, LocalMemory, MemoryRecord, MemoryTrust } from '../local
 import { canonical } from '../local/validation.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseTranscriptJsonl } from './parsers.js';
-import type { CaptureInput, CaptureResult, EnqueueInput, IngestInput, ModelResult, ProposalBudgets, RunJobsOptions, RunJobsReport, RuntimeJob, RuntimeOptions, RuntimeProposalRequest, RuntimeProposer, RuntimeSkill, RuntimeSource, SkillDefinition, SkillTrialInput, SkillValidation } from './types.js';
+import type { CaptureInput, CaptureResult, EnqueueInput, IngestInput, IngestTextInput, ModelResult, ProposalBudgets, RunJobsOptions, RunJobsReport, RuntimeJob, RuntimeOptions, RuntimeProposalRequest, RuntimeProposer, RuntimeSkill, RuntimeSource, SkillDefinition, SkillTrialInput, SkillValidation } from './types.js';
 export * from './types.js';
 export { parseTranscriptJsonl } from './parsers.js';
 
@@ -162,37 +162,57 @@ export class MemoryRuntime {
     if (end === offset && offset < encoded.length) throw new Error('Source byte budget cannot fit the next UTF-8 character.');
     return { id: record.id, text: encoded.subarray(offset, end).toString('utf8'), source: record.source, trust: record.trust, status: record.status, offset, ...(end < encoded.length ? { nextOffset: end } : {}) };
   }
-  async ingest(input: IngestInput): Promise<CaptureResult> {
+  /** Synchronous direct-text ingestion, suitable for a controller's atomic source/journal write. */
+  ingestText(input: IngestTextInput): CaptureResult {
     if (!this.captureEnabled) return { enabled: false, records: [] };
+    if ('data' in input || 'extractor' in input) throw new Error('Direct-text ingestion does not accept data or an extractor.');
     const uri = text(2048).parse(input.uri), mimeType = text(256).parse(input.mimeType);
     const trust = z.enum(['untrusted', 'observed']).parse(input.trust ?? 'untrusted');
     const maxOutputBytes = budget(input.maxOutputBytes, 65_536, 1, 65_536);
     const maxInputBytes = budget(input.maxInputBytes, 1_048_576, 1, 16_777_216);
+    if (input.signal?.aborted) throw new Error('Runtime operation cancelled.');
+    if (typeof input.text !== 'string' || Buffer.byteLength(input.text) > maxInputBytes) throw new Error('Document input budget exceeded.');
+    if (!['text/plain', 'text/markdown', 'application/json'].includes(mimeType)) throw new Error('Non-text MIME types require data and a caller-selected extractor.');
+    const extracted = originalText(maxOutputBytes).parse(input.text);
+    const revision = text(1024).parse(input.revision ?? createHash('sha256').update(extracted).digest('hex'));
+    return this.#commitIngest({ uri, mimeType, trust, revision, extracted, extraction: 'direct-text', signal: input.signal });
+  }
+  #documentVersions(uri: string, documentIdentity: string): MemoryRecord[] {
+    return this.#records('source', { adapter: 'document' }, true).filter(record => record.metadata.documentIdentity === documentIdentity || record.source.uri === uri);
+  }
+  async ingest(input: IngestInput): Promise<CaptureResult> {
+    if (!this.captureEnabled) return { enabled: false, records: [] };
     if ((input.text === undefined) === (input.data === undefined)) throw new Error('Supply exactly one of text or data.');
-    if (input.signal?.aborted) throw new Error('Runtime operation cancelled.');
-    const directText = input.text;
-    const data = input.data === undefined ? undefined : input.data instanceof Uint8Array ? input.data.slice() : undefined;
-    if (directText !== undefined ? typeof directText !== 'string' || Buffer.byteLength(directText) > maxInputBytes : !data || data.byteLength > maxInputBytes) throw new Error('Document input budget exceeded.');
-    const revision = text(1024).parse(input.revision ?? createHash('sha256').update(directText ?? data!).digest('hex'));
-    const ingestKey = `ingest:${hash([uri, revision])}`;
-    const documentIdentity = hash(['document', uri]);
-    this.#assertNotForgotten(ingestKey, documentIdentity);
-    const documentVersions = () => this.#records('source', { adapter: 'document' }, true).filter(record => record.metadata.documentIdentity === documentIdentity || record.source.uri === uri);
-    const extractionHead = data ? hash(documentVersions().filter(record => record.status === 'active').map(record => record.id).sort()) : undefined;
-    let extracted: string;
-    if (directText !== undefined) {
-      if (!['text/plain', 'text/markdown', 'application/json'].includes(mimeType)) throw new Error('Non-text MIME types require data and a caller-selected extractor.');
-      extracted = directText;
-    } else {
-      const extractor = input.extractor;
-      if (typeof extractor !== 'function') throw new Error('A caller-selected document or image extractor is required.');
-      extracted = await boundedCall(signal => extractor({ uri, mimeType, data: data!, maxOutputBytes, signal }), input);
+    if (input.text !== undefined) {
+      // Keep the existing async API while routing all direct writes through the
+      // same synchronous transaction boundary. A direct extractor was unused.
+      const { data: _data, extractor: _extractor, ...direct } = input;
+      return this.ingestText({ ...direct, text: input.text });
     }
-    originalText(maxOutputBytes).parse(extracted);
+    const uri = text(2048).parse(input.uri), mimeType = text(256).parse(input.mimeType);
+    const trust = z.enum(['untrusted', 'observed']).parse(input.trust ?? 'untrusted');
+    const maxOutputBytes = budget(input.maxOutputBytes, 65_536, 1, 65_536);
+    const maxInputBytes = budget(input.maxInputBytes, 1_048_576, 1, 16_777_216);
     if (input.signal?.aborted) throw new Error('Runtime operation cancelled.');
+    const data = input.data instanceof Uint8Array ? input.data.slice() : undefined;
+    if (!data || data.byteLength > maxInputBytes) throw new Error('Document input budget exceeded.');
+    const revision = text(1024).parse(input.revision ?? createHash('sha256').update(data).digest('hex'));
+    const ingestKey = `ingest:${hash([uri, revision])}`, documentIdentity = hash(['document', uri]);
+    this.#assertNotForgotten(ingestKey, documentIdentity);
+    const extractionHead = hash(this.#documentVersions(uri, documentIdentity).filter(record => record.status === 'active').map(record => record.id).sort());
+    const extractor = input.extractor;
+    if (typeof extractor !== 'function') throw new Error('A caller-selected document or image extractor is required.');
+    const extracted = await boundedCall(signal => extractor({ uri, mimeType, data, maxOutputBytes, signal }), input);
+    originalText(maxOutputBytes).parse(extracted);
+    return this.#commitIngest({ uri, mimeType, trust, revision, extracted, extraction: 'caller-supplied', extractionHead, signal: input.signal });
+  }
+  #commitIngest(input: { uri: string; mimeType: string; trust: 'untrusted' | 'observed'; revision: string; extracted: string; extraction: 'direct-text' | 'caller-supplied'; extractionHead?: string; signal?: AbortSignal }): CaptureResult {
+    const { uri, mimeType, trust, revision, extracted, extraction, extractionHead } = input;
+    if (input.signal?.aborted) throw new Error('Runtime operation cancelled.');
+    const ingestKey = `ingest:${hash([uri, revision])}`, documentIdentity = hash(['document', uri]);
     const record = this.memory.atomic(() => {
       this.#assertNotForgotten(ingestKey, documentIdentity);
-      const versions = documentVersions();
+      const versions = this.#documentVersions(uri, documentIdentity);
       const active = versions.filter(record => record.status === 'active');
       if (active.length > 1) throw new Error('Document has conflicting active revisions; resolve them before ingestion.');
       const replay = versions.find(record => record.metadata.ingestKey === ingestKey);
@@ -203,7 +223,7 @@ export class MemoryRuntime {
       if (extractionHead !== undefined && extractionHead !== hash(active.map(record => record.id).sort())) throw new Error('Document changed during extraction; retry with the current input.');
       if (active[0] && active[0].trust !== trust) throw new Error('Document revisions must preserve their existing trust classification.');
       const source = { uri, revision };
-      const meta = { runtimeType: 'source', adapter: 'document', mimeType, extraction: data ? 'caller-supplied' : 'direct-text', ingestKey, documentIdentity };
+      const meta = { runtimeType: 'source', adapter: 'document', mimeType, extraction, ingestKey, documentIdentity };
       // A changed document replaces its prior revision and invalidates every
       // dependent observation/model/skill inside this same kernel transaction.
       if (active[0]) return this.memory.correct(active[0].id, { text: extracted, source, metadata: meta, reason: 'Document source revision changed.' });
