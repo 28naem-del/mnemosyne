@@ -24,7 +24,14 @@ function budget(value: number | undefined, fallback: number, min: number, max: n
   return number;
 }
 class RuntimeEvidenceError extends Error {}
-function errorText(error: unknown): string { return (error instanceof Error ? error.message : 'Runtime operation failed.').slice(0, 1024); }
+// Callback, JSON parser and schema errors can quote private source/model output.
+// Only fixed diagnostics may enter durable job history or returned reports.
+const safeErrors = new Set(['Runtime time budget exceeded.', 'Runtime operation cancelled.', 'Runtime output budget exceeded.', 'Runtime source input budget exceeded; enqueue a smaller source batch.', 'Job retry budget exhausted.', 'Proposal cites evidence that was not supplied.', 'Proposal makes no progress: duplicate source or observation.']);
+function errorText(error: unknown): string {
+  if (error instanceof RuntimeEvidenceError) return 'Source evidence changed or is unavailable.';
+  if (error instanceof SyntaxError || error instanceof z.ZodError) return 'Runtime response or persisted state has an invalid format.';
+  return error instanceof Error && safeErrors.has(error.message) ? error.message : 'Runtime operation failed; private error details omitted.';
+}
 function metadata(value: object): Record<string, JsonValue> { return JSON.parse(JSON.stringify(value)) as Record<string, JsonValue>; }
 async function boundedCall<T>(callback: (signal: AbortSignal) => Promise<T>, options: ProposalBudgets): Promise<T> {
   if (options.signal?.aborted) throw new Error('Runtime operation cancelled.');
@@ -230,12 +237,19 @@ export class MemoryRuntime {
     if (inputBytes > budget(options.maxInputBytes, 32_768, 1024, 262_144)) throw new Error('Runtime source input budget exceeded; enqueue a smaller source batch.');
     return { ...state, envelope, inputBytes };
   }
-  async #propose(job: Pick<RuntimeJob, 'kind' | 'key' | 'sourceIds' | 'fingerprint' | 'tier' | 'parentKey'>, proposer: RuntimeProposer, options: ProposalBudgets) {
+  async #propose(job: Pick<RuntimeJob, 'kind' | 'key' | 'sourceIds' | 'fingerprint' | 'tier' | 'parentKey'>, proposer: RuntimeProposer, options: ProposalBudgets, onDispatch?: () => void) {
     if (typeof proposer !== 'function') throw new Error('A caller-selected proposer is required.');
     const before = this.#envelope(job, options);
     if (before.fingerprint !== job.fingerprint) throw new RuntimeEvidenceError('Queued source evidence changed.');
     if (job.kind === 'model' && job.key) this.#retireModels(job.key, job.fingerprint);
-    const response = await boundedCall(signal => proposer({ ...before.envelope, signal } as RuntimeProposalRequest), options);
+    const response = await boundedCall(signal => {
+      if (signal.aborted) throw new Error('Runtime operation cancelled.');
+      // The callback runs in a queued microtask. Recheck at dispatch, including
+      // when the caller forgets evidence immediately after starting runJobs().
+      if (this.#sources(job.sourceIds).fingerprint !== before.fingerprint) throw new RuntimeEvidenceError('Source evidence changed before dispatch.');
+      onDispatch?.();
+      return proposer({ ...before.envelope, signal } as RuntimeProposalRequest);
+    }, options);
     const serialized = typeof response === 'string' ? response : JSON.stringify(response);
     if (typeof serialized !== 'string' || Buffer.byteLength(serialized) > before.envelope.maxOutputBytes) throw new Error('Runtime output budget exceeded.');
     const parsed = job.kind === 'observe' ? z.object({ observations: z.array(sourceProposal).max(8) }).strict().parse(JSON.parse(serialized)).observations : [sourceProposal.parse(JSON.parse(serialized))];
@@ -311,8 +325,7 @@ export class MemoryRuntime {
           report.skipped++; break;
         }
         if (prepared.fingerprint !== job.fingerprint) throw new RuntimeEvidenceError('Queued source evidence changed.');
-        report.modelCalls++; report.inputBytes += prepared.inputBytes;
-        await this.#propose(job, options.proposer, { ...options, timeoutMs });
+        await this.#propose(job, options.proposer, { ...options, timeoutMs }, () => { report.modelCalls++; report.inputBytes += prepared.inputBytes; });
         report.completed.push(job.jobId);
       } catch (error) {
         const message = errorText(error);

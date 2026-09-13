@@ -6,7 +6,7 @@ Portable memory for agents that need to carry work forward, explain what they re
 
 Mnemosyne 2 combines a local SQLite memory engine with source capture, bounded observation jobs, source-backed project models, trial-gated skills, hybrid retrieval, and correction-aware provenance. Use it through TypeScript, MCP, the CLI, or an authenticated local HTTP service with a live inspector and Python client. The existing Qdrant integration remains available separately.
 
-**Status: 2.0.0-rc.5, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
+**Status: 2.0.0-rc.6, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
 
 [Quickstart](docs/quickstart.md) · [Runtime and service guide](docs/RUNTIME.md) · [Native provider tools](docs/PROVIDER-TOOLS.md) · [Import existing memories](docs/MIGRATION.md) · [Source freshness](docs/MAINTENANCE.md) · [API](docs/api.md) · [Security boundaries](SECURITY.md)
 

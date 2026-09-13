@@ -14,6 +14,10 @@ npm run benchmark -- --count 10000 --queries 100
 ## Where to work
 
 - `src/local`: SQLite lifecycle, scope, provenance, retrieval, snapshots.
+- `src/runtime` and `src/maintenance`: source capture, bounded jobs, skills, freshness and action checks.
+- `src/migration`: explicit export profiles, exact source retention, apply and guarded undo.
+- `src/providers`, `src/connectors`, and `src/adapters`: configured model endpoints, supplied files and provider memory tools.
+- `src/http`, `src/branches`, and `src/relations`: local service, isolated changes and evidence-linked entities.
 - `src/reflection`: bounded proposer and controller commitment.
 - `src/mcp` and `src/cli`: actual protocol and command interfaces.
 - `src/evaluation`: isolated executable demonstrations and synthetic scale probes.

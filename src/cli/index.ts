@@ -78,8 +78,16 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
            Shortcut settings cannot override a manifest or a saved plan during apply.
 
   Scope: --db FILE --workspace NAME --agent NAME (all required)
-  MCP/HTTP: --read-only, --allow-destructive (forget is disabled by default)
-            --no-capture, --no-recall set separate runtime policies
+  Policies: --read-only blocks all direct memory mutations, including erasure.
+            --no-capture blocks new writes; --no-recall blocks stored-state reads
+            and source processing. store/import can run with --no-recall.
+            Confirmed forget and migration rollback remain available with capture
+            and recall disabled; erasure never returns stored source content.
+            Invalid commands/actions and policy denials fail before opening SQLite.
+            Isolated demo/evaluate commands do not accept restrictive policies.
+            Migration preview accepts no policy flags; it opens no database.
+  MCP/HTTP: all three policies configure server capabilities instead.
+            --allow-destructive enables forget (disabled by default).
             --provider-config FILE explicitly enables hybrid recall
   Store: --kind fact|preference|decision|procedure|observation
          --trust untrusted|observed|verified (default observed)
@@ -107,6 +115,55 @@ function jsonInput(value?: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(value ?? '{}');
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('--json must contain an object.');
   return parsed as Record<string, unknown>;
+}
+
+type CliAccess = 'read' | 'write' | 'erase';
+type CliValues = Record<string, string | boolean | undefined>;
+
+// Every executable route needs an explicit policy. A write that reads existing
+// sources (including replay or provider input) needs both capabilities. Privacy
+// erasure needs neither capture nor recall, but still requires a writable policy
+// and the command handler's explicit confirmation/destructive authorization.
+const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
+  store: ['write'], import: ['write'],
+  recall: ['read'], context: ['read'], inspect: ['read'], export: ['read'], jobs: ['read'],
+  correct: ['read', 'write'], forget: ['erase'], capture: ['read', 'write'],
+  observe: ['read', 'write'], 'run-jobs': ['read', 'write'], index: ['read', 'write'],
+  // These routes enforce per-request policies and must accept valid combinations.
+  mcp: [], serve: [],
+  // Isolated evaluations create and read temporary memory, even without an output file.
+  demo: ['read', 'write'], 'learning-demo': ['read', 'write'], evaluate: ['read', 'write'],
+};
+const ACTION_ACCESS: Readonly<Record<string, { defaultAction?: string; actions: Readonly<Record<string, readonly CliAccess[]>> }>> = {
+  model: { defaultAction: 'get', actions: { get: ['read'], context: ['read'], refresh: ['read', 'write'] } },
+  skill: { actions: { create: ['read', 'write'], get: ['read'], trial: ['read', 'write'], retire: ['read', 'write'] } },
+  branch: { actions: { create: ['read', 'write'], stage: ['read', 'write'], preview: ['read'], merge: ['read', 'write'] } },
+  entity: { actions: { create: ['read', 'write'], resolve: ['read'], relate: ['read', 'write'], traverse: ['read'] } },
+  health: { defaultAction: 'scan', actions: { scan: ['read'], recall: ['read'], watch: ['read', 'write'], check: ['read', 'write'] } },
+  // The migration handler additionally checks action-specific flags and confirmation.
+  // Preview reads supplied files only, and rejects all policy flags itself.
+  migrate: { defaultAction: 'plan', actions: { plan: [], apply: ['read', 'write'], inspect: ['read'], source: ['read'], rollback: ['erase'], forget: ['erase'] } },
+};
+
+function validateCommandPolicy(command: string, values: CliValues): void {
+  let access: readonly CliAccess[];
+  let route = command;
+  if (Object.hasOwn(ACTION_ACCESS, command)) {
+    const policy = ACTION_ACCESS[command];
+    const action = values.action ?? policy.defaultAction;
+    if (typeof action !== 'string' || !Object.hasOwn(policy.actions, action)) {
+      throw new Error(`${command} requires --action ${Object.keys(policy.actions).join('|')}.`);
+    }
+    access = policy.actions[action];
+    route += ` ${action}`;
+  } else {
+    if (!Object.hasOwn(COMMAND_ACCESS, command)) throw new Error(`Unknown command: ${command}`);
+    if (values.action !== undefined) throw new Error(`${command} does not support --action.`);
+    access = COMMAND_ACCESS[command];
+  }
+  if ((access.includes('write') || access.includes('erase')) && values['read-only']) throw new Error(`${route}: memory mutations are disabled by --read-only.`);
+  if (access.includes('write') && values['no-capture']) throw new Error(`${route}: memory writes are disabled by --no-capture.`);
+  if (access.includes('read') && values['no-recall']) throw new Error(`${route}: stored-state reads are disabled by --no-recall.`);
 }
 
 function healthCommand(values: Record<string, string | boolean | undefined>) {
@@ -197,6 +254,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (values.help || !positionals.length) { process.stdout.write(HELP); return; }
   if (positionals.length !== 1) throw new Error('Specify exactly one command.');
   const command = positionals[0];
+  validateCommandPolicy(command, values);
   if (command === 'migrate') { runMigrationCommand(values); return; }
   if (command === 'evaluate') {
     const settings = jsonInput(values.json);
@@ -227,7 +285,6 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     } else print(report);
     return;
   }
-  if (!['mcp', 'store', 'recall', 'context', 'inspect', 'correct', 'forget', 'export', 'import', 'serve', 'capture', 'observe', 'jobs', 'run-jobs', 'index', 'model', 'skill', 'branch', 'entity', 'health'].includes(command)) throw new Error(`Unknown command: ${command}`);
   const health = command === 'health' ? healthCommand(values) : undefined;
   if (health) requireExistingDatabase(resolve(required(values.db, '--db')));
   const memory = createLocalMemory({ path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') });

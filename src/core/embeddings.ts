@@ -38,6 +38,7 @@ export class EmbeddingsClient {
 
     const res = await fetch(this.embedUrl, {
       method: "POST",
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         ...(this.options.apiKey ? { Authorization: `Bearer ${this.options.apiKey}` } : {}),

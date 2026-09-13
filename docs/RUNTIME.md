@@ -1,6 +1,6 @@
 # Runtime, retrieval and local service
 
-This guide describes the **2.0.0-rc.2 source candidate**. Build the checkout with `npm ci --ignore-scripts && npm run build`. TypeScript package imports work from this repository after building, or from an installed package. Node >=22.16 is required; the Python client requires Python >=3.10.
+This guide describes the **Mnemosyne 2 source candidate**. Build the checkout with `npm ci --ignore-scripts && npm run build`. TypeScript package imports work from this repository after building, or from an installed package. Node >=22.16 is required; the Python client requires Python >=3.10.
 
 The local engine, vectors, sources, models, skills, entity relations and branch state share one SQLite database. Workspace/agent identity comes from trusted host configuration. A source reference is provenance supplied by the caller, not remote authentication or permission to execute an action.
 
@@ -190,6 +190,8 @@ Alternatively install `./python` in your chosen virtual environment with `python
 The live inspector browses five records per page, searches, displays source/dependency metadata and offers permitted correction/forget actions. Disconnecting or reconnecting clears old data and aborts pending requests. Source range expansion and worker/skill management are available through APIs; the inspector is not yet a full dashboard for those operations.
 
 ## Forgetting and remaining limits
+
+Source forgetting also removes source-linked job records and their correction history, including older failed jobs whose diagnostic text may have quoted a source. Jobs use separate erasure links so they remain durable control records without becoming advice. New persisted job failures contain fixed diagnostic categories, never arbitrary provider or parser error text. A queued callback rechecks source state immediately before dispatch; the library cannot recall bytes already delivered to an external service.
 
 For captured evidence use `runtime.forgetSource(id)`. It purges the source's correction history and dependent content, and leaves a non-advisory tombstone containing a hashed ingestion identity. Replaying that stable capture identity is rejected after restart. Ordinary direct memories use `memory.forget(id)`. HTTP/MCP/CLI route captured-source deletion through the runtime and protect its internal tombstones.
 

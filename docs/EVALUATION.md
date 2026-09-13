@@ -2,6 +2,14 @@
 
 This release separates correctness checks, public-data retrieval measurements and memory-quality claims. No paid model calls, generated-answer evaluation or matched competitor experiments were performed.
 
+## Verified rc6 local readiness checkpoint
+
+The rc6 source passed **703 tests on Node 22.16.0 and 24.21.0**, source/example typechecking and build. The Python client passed **8 tests each on Python 3.10.19 and 3.13.12**. New coverage checks source-bearing job history erasure, invalidation before provider dispatch, legacy HTTP redirect rejection, command-line policy enforcement and the shared package verifier.
+
+Independent reviewers reproduced and checked fixes for retained private text in failed/retried jobs, callbacks receiving a source after deletion or correction, redirects forwarding backend credentials or embedding text, and restrictive CLI flags being silently ignored. Checks include imported sources, hidden dependent jobs, guarded rollback, historical retrieval and process-boundary command execution. These tests use synthetic data and do not make paid model calls or alter production memory.
+
+CI and publishing now use one installed-artifact verifier covering every declared export and type file, the installed executable, version agreement, tarball integrity and both deterministic demonstrations. A local whole-source Semgrep scan applied 22 matching security rules to 92 files with zero findings; its existing partial parse warning on a type-only export remains. The full dependency audit reports zero known vulnerabilities. Snyk was attempted but remains unavailable without authentication. Local results are separate from remote CI, publication and live-provider validation.
+
 ## Verified rc5 local checkpoint
 
 The rc5 source passed **580 TypeScript tests on Node 22.16.0 and 24.21.0**, plus source/example typechecking and build. New coverage includes 15 exact JSON parser tests, 44 migration planning tests, 60 migration service tests, 14 kernel rollback tests, 25 freshness/read-set tests and 51 migration/health CLI subprocess tests.

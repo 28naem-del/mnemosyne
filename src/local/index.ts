@@ -244,6 +244,7 @@ export class LocalMemory {
         CREATE INDEX IF NOT EXISTS audit_memory ON audit(memory_id);
         CREATE INDEX IF NOT EXISTS idempotency_memory ON idempotency(memory_id);
         CREATE INDEX IF NOT EXISTS dependencies_target ON dependencies(to_id);
+        CREATE INDEX IF NOT EXISTS memories_runtime_jobs ON memories(workspace_id) WHERE json_extract(data,'$.metadata.runtimeType')='job';
       `);
       this.#db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run('cursor-secret', randomBytes(32).toString('hex'));
       this.#cursorSecret = (this.#db.prepare("SELECT value FROM local_settings WHERE key='cursor-secret'").get() as { value: string }).value;
@@ -605,6 +606,20 @@ export class LocalMemory {
   }
 
   /** Incremental, resumable derived index. No provider is installed or called implicitly. */
+  #embeddingSourceState(id: string): string | undefined {
+    const pending = [id], seen = new Set<string>(), state = createHash('sha256');
+    for (let offset = 0; offset < pending.length; offset++) {
+      const key = pending[offset]; if (seen.has(key)) continue;
+      if (seen.size >= 2048) throw new Error('Embedding provenance exceeds 2048 records');
+      seen.add(key);
+      const record = this.get(key); if (!record) return undefined;
+      state.update(v.canonical({ record, outcomes: this.#outcomes(key) }));
+      pending.push(...record.dependencies);
+    }
+    return state.digest('hex');
+  }
+
+  /** Indexing may include inactive-in-time evidence for historical queries. */
   async indexEmbeddings(options: EmbeddingIndexOptions): Promise<EmbeddingIndexResult> {
     this.#assertOpen();
     v.keys(v.object(options, 'index embeddings'), ['embedder', 'limit', 'batchSize', 'timeoutMs', 'signal'], 'index embeddings');
@@ -623,6 +638,7 @@ export class LocalMemory {
       WHERE m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND m.status='active' AND m.trust!='untrusted' AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       AND (e.memory_id IS NULL OR e.source_hash!=s.source_hash)`;
     const rows = this.#db.prepare(`SELECT m.data ${pendingSql} ORDER BY m.created_at,m.id LIMIT ?`).all(model, this.#workspaceId, this.#agentId, count).map((row) => this.#decode(row)!);
+    const sourceStates = new Map(rows.map(record => [record.id, this.#embeddingSourceState(record.id)]));
     const result: EmbeddingIndexResult = { indexed: 0, skipped: 0, remaining: 0 };
     for (let offset = 0; offset < rows.length;) {
       this.#assertOpen(); this.#abort(options.signal);
@@ -634,15 +650,25 @@ export class LocalMemory {
         if (batch.length && bytes + size > 1024 * 1024) break;
         batch.push(record); bytes += size; offset++;
       }
-      const vectors = await this.#boundedCall((signal) => options.embedder.embed(Object.freeze(batch.map((record) => record.text)), { signal }), options.signal, options.timeoutMs);
-      if (!Array.isArray(vectors) || vectors.length !== batch.length) throw new TypeError('Embedder must return one vector per input text');
+      let dispatched: MemoryRecord[] = [];
+      const vectors = await this.#boundedCall((signal) => {
+        // Earlier batches and the queued dispatch itself are invalidation
+        // boundaries. Never send deleted, corrected or failed evidence anew.
+        dispatched = batch.flatMap(original => {
+          const current = this.get(original.id);
+          return current && current.status === 'active' && current.trust !== 'untrusted' && sourceStates.get(current.id) !== undefined && this.#embeddingSourceState(current.id) === sourceStates.get(current.id) ? [current] : [];
+        });
+        result.skipped += batch.length - dispatched.length;
+        return dispatched.length ? options.embedder.embed(Object.freeze(dispatched.map(record => record.text)), { signal }) : Promise.resolve([]);
+      }, options.signal, options.timeoutMs);
+      if (!Array.isArray(vectors) || vectors.length !== dispatched.length) throw new TypeError('Embedder must return one vector per input text');
       const validated = vectors.map((vector) => this.#vector(vector, dimensions));
       this.#abort(options.signal);
       this.#transaction(() => {
-        for (let index = 0; index < batch.length; index++) {
-          const original = batch[index];
+        for (let index = 0; index < dispatched.length; index++) {
+          const original = dispatched[index];
           const current = this.get(original.id);
-          if (!current || current.status !== 'active' || current.trust === 'untrusted' || this.#textHash(current.text) !== this.#textHash(original.text)) { result.skipped++; continue; }
+          if (!current || current.status !== 'active' || current.trust === 'untrusted' || this.#embeddingSourceState(current.id) !== sourceStates.get(current.id)) { result.skipped++; continue; }
           this.#db.prepare('INSERT INTO local_embeddings(memory_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data').run(current.id, model, dimensions, this.#textHash(current.text), JSON.stringify(validated[index]));
           result.indexed++;
         }
@@ -701,10 +727,17 @@ export class LocalMemory {
     });
     let ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.memory.id.localeCompare(b.memory.id));
     if (options.reranker && ranked.length) {
-      const candidates = ranked.slice(0, 100);
-      // Adapter mutation must not rewrite retained source records or provenance.
-      const supplied = candidates.map((entry) => JSON.parse(JSON.stringify(entry.memory)) as MemoryRecord);
-      const scores = await this.#boundedCall((signal) => options.reranker!.rerank(input.query, supplied, { signal }), options.signal, options.timeoutMs);
+      let candidates: typeof ranked = [];
+      const scores = await this.#boundedCall((signal) => {
+        time = this.#temporal(input);
+        candidates = ranked.flatMap(entry => {
+          const current = this.get(entry.memory.id), memory = current && this.#at(current, time);
+          return memory && eligible(memory) ? [{ ...entry, memory }] : [];
+        }).slice(0, 100);
+        // Rehydrate immediately before dispatch, then isolate adapter mutation.
+        const supplied = candidates.map(entry => JSON.parse(JSON.stringify(entry.memory)) as MemoryRecord);
+        return supplied.length ? options.reranker!.rerank(input.query, supplied, { signal }) : Promise.resolve([]);
+      }, options.signal, options.timeoutMs);
       if (!Array.isArray(scores) || scores.length !== candidates.length) throw new TypeError('Reranker must return every candidate exactly once');
       const known = new Set(candidates.map((entry) => entry.memory.id));
       const seen = new Set<string>();
@@ -730,10 +763,31 @@ export class LocalMemory {
     return results;
   }
 
+  /** Jobs need no advisory dependencies for leasing, but their labels and old
+   * failure payloads are source-derived data. Include legacy generations without
+   * rewriting databases, and keep these edges out of correction/eligibility. */
+  #jobErasureReferences(): Map<string, string[]> {
+    const references = new Map<string, string[]>();
+    for (const row of this.#db.prepare("SELECT id,text FROM memories WHERE workspace_id=? AND json_extract(data,'$.metadata.runtimeType')='job'").iterate(this.#workspaceId)) {
+      let payload: unknown;
+      try { payload = JSON.parse(row.text as string); } catch { continue; }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+      const sourceIds = (payload as { sourceIds?: unknown }).sourceIds;
+      if (!Array.isArray(sourceIds) || sourceIds.length > 64) continue;
+      for (const sourceId of sourceIds) {
+        if (typeof sourceId !== 'string' || !UUID.test(sourceId)) continue;
+        const jobs = references.get(sourceId) ?? [];
+        jobs.push(row.id as string); references.set(sourceId, jobs);
+      }
+    }
+    return references;
+  }
+
   #descendants(initial: string[], includeVersions = false): MemoryRecord[] {
     const visited = new Set<string>();
     const queue = [...initial];
     const records: MemoryRecord[] = [];
+    const erasureReferences = includeVersions ? this.#jobErasureReferences() : undefined;
     for (let index = 0; index < queue.length; index++) {
       const id = queue[index];
       if (visited.has(id)) continue;
@@ -744,6 +798,7 @@ export class LocalMemory {
       const children = this.#db.prepare('SELECT from_id FROM dependencies WHERE workspace_id=? AND to_id=?').all(this.#workspaceId, id) as { from_id: string }[];
       queue.push(...children.map((row) => row.from_id));
       if (includeVersions) {
+        queue.push(...(erasureReferences?.get(id) ?? []));
         if (record.supersedes) queue.push(record.supersedes);
         const versions = this.#db.prepare('SELECT id FROM memories WHERE workspace_id=? AND supersedes=?').all(this.#workspaceId, id) as { id: string }[];
         queue.push(...versions.map((row) => row.id));
@@ -837,6 +892,7 @@ export class LocalMemory {
       const children = this.#db.prepare('SELECT from_id AS id FROM dependencies WHERE workspace_id=? AND to_id=?');
       const successors = this.#db.prepare('SELECT id FROM memories WHERE workspace_id=? AND supersedes=?');
       const hasOutcome = this.#db.prepare('SELECT 1 FROM outcomes WHERE workspace_id=? AND memory_id=? LIMIT 1');
+      const erasureReferences = this.#jobErasureReferences();
       for (const [id, fingerprint] of expected) {
         const record = this.#decode(this.#db.prepare('SELECT data FROM memories WHERE id=? AND workspace_id=?').get(id, this.#workspaceId));
         if (!record || record.agentId !== this.#agentId || record.visibility !== 'private' || record.kind === 'checkpoint'
@@ -845,7 +901,7 @@ export class LocalMemory {
           || hasOutcome.get(this.#workspaceId, id)) { conflicts++; continue; }
         // Direct edges suffice: any path leaving the deletion set has a first
         // edge outside it. These queries include hidden foreign descendants.
-        let external = false;
+        let external = (erasureReferences.get(id) ?? []).some(jobId => !expected.has(jobId));
         for (const row of children.iterate(this.#workspaceId, id)) {
           if (!expected.has(row.id as string)) { external = true; break; }
         }

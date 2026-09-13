@@ -1,6 +1,6 @@
 # Security policy and boundaries
 
-This branch is the 2.0.0-rc.1 release candidate. Security-related breaking changes are described in [migration notes](docs/MIGRATION-v2.md). A passing test suite or dependency audit is not a security certification.
+This branch contains the Mnemosyne 2 release candidate. Security-related breaking changes are described in [migration notes](docs/MIGRATION-v2.md). A passing test suite or dependency audit is not a security certification.
 
 ## Report a vulnerability
 
