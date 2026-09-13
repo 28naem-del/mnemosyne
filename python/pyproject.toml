@@ -8,7 +8,7 @@ version = "2.0.0rc8"
 description = "Scoped Python client for the Mnemosyne memory service"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
-authors = [{name = "Aristotle Intelligence Inc.", email = "28naime@gmail.com"}]
+authors = [{name = "Aristotle Intelligence Inc.", email = "28naem@gmail.com"}]
 
 [project.urls]
 Homepage = "https://mnemosy.ai"

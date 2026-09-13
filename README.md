@@ -191,7 +191,7 @@ Local semantic search scans the eligible indexed corpus with bounded retained ca
 
 ## Build with us
 
-Mnemosyne is built by **Aristotle Intelligence Inc., a Delaware company**, and has been **fully self-funded to date**. For advanced memory requirements, integration discussions or investor enquiries, contact **[28naime@gmail.com](mailto:28naime@gmail.com)**.
+Mnemosyne is built by **Aristotle Intelligence Inc., a Delaware company**, and has been **fully self-funded to date**. For advanced memory requirements, integration discussions or investor enquiries, contact **[28naem@gmail.com](mailto:28naem@gmail.com)**.
 
 Use [GitHub issues](https://github.com/28naem-del/mnemosyne/issues) for reproducible bugs and feature proposals. Report vulnerabilities privately through [SECURITY.md](SECURITY.md). Contributions that improve evidence retention, integration reliability or reproducible evaluation are especially useful.
 

@@ -4,7 +4,7 @@ Mnemosyne 2.0.0-rc.8 is a release candidate. Review [migration notes](docs/MIGRA
 
 ## Report a vulnerability privately
 
-Email **[28naime@gmail.com](mailto:28naime@gmail.com)** with a subject beginning `[SECURITY] Mnemosyne`. Include the affected version or commit, expected and observed behavior, reproduction steps, impact and a minimal proof of concept using synthetic data. Do not disclose an unpatched vulnerability or put credentials, private memories or someone else's data in a public issue.
+Email **[28naem@gmail.com](mailto:28naem@gmail.com)** with a subject beginning `[SECURITY] Mnemosyne`. Include the affected version or commit, expected and observed behavior, reproduction steps, impact and a minimal proof of concept using synthetic data. Do not disclose an unpatched vulnerability or put credentials, private memories or someone else's data in a public issue.
 
 ## Controller and access boundaries
 

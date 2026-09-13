@@ -10,7 +10,7 @@ body:
         Start with the work you need your agent to do and what currently prevents it.
         Review [the current capabilities and remaining work](https://github.com/28naem-del/mnemosyne/blob/main/docs/UPGRADE-STATUS.md) before proposing a change.
 
-        **This issue is public.** Use synthetic examples; do not share credentials, private memories, customer data or production databases. For a confidential integration, custom memory requirement or partnership, contact **28naime@gmail.com** through [Aristotle Intelligence Inc.](https://mnemosy.ai/#company).
+        **This issue is public.** Use synthetic examples; do not share credentials, private memories, customer data or production databases. For a confidential integration, custom memory requirement or partnership, contact **28naem@gmail.com** through [Aristotle Intelligence Inc.](https://mnemosy.ai/#company).
 
   - type: textarea
     id: problem
