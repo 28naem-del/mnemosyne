@@ -8,6 +8,8 @@ import { parseArgs } from 'node:util';
 
 const requiredAssets = [
   'package.json', 'README.md', 'LICENSE', 'NOTICE.md',
+  'assets/mnemosyne-logo.svg', 'assets/social-preview.png', 'docs/README.md',
+  'ARCHITECTURE.md', 'SECURITY.md', 'CONTRIBUTING.md',
   'docs/deployment.md', 'docs/RUNTIME.md', 'docs/MIGRATION.md', 'docs/MAINTENANCE.md',
   'docs/EVALUATION.md', 'docs/LONGMEMEVAL.md', 'docs/LOCAL-MODELS.md',
   'docs/evaluation/BENCHMARKS.md', 'docs/evaluation/EVIDENCE-PROTOCOL.md', 'examples/local-semantic.ts',

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Refresh the repository logo, sharing artwork and README; add a documentation index and task-oriented gallery for all 15 examples.
+- Align architecture, historical context, skill policy, onboarding and deployment guides with the implemented release.
+- Check local documentation paths and anchors in CI, with regression fixtures for broken images, renamed headings and illustrative code.
+- Include branding and root guides in future packages, verify their presence, and include license notices in the runtime container.
+- Update issue forms for current interfaces and private reporting; clarify the demo's optional semantic retrieval capability.
+
+The published `v2.0.0-rc.8` tag and its download assets remain unchanged. These follow-up improvements are available on `main`.
+
 ## [2.0.0-rc.8] — source release candidate, 2026-09-13
 
 ### Added

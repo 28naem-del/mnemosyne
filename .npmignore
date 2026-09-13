@@ -1,5 +1,5 @@
-# package.json "files" is the release allowlist: dist, docs, site, python, README,
-# LICENSE, and NOTICE. Do not exclude docs or NOTICE here.
+# package.json "files" is the release allowlist: dist, docs, site, python,
+# examples, branding assets, root guides and license notices.
 node_modules/
 src/
 tests/

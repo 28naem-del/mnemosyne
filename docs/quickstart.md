@@ -1,20 +1,33 @@
-# Quickstart
+# Start with a working memory lifecycle
 
-Requires Node >=22.16; Node 24 is recommended. Build this release candidate from source as shown in [README](../README.md). The default published npm version may differ.
+Run Mnemosyne locally, see a correction retire old advice, then connect your agent. The default local engine needs no model API key, database server or container. Use **Node 22.16.0 or newer**; Node 24 is recommended.
 
-## Run the real demonstration
+## Build the tagged source release
 
 ```sh
-npm ci
-npm run check
+git clone --branch v2.0.0-rc.8 --depth 1 https://github.com/28naem-del/mnemosyne.git
+cd mnemosyne
+npm ci --ignore-scripts
+npm run build
 npm run demo
 npm run demo:learning
+```
+
+These commands use the **2.0.0-rc.8 source release**, independently of the version available from npm or PyPI. The [GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) also provides prebuilt JavaScript and Python downloads with SHA-256 checksums.
+
+The first demo exercises handoff, scoped sharing, correction propagation and forgetting. The learning demo adds original evidence, a scripted observation job, a controller skill trial and retirement after correction. Both use synthetic temporary databases, clean up their own data, and make no external model calls. Passing these fixtures establishes the demonstrated behavior, not general agent intelligence.
+
+To keep a receipt, choose a new output filename:
+
+```sh
 node dist/cli/index.js demo --record demo-evidence.json
 ```
 
-Recording creates a new file and refuses to overwrite an existing one. The demo uses temporary synthetic records, cleans its database, and makes no model calls.
+Recording refuses to overwrite an existing file. Contributor validation is a separate step: run `npm run check` for typechecking, tests and example typechecking. See [contributing](../CONTRIBUTING.md) for the current documentation and release checks.
 
-## Use a local database
+## Store and recall shared evidence
+
+From the built repository:
 
 ```sh
 mkdir -p data
@@ -23,35 +36,32 @@ node dist/cli/index.js context --db ./data/memory.sqlite --workspace demo --agen
 node dist/cli/index.js inspect --db ./data/memory.sqlite --workspace demo --agent alice --history
 ```
 
-Omit `--share` to keep a record private. Each command requires an explicit database, workspace, and agent. SDK writes default to `untrusted`; CLI and MCP writes default to `observed`. Neither label proves the content is true.
+Alice explicitly shares this source with the workspace, so Bob can receive it. Omit `--share` to keep a record private. Every command fixes the database, workspace and agent; these selectors come from your host application. SDK writes default to `untrusted`; CLI and MCP writes default to `observed`. Neither label certifies that a claim is true.
 
-Use the returned memory ID with `correct --id ID --text TEXT --source URI --reason TEXT`. Use `forget --id ID --confirm` for deliberate live-content erasure. Neither operation asks a model to guess which memory to change.
+Use the returned memory ID with `correct --id ID --text TEXT --source URI --reason TEXT`. Use `forget --id ID --confirm` for deliberate live-content erasure. Declare dependencies when storing derived advice so corrections can retire it. The [local API](api.md) explains those contracts.
 
-## MCP stdio
+## Connect through MCP or your agent loop
 
 ```sh
 node dist/cli/index.js mcp --db ./data/memory.sqlite --workspace demo --agent alice
 ```
 
-This waits for an MCP client on standard input; it does not launch a web server. Put the command and arguments in the server configuration format your client supports. Use absolute file paths when the client's working directory differs. Server diagnostics go to stderr; stdout is reserved for protocol messages.
+This process waits for an MCP client on standard input. Add the command and arguments to your client's server configuration; use absolute paths when its working directory differs. Diagnostics use stderr and stdout is reserved for protocol messages. `--read-only` removes write tools; forgetting requires `--allow-destructive`.
 
-Tools include recall, context, inspection, task resume, store, checkpoint, and correction. Read-only mode removes writes; explicit `--allow-destructive` enables forgetting. Validation/outcome recording and reflection commitment remain controller SDK operations.
+For an application you control, use the [agent lifecycle adapter](AGENT.md). It supplies context before a turn, captures visible results and rechecks declared evidence before an action. An existing memory backend can stay connected through the [gradual migration bridge](BRIDGE.md). Client configuration, model calls and action authorization belong to your host.
 
-## Capture and inspect live experience
+## Inspect and capture
 
-`capture --file YOUR_FILE --adapter text` ingests only the file you explicitly select. Add `--watch` for a foreground watcher. Generic, Codex and Claude JSONL adapters preserve visible conversation text and stable replay identities. Ingested text is untrusted by default; `--trust observed` means the host observed it, not that its claims were verified.
+The [runtime guide](RUNTIME.md#http-inspector-and-python) has a complete authenticated HTTP inspector setup and Python client example. The same service can expose selected read, capture and destructive capabilities to configured principals.
 
-`serve --token-file YOUR_TOKEN_FILE` starts an authenticated local HTTP service and live inspector. The token file must contain at least 32 bytes of unpredictable secret text. Keep it private. The default address is loopback; the CLI prints the URL and scope without printing the token.
+To ingest a local file, use `capture` with an explicit path and scope; the [file capture example](RUNTIME.md#read-one-explicit-local-file) includes all flags. An optional foreground watcher follows that file only. Source capture does not scan application histories or install a background service.
 
-Both commands need the same explicit `--db`, `--workspace` and `--agent` flags as other commands. The [runtime guide](RUNTIME.md) includes complete examples, Python usage, source-backed topic models, skill trials, optional hybrid recall and bounded background work.
+## Choose your next step
 
-## Export and restore
+- [Examples](../examples/README.md): 15 runnable paths, with external dependencies clearly marked.
+- [Full migration](MIGRATION.md): preview exported records before applying a plan.
+- [Recovery](OPERATIONS.md): verify a complete database backup and restore to a new path.
+- [Local semantic retrieval](LOCAL-MODELS.md): explicitly provision CPU embeddings and reranking.
+- [Documentation index](README.md): choose a guide by the task you want to complete.
 
-```sh
-node dist/cli/index.js export --db ./data/memory.sqlite --workspace demo --agent alice --out alice-snapshot.json
-node dist/cli/index.js import --db ./data/restored.sqlite --workspace demo --agent alice --file alice-snapshot.json
-```
-
-Snapshots preserve owner scope and retry identity. Export omits owned records whose dependencies include another agent; inspect the snapshot's `omitted` count. Import does not remap scope and rejects conflicting IDs or inconsistent content atomically. Files must be at most 32 MiB; each collection of memories, outcomes, or idempotency entries has a 100,000-entry cap.
-
-Keep snapshots private. A snapshot is an additional copy; forgetting from the live database does not edit old exports.
+Keep memory databases, token files and backups outside Git. They contain plaintext data; forgetting from the live store cannot erase a prior backup or a prompt already sent to a model.

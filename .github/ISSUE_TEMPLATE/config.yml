@@ -1,14 +1,14 @@
 blank_issues_enabled: true
 
 contact_links:
-  - name: 📖 Documentation
-    url: https://github.com/28naem-del/mnemosyne#readme
-    about: Read the full README and API reference before opening an issue.
+  - name: Documentation and getting started
+    url: https://mnemosy.ai/docs/
+    about: Find the supported interfaces, examples, migration paths and operational limits.
 
   - name: Product, partnership and custom memory enquiries
-    url: mailto:28naime@gmail.com
-    about: Contact Aristotle Intelligence Inc. about Mnemosyne.
+    url: https://mnemosy.ai/#company
+    about: Contact Aristotle Intelligence Inc. at 28naime@gmail.com about advanced memory, integrations or investment.
 
-  - name: 🔒 Security Vulnerability
-    url: mailto:28naime@gmail.com
-    about: Please report security vulnerabilities privately via email — do NOT open a public issue.
+  - name: Report a vulnerability privately
+    url: https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md
+    about: Follow the private reporting instructions. Do not publish vulnerabilities, credentials or private memories in an issue.

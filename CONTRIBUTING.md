@@ -9,6 +9,7 @@ Use Node.js ≥22.16; Node 24 is recommended. The default suite uses isolated lo
 ```sh
 npm ci --ignore-scripts
 npm run check
+npm run check:docs
 npm run demo
 npm run demo:learning
 npm run test:python
@@ -36,7 +37,7 @@ Describe the concrete problem and resulting behavior in your pull request. Keep 
 
 Changes to scope, trust, erasure, provenance or promotion requirements need independent review. Keep conflicting sources distinguishable. Embedding similarity alone is not authority to merge facts. Use synthetic fixtures or properly licensed public data; never include credentials, private histories, production database copies or private operational paths.
 
-Before submission, run the relevant checks and `npm run check`. For package changes, inspect `npm pack --dry-run --ignore-scripts` and exercise the built package entry points. State which checks ran and any limits. Optional local model changes must follow the pinned dependency and provisioning instructions in [LOCAL-MODELS.md](docs/LOCAL-MODELS.md); the default installation must remain usable without them.
+Before submission, run the relevant checks, `npm run check` and `npm run check:docs`. The documentation check validates local Markdown links, image paths and heading anchors offline; it does not request external websites. For package changes, inspect `npm pack --dry-run --ignore-scripts` and exercise the built package entry points. State which checks ran and any limits. Optional local model changes must follow the pinned dependency and provisioning instructions in [LOCAL-MODELS.md](docs/LOCAL-MODELS.md); the default installation must remain usable without them.
 
 ## Make claims reproducible
 

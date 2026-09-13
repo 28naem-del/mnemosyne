@@ -1,5 +1,7 @@
-# Only package manifests, TypeScript configuration, and src are copied by Dockerfile.
+# Only build inputs and license notices are copied by Dockerfile.
 **
+!LICENSE
+!NOTICE.md
 !package.json
 !package-lock.json
 !tsconfig*.json
