@@ -160,6 +160,7 @@
     "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm test && npm run typecheck:examples",
     "check:docs": "node --test scripts/check-doc-links.test.mjs && node scripts/check-doc-links.mjs",
+    "check:public": "node --test scripts/check-public-metadata.test.mjs && node scripts/check-public-metadata.mjs",
     "demo": "node dist/cli/index.js demo",
     "demo:record": "node dist/cli/index.js demo --record",
     "benchmark": "node dist/evaluation/local-benchmark.js",

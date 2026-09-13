@@ -41,6 +41,9 @@ jobs:
       - name: Check documentation navigation
         run: npm run check:docs
 
+      - name: Check public identity and release metadata
+        run: npm run check:public
+
       - name: Verify benchmark report index and digests
         run: >-
           node scripts/benchmark-index.mjs --check
