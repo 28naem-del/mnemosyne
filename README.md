@@ -3,7 +3,7 @@
 # Mnemosyne
 
 [![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
-[![Source release: 2.0.0-rc.8](https://img.shields.io/badge/source-2.0.0--rc.8-b8f6dd?labelColor=111b2a)](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8)
+[![Release candidate: 2.0.0-rc.9](https://img.shields.io/badge/npm-2.0.0--rc.9-b8f6dd?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.9)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
 
 **The next agent starts wiser.**
@@ -12,16 +12,39 @@ Persistent memory for AI agents that need to carry work forward, recover origina
 
 Mnemosyne connects memory to its consequences: a corrected requirement can retire a dependent procedure, a failed trial can withhold a skill, and a new agent can resume from an explicit handoff. Run the local engine in one SQLite file; connect your host through TypeScript, MCP, CLI, or authenticated HTTP with a Python client and live inspector.
 
-**2.0.0-rc.8 · Source release candidate · MIT · Node.js ≥22.16**
+**2.0.0-rc.9 · Release candidate · MIT · Node.js ≥22.16**
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Download](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) · [Contributing](CONTRIBUTING.md)
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.9) · [Contributing](CONTRIBUTING.md)
+
+## Choose your engine
+
+**Both engines ship in 2.0.0-rc.9.** Choose the storage and runtime that fit your application:
+
+| Engine | Best starting point | SDK entry point | Guide |
+|---|---|---|---|
+| **Vector Engine** | An application using the existing service-backed memory architecture. Requires configured external services. | `createMnemosyne` from `mnemosy-ai` | [Working example](examples/basic-usage.ts) · [Version 2 changes](docs/MIGRATION-v2.md) |
+| **Local Engine** | A self-contained SQLite memory store with evidence, corrections and agent lifecycle tools. | `createLocalMemory` from `mnemosy-ai/local` | [Local API](docs/api.md) · [Agent lifecycle](docs/AGENT.md) |
+
+The `MemoryAgent` adapter uses the Local Engine's runtime. These engines have separate schemas and do not automatically migrate or synchronize data. To transition gradually, explicitly connect your existing store through the [read-only migration bridge](docs/BRIDGE.md); it leaves that store unchanged.
+
+Engine choice is separate from release channel: stable `mnemosy-ai@latest` remains on version 1.x, while `mnemosy-ai@next` selects the version 2 candidate containing **both** engines. Review the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application.
 
 ## Start with a working demonstration
 
-Build the source candidate. These commands do not depend on an rc.8 release being available from npm or PyPI. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
+Install the exact release candidate in your project. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
 
 ```sh
-git clone --branch v2.0.0-rc.8 --depth 1 https://github.com/28naem-del/mnemosyne.git
+npm install mnemosy-ai@2.0.0-rc.9
+npx --no-install mnemosy demo
+npx --no-install mnemosy learning-demo
+```
+
+The prerelease channel is `mnemosy-ai@next`. Pin the exact version for reproducible deployments; unqualified `npm install mnemosy-ai` follows the stable `latest` channel and still selects version 1.x. Evaluate this candidate on your own workload before production. Python registry publication is separate; the bundled Python client can be installed from the checkout.
+
+To build and run the same candidate from source:
+
+```sh
+git clone --branch v2.0.0-rc.9 --depth 1 https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm ci --ignore-scripts
 npm run build
@@ -31,9 +54,9 @@ npm run demo:learning
 
 The first demo uses a temporary database to show a handoff, correction, private scope and forgetting. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
 
-For full contributor validation, run `npm run check`. A current `main` development checkout also includes `npm run check:docs`, introduced after rc.8. The release includes prebuilt JavaScript and Python downloads with [SHA-256 checksums](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8).
+For full contributor validation, run `npm run check`, `npm run check:docs` and `npm run check:public`. RC9 refreshes packaging, contact details and release guidance over the RC8 engine; the recorded evaluation reports remain historical measurements of the versions and conditions they name.
 
-To consume your built checkout from another project, run `npm install /absolute/path/to/mnemosyne` in that project. Keep the checkout and its `dist` directory available. Use the exact GitHub release tag when reproducing behavior; registry publication is a separate release step.
+To consume your built checkout from another project, run `npm install /absolute/path/to/mnemosyne` in that project. Keep the checkout and its `dist` directory available. The older [RC8 GitHub release and checksummed downloads](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) remain unchanged.
 
 ## A correction should change what the next agent does
 
@@ -98,7 +121,7 @@ The old procedure remains inspectable but is no longer eligible as current guida
 | **Full import and recovery** | Eleven export profiles, preview, atomic application, replay protection, guarded undo and whole-database backups. | [Import](docs/MIGRATION.md) · [Recovery](docs/OPERATIONS.md) |
 | **Host-controlled processing** | Durable bounded jobs, source-backed project models, outcome traces, entity relations and staged changes. | [Runtime](docs/RUNTIME.md) |
 
-## One memory engine, several entry points
+## Local Engine, several entry points
 
 ```mermaid
 flowchart LR

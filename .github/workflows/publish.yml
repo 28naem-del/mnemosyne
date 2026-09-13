@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
-          cache: npm
+          package-manager-cache: false
 
       - name: Verify release identity and channel
         id: release
@@ -37,6 +37,13 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { appendFileSync, readFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const npmVersion = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
+          const [major, minor, patch] = npmVersion.split('.').map(Number);
+          if (![major, minor, patch].every(Number.isInteger)
+              || major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) {
+            throw new Error('Trusted publishing requires npm 11.5.1 or newer');
+          }
           const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
           if (pkg.name !== 'mnemosy-ai') throw new Error('Unexpected package name');
           if (`v${pkg.version}` !== process.env.RELEASE_TAG) {
@@ -53,6 +60,9 @@ jobs:
 
       - name: Typecheck, build, and test
         run: npm run check
+
+      - name: Verify documentation and public metadata
+        run: npm run check:docs && npm run check:public
 
       - name: Security audit
         run: npm audit --omit=dev --audit-level=high

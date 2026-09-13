@@ -1,6 +1,6 @@
-# Release status: 2.0.0-rc.8
+# Release status: 2.0.0-rc.9
 
-Mnemosyne 2.0.0-rc.8 is a source release candidate for developer evaluation. The [README quickstart](../README.md#start-with-a-working-demonstration) builds the tagged GitHub source. npm and PyPI publication are separate release actions; a source prerelease does not mean the same version is available from either registry.
+Mnemosyne 2.0.0-rc.9 is a release candidate for developer evaluation. The [README quickstart](../README.md#start-with-a-working-demonstration) covers exact-version npm installation and building the matching source tag. Its npm channel is `next`; `latest` remains on the stable 1.x line. This packaging refresh includes the corrected contact details and release checks over the RC8 engine. It does not introduce new benchmark results or publish the Python client to PyPI.
 
 ## Implemented in this candidate
 

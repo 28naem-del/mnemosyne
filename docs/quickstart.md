@@ -2,10 +2,31 @@
 
 Run Mnemosyne locally, see a correction retire old advice, then connect your agent. The default local engine needs no model API key, database server or container. Use **Node 22.16.0 or newer**; Node 24 is recommended.
 
+## Choose your engine
+
+Version **2.0.0-rc.9 includes both engines**:
+
+- **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` with configured external services. Start with the [existing backend example](../examples/basic-usage.ts) and review the [version 2 migration notes](MIGRATION-v2.md).
+- **Local Engine:** use `createLocalMemory` from `mnemosy-ai/local` for a SQLite store. The demonstrations below and the [local API](api.md) use this engine. The [MemoryAgent adapter](AGENT.md) runs on its local runtime.
+
+They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. Release channels are a separate choice: `latest` stays on stable version 1.x; `next` provides the version 2 candidate with both engines.
+
+## Install the release candidate
+
+In your Node.js project:
+
+```sh
+npm install mnemosy-ai@2.0.0-rc.9
+npx --no-install mnemosy demo
+npx --no-install mnemosy learning-demo
+```
+
+Use the exact version above or `mnemosy-ai@next` for the prerelease channel. Unqualified installation follows `latest`, which remains on the stable 1.x line. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
+
 ## Build the tagged source release
 
 ```sh
-git clone --branch v2.0.0-rc.8 --depth 1 https://github.com/28naem-del/mnemosyne.git
+git clone --branch v2.0.0-rc.9 --depth 1 https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm ci --ignore-scripts
 npm run build
@@ -13,7 +34,7 @@ npm run demo
 npm run demo:learning
 ```
 
-These commands use the **2.0.0-rc.8 source release**, independently of the version available from npm or PyPI. The [GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) also provides prebuilt JavaScript and Python downloads with SHA-256 checksums.
+These commands build **2.0.0-rc.9**. It refreshes packaging and release guidance over the RC8 engine. The older [RC8 GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) and its checksummed downloads remain unchanged. Python is a separate publication channel; install the bundled client with `python -m pip install ./python` from the checkout.
 
 The first demo exercises handoff, scoped sharing, correction propagation and forgetting. The learning demo adds original evidence, a scripted observation job, a controller skill trial and retirement after correction. Both use synthetic temporary databases, clean up their own data, and make no external model calls. Passing these fixtures establishes the demonstrated behavior, not general agent intelligence.
 
