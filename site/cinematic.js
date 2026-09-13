@@ -6,6 +6,7 @@
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
   let manuallyPaused = false;
   let dispose = null;
+  let initialAlignmentStarted = false;
 
   const start = () => {
     if (dispose) return;
@@ -120,6 +121,75 @@
       listen(document, 'focusin', event => revealAncestors(event.target));
       listen(window, 'hashchange', revealHash);
       revealHash();
+
+      // Native fragment scrolling happens before the recordings fill their panels.
+      // Correct that initial position once, unless the visitor has started moving.
+      if (!initialAlignmentStarted) {
+        initialAlignmentStarted = true;
+        const demos = ['memory-demo', 'learning-demo'].map(id => document.getElementById(id)).filter(Boolean);
+        const alignmentCleanups = [];
+        let requestedHash = window.location.hash;
+        let loaded = document.readyState === 'complete';
+        let finished = false;
+        let alignmentFrame = 0;
+        let alignmentTimeout = 0;
+        const alignmentListen = (target, type, handler, options) => {
+          target.addEventListener(type, handler, options);
+          alignmentCleanups.push(() => target.removeEventListener(type, handler, options));
+        };
+        const finishAlignment = () => {
+          finished = true;
+          window.cancelAnimationFrame(alignmentFrame);
+          window.clearTimeout(alignmentTimeout);
+          alignmentCleanups.splice(0).forEach(cleanup => cleanup());
+        };
+        const align = () => {
+          alignmentFrame = 0;
+          const hash = requestedHash;
+          finishAlignment();
+          if (!hash || hash !== window.location.hash) return;
+          try {
+            const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+            if (target) {
+              revealAncestors(target);
+              target.scrollIntoView({ block: 'start', behavior: 'instant' });
+            }
+          } catch {
+            // Missing or malformed fragments retain the browser's native behavior.
+          }
+        };
+        const scheduleAlignment = (fallback = false) => {
+          if (finished || alignmentFrame || !loaded) return;
+          if (!fallback && demos.some(demo => demo.dataset.initialLayout !== 'settled')) return;
+          // Give the final insertion and native fragment navigation a layout frame.
+          alignmentFrame = window.requestAnimationFrame(() => {
+            alignmentFrame = window.requestAnimationFrame(align);
+          });
+        };
+        const beginAlignmentWait = () => {
+          if (finished) return;
+          // Start the fallback after load so slow page assets cannot consume it.
+          if (!alignmentTimeout) alignmentTimeout = window.setTimeout(() => scheduleAlignment(true), 10000);
+          scheduleAlignment();
+        };
+        const cancelRequest = () => { requestedHash = ''; };
+        ['wheel', 'touchstart', 'pointerdown'].forEach(type => {
+          alignmentListen(window, type, cancelRequest, { passive: true, capture: true });
+        });
+        alignmentListen(window, 'keydown', event => {
+          if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar', 'Tab'].includes(event.key)) cancelRequest();
+        }, { capture: true });
+        alignmentListen(window, 'hashchange', () => {
+          requestedHash = window.location.hash;
+          scheduleAlignment();
+        });
+        alignmentListen(window, 'load', () => { loaded = true; beginAlignmentWait(); });
+        alignmentListen(window, 'mnemosyne:demoready', () => scheduleAlignment());
+        // Both fetches abort after eight seconds; a broken loader must not leave
+        // a correction armed indefinitely. Never wait across a BFCache restore.
+        cleanups.push(finishAlignment);
+        if (loaded) beginAlignmentWait();
+      }
 
       const renderTilt = () => {
         tiltFrame = 0;
