@@ -13,6 +13,10 @@
 # Keep accidental runtime data and secrets out even if they appear under src.
 **/.env
 **/.env.*
+**/*.pem
+**/*.key
+**/memory-token.txt
+**/*.mnemo-backup
 **/*.log
 **/*.sqlite
 **/*.sqlite-*

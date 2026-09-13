@@ -135,7 +135,21 @@
     "docs",
     "site",
     "python",
-    "examples"
+    "examples",
+    "!**/.env",
+    "!**/.env.*",
+    "!**/*.pem",
+    "!**/*.key",
+    "!**/memory-token.txt",
+    "!**/*.mnemo-backup",
+    "!**/*.log",
+    "!**/*.tgz",
+    "!**/*.sqlite",
+    "!**/*.sqlite-*",
+    "!**/*.sqlite3",
+    "!**/*.sqlite3-*",
+    "!**/*.db",
+    "!**/*.db-*"
   ],
   "scripts": {
     "build": "tsc",

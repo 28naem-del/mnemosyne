@@ -1,5 +1,7 @@
 # package.json "files" is the release allowlist: dist, docs, site, python,
 # examples, branding assets, root guides and license notices.
+# Sensitive/runtime exclusions are also in that file list because an explicit
+# directory allowlist takes precedence over this root ignore file.
 node_modules/
 src/
 tests/
@@ -10,6 +12,10 @@ coverage/
 .vscode/
 .env
 .env.*
+*.pem
+*.key
+memory-token.txt
+*.mnemo-backup
 *.log
 *.tgz
 *.sqlite
