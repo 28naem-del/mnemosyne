@@ -2,6 +2,15 @@
 
 Run Mnemosyne locally, see a correction retire old advice, then connect your agent. The default local engine needs no model API key, database server or container. Use **Node 22.16.0 or newer**; Node 24 is recommended.
 
+## Choose your engine
+
+Version **2.0.0-rc.9 includes both engines**:
+
+- **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` with configured external services. Start with the [existing backend example](../examples/basic-usage.ts) and review the [version 2 migration notes](MIGRATION-v2.md).
+- **Local Engine:** use `createLocalMemory` from `mnemosy-ai/local` for a SQLite store. The demonstrations below and the [local API](api.md) use this engine. The [MemoryAgent adapter](AGENT.md) runs on its local runtime.
+
+They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. Release channels are a separate choice: `latest` stays on stable version 1.x; `next` provides the version 2 candidate with both engines.
+
 ## Install the release candidate
 
 In your Node.js project:

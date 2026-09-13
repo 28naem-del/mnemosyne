@@ -16,6 +16,19 @@ Mnemosyne connects memory to its consequences: a corrected requirement can retir
 
 [Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.9) · [Contributing](CONTRIBUTING.md)
 
+## Choose your engine
+
+**Both engines ship in 2.0.0-rc.9.** Choose the storage and runtime that fit your application:
+
+| Engine | Best starting point | SDK entry point | Guide |
+|---|---|---|---|
+| **Vector Engine** | An application using the existing service-backed memory architecture. Requires configured external services. | `createMnemosyne` from `mnemosy-ai` | [Working example](examples/basic-usage.ts) · [Version 2 changes](docs/MIGRATION-v2.md) |
+| **Local Engine** | A self-contained SQLite memory store with evidence, corrections and agent lifecycle tools. | `createLocalMemory` from `mnemosy-ai/local` | [Local API](docs/api.md) · [Agent lifecycle](docs/AGENT.md) |
+
+The `MemoryAgent` adapter uses the Local Engine's runtime. These engines have separate schemas and do not automatically migrate or synchronize data. To transition gradually, explicitly connect your existing store through the [read-only migration bridge](docs/BRIDGE.md); it leaves that store unchanged.
+
+Engine choice is separate from release channel: stable `mnemosy-ai@latest` remains on version 1.x, while `mnemosy-ai@next` selects the version 2 candidate containing **both** engines. Review the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application.
+
 ## Start with a working demonstration
 
 Install the exact release candidate in your project. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
@@ -108,7 +121,7 @@ The old procedure remains inspectable but is no longer eligible as current guida
 | **Full import and recovery** | Eleven export profiles, preview, atomic application, replay protection, guarded undo and whole-database backups. | [Import](docs/MIGRATION.md) · [Recovery](docs/OPERATIONS.md) |
 | **Host-controlled processing** | Durable bounded jobs, source-backed project models, outcome traces, entity relations and staged changes. | [Runtime](docs/RUNTIME.md) |
 
-## One memory engine, several entry points
+## Local Engine, several entry points
 
 ```mermaid
 flowchart LR
