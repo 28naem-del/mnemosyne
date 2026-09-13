@@ -1,6 +1,6 @@
 {
-  "title": "Mnemosyne Recall — recorded evaluation",
-  "release": "2.0.0-rc.8 source candidate; publication pending",
+  "title": "Mnemosyne Recall \u2014 recorded evaluation",
+  "release": "2.0.0-rc.8 source release candidate",
   "protocol": "mnemosyne-corpus-retrieval-v1",
   "dataset": {
     "sourceUrl": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json",
@@ -58,5 +58,9 @@
     },
     "openCase": "Unrelated source-field edits can conservatively retire valid dependent guidance. Alternative sufficient evidence is not supported."
   },
-  "dataPolicy": "Aggregate measurements only. No source conversations, private memory, credentials or local filesystem paths are included."
+  "dataPolicy": "Aggregate measurements only. No source conversations, private memory, credentials or local filesystem paths are included.",
+  "publication": {
+    "githubRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8",
+    "registriesPublished": false
+  }
 }
