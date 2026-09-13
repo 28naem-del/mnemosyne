@@ -2,7 +2,7 @@
   "protocol": "synthetic-evidence-lifecycle-v1",
   "date": "2026-09-13",
   "baseRevision": "594c9a1bcfda66a825a87ff62fe82b540167dd64",
-  "candidate": "uncommitted source candidate on codex/mnemosyne-2-local-learning",
+  "candidate": "uncommitted source candidate at the time of evaluation",
   "node": "22.16.0",
   "modelCalls": 0,
   "engines": {
