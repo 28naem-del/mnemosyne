@@ -18,3 +18,5 @@ The September 8 workspace notes attribute parts of the original project's inspir
 Runtime third-party dependencies: the official MCP TypeScript server SDK (MIT), Zod (MIT), and uuid (MIT, legacy backend). SQLite is supplied by Node.js; the local entry point uses Node built-ins. Each dependency retains its own license. Research discussion of OpenViking does not import its AGPL server code into this distribution.
 
 See [the research review](docs/RESEARCH-2026-09-12.md) for primary sources, corrections to older notes, and how the findings affected implementation.
+
+The static website vendors the official Three.js 0.185.1 browser modules under the MIT license. Its license, official archive URL and verified checksums are retained in [site/vendor/three](site/vendor/three/SOURCE.md). This renderer is used only for the illustrative interactive sculpture, independently of the memory engine.
