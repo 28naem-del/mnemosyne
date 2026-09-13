@@ -199,3 +199,10 @@ export interface ImportResult {
   skipped: number;
   outcomesImported: number;
 }
+
+/** An opaque full-record revision captured by a trusted controller. */
+export interface RollbackRecordExpectation { id: string; fingerprint: string }
+export interface RollbackUnchangedRecordsInput {
+  /** Exact private records created by the operation being undone, at most 10000. */
+  records: readonly RollbackRecordExpectation[];
+}

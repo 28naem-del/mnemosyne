@@ -2,6 +2,8 @@
 
 This release candidate adds local memory alongside the existing Qdrant engine and intentionally changes unsafe behavior. Test against isolated copies before production use. No automatic database migration runs.
 
+For an explicit import from legacy Mnemosyne/Qdrant, Mem0, Letta or Markdown, use the [rc5 export migration guide](MIGRATION.md). It adds a pure preview, exact-source plan, atomic application, guarded undo and source-identity forgetting. The compatibility and same-scope snapshot behavior below remains separate.
+
 ## Runtime and package
 
 Node >=22.16 is required because the local kernel uses built-in SQLite. The package is ESM. `mnemosy-ai/local`, `/mcp`, and `/reflection` are new subpaths. `createMnemosyne` remains the Qdrant factory; `createLocalMemory` creates the separate SQLite engine. Root reexports are available, but importing `/local` keeps the dependency surface small.

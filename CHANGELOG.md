@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.5] — source release candidate, 2026-09-13
+
+- Added offline export migration for seven explicit Mem0, Letta-block, legacy Mnemosyne/Qdrant and Markdown profiles, with exact UTF-8 record spans, owner selection, completeness and byte-accounting reports.
+- Added reviewed-plan CLI/SDK application, private untrusted defaults, stable replay identities, destination conflict inspection, paged originals, guarded atomic undo and source forgetting with durable replay tombstones.
+- Added a kernel rollback guard that protects changed records, later dependents and outcomes, plus indexes for bounded rollback checks.
+- Added explicit source freshness policies, persisted check evidence, bounded asynchronous probes and freshness-aware lexical recall. Age alone does not alter assertions or trust.
+- Added short-lived, action-bound local dependency read sets with expiry, evidence/outcome revalidation and per-instance signature checks. These do not authorize or lock external actions.
+- Added `/migration` and `/maintenance` package entry points, `migrate` and `health` commands, two executable temporary-database examples and dedicated guides. Existing local snapshot import remains separate.
+
 ## [2.0.0-rc.4] — source release candidate, 2026-09-13
 
 ### Added

@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import * as v from './validation.js';
 import type {
   CheckpointInput, ContextPacket, EmbeddingIndexOptions, EmbeddingIndexResult, HybridRecallOptions, ImportResult, ListMemoryInput, LocalMemoryOptions, MemoryEmbedder, MemoryPage, MemoryRecord,
-  MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, SnapshotIdempotencyEntry, StoreMemoryInput,
+  MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, RollbackUnchangedRecordsInput, SnapshotIdempotencyEntry, StoreMemoryInput,
 } from './types.js';
 
 export type * from './types.js';
@@ -25,6 +25,16 @@ export class CheckpointConflictError extends Error {
     this.name = 'CheckpointConflictError';
     this.taskId = taskId;
     this.memoryIds = [...memoryIds];
+  }
+}
+
+/** Does not disclose IDs or content of records outside the caller's scope. */
+export class RollbackConflictError extends Error {
+  readonly conflictCount: number;
+  constructor(conflictCount: number) {
+    super('Rollback refused: records changed, are unavailable, or have later dependent work');
+    this.name = 'RollbackConflictError';
+    this.conflictCount = conflictCount;
   }
 }
 
@@ -230,6 +240,10 @@ export class LocalMemory {
         CREATE INDEX IF NOT EXISTS local_embeddings_model ON local_embeddings(model,memory_id);
         CREATE TABLE IF NOT EXISTS local_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS memories_page ON memories(workspace_id,created_at,id);
+        CREATE INDEX IF NOT EXISTS outcomes_memory_workspace ON outcomes(memory_id,workspace_id);
+        CREATE INDEX IF NOT EXISTS audit_memory ON audit(memory_id);
+        CREATE INDEX IF NOT EXISTS idempotency_memory ON idempotency(memory_id);
+        CREATE INDEX IF NOT EXISTS dependencies_target ON dependencies(to_id);
       `);
       this.#db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run('cursor-secret', randomBytes(32).toString('hex'));
       this.#cursorSecret = (this.#db.prepare("SELECT value FROM local_settings WHERE key='cursor-secret'").get() as { value: string }).value;
@@ -789,6 +803,62 @@ export class LocalMemory {
     // backups and a WAL pinned by another reader cannot be guaranteed erased.
     if (!this.#transactionDepth) this.#db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
     return { deletedIds };
+  }
+
+  /** Full stored-record revision; outcome evidence is checked separately at undo. */
+  getRecordFingerprint(id: string): string | null {
+    const record = this.get(id);
+    return record ? this.#textHash(`mnemosyne-record-v1\n${v.canonical(record)}`) : null;
+  }
+
+  /**
+   * Controller-only undo of an exact, unchanged private record set. Unlike
+   * forget(), never follows a dependency into later work or creates a privacy
+   * tombstone. Wrap this and journal updates in atomic() for one commit.
+   */
+  rollbackUnchangedRecords(input: RollbackUnchangedRecordsInput): { deletedIds: string[] } {
+    v.keys(v.object(input, 'rollback'), ['records'], 'rollback');
+    const entries = input.records;
+    if (!Array.isArray(entries)) throw new TypeError('Rollback requires at most 10000 record expectations');
+    const length = entries.length;
+    if (!Number.isSafeInteger(length) || length < 0 || length > 10000) throw new TypeError('Rollback requires at most 10000 record expectations');
+    const expected = new Map<string, string>();
+    for (let index = 0; index < length; index++) {
+      const entry = entries[index];
+      v.keys(v.object(entry, 'rollback record'), ['id', 'fingerprint'], 'rollback record');
+      const id = v.string(entry.id, 'rollback record id', 160);
+      const fingerprint = entry.fingerprint;
+      if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint)) throw new TypeError('Invalid rollback record fingerprint');
+      if (expected.has(id)) throw new TypeError('Duplicate rollback record');
+      expected.set(id, fingerprint);
+    }
+    return this.#transaction(() => {
+      let conflicts = 0;
+      const children = this.#db.prepare('SELECT from_id AS id FROM dependencies WHERE workspace_id=? AND to_id=?');
+      const successors = this.#db.prepare('SELECT id FROM memories WHERE workspace_id=? AND supersedes=?');
+      const hasOutcome = this.#db.prepare('SELECT 1 FROM outcomes WHERE workspace_id=? AND memory_id=? LIMIT 1');
+      for (const [id, fingerprint] of expected) {
+        const record = this.#decode(this.#db.prepare('SELECT data FROM memories WHERE id=? AND workspace_id=?').get(id, this.#workspaceId));
+        if (!record || record.agentId !== this.#agentId || record.visibility !== 'private' || record.kind === 'checkpoint'
+          || this.#textHash(`mnemosyne-record-v1\n${v.canonical(record)}`) !== fingerprint
+          || (record.supersedes !== undefined && !expected.has(record.supersedes))
+          || hasOutcome.get(this.#workspaceId, id)) { conflicts++; continue; }
+        // Direct edges suffice: any path leaving the deletion set has a first
+        // edge outside it. These queries include hidden foreign descendants.
+        let external = false;
+        for (const row of children.iterate(this.#workspaceId, id)) {
+          if (!expected.has(row.id as string)) { external = true; break; }
+        }
+        if (!external) for (const row of successors.iterate(this.#workspaceId, id)) {
+          if (!expected.has(row.id as string)) { external = true; break; }
+        }
+        if (external) conflicts++;
+      }
+      if (conflicts) throw new RollbackConflictError(conflicts);
+      const remove = this.#db.prepare('DELETE FROM memories WHERE id=? AND workspace_id=? AND agent_id=?');
+      for (const id of expected.keys()) remove.run(id, this.#workspaceId, this.#agentId);
+      return { deletedIds: [...expected.keys()] };
+    });
   }
 
   #count(text: string): number {

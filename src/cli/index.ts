@@ -13,6 +13,9 @@ import { createLocalMemory, LOCAL_SNAPSHOT_LIMITS } from '../local/index.js';
 import type { MemorySnapshot, StoreMemoryInput } from '../local/types.js';
 import { serveMemoryStdio, VERSION } from '../mcp/server.js';
 import { runMemoryDemo } from '../evaluation/demo.js';
+import { requireExistingDatabase, runMigrationCommand } from './migration.js';
+import { MemoryMaintenance } from '../maintenance/index.js';
+import { parseJsonWithSpans } from '../migration/json-spans.js';
 
 const HELP = `Mnemosyne ${VERSION} — portable agent memory
 
@@ -30,6 +33,15 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy forget [scope] --id ID --confirm
   mnemosy export [scope] --out FILE
   mnemosy import [scope] --file FILE
+  mnemosy migrate --file manifest.json --out plan.json
+  mnemosy migrate --file export.json --profile mem0-array --source-store NAME
+                   --source-owner OWNER --workspace NAME --agent NAME --out plan.json
+  mnemosy migrate --action apply --file plan.json --db FILE --batch NAME --confirm
+  mnemosy migrate [scope] --action inspect --batch NAME
+  mnemosy migrate [scope] --action source --batch NAME --id SOURCE_ID [--json JSON]
+  mnemosy migrate [scope] --action rollback --batch NAME --revision RECEIPT_HASH --confirm
+  mnemosy migrate [scope] --action forget --id SOURCE_ID --confirm
+  mnemosy health [scope] --action scan|watch|check|recall [--id ID] [--json JSON]
   mnemosy serve [scope] --token-file FILE [--port 8765]
   mnemosy capture [scope] --file FILE --adapter text|generic|codex|claude
                    [--session NAME] [--trust observed] [--watch --interval 1000]
@@ -55,6 +67,15 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
          --provider-config optionally enables hybrid recall; bind stays on loopback.
   capture: only the named regular UTF-8 file; no host discovery or installed scheduler.
            JSONL sync defers an incomplete final row; unknown binaries need SDK extraction.
+  migrate: preview never opens a database. Saved plans contain a complete redacted review,
+           use private permissions, never overwrite files, and are limited to 4 MiB.
+           One-file mode requires --profile, --source-store and --source-owner.
+           --assume-missing-owner explicitly assigns missing owners to that selected owner;
+           --acknowledge-partial accepts unknown/partial exports or excluded owners.
+           --collection is for legacy Mnemosyne; --logical-path is required for Markdown;
+           --qdrant-text-field selects a custom Qdrant payload field.
+           Imported --trust defaults to untrusted; observed is an explicit provenance choice.
+           Shortcut settings cannot override a manifest or a saved plan during apply.
 
   Scope: --db FILE --workspace NAME --agent NAME (all required)
   MCP/HTTP: --read-only, --allow-destructive (forget is disabled by default)
@@ -86,6 +107,22 @@ function jsonInput(value?: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(value ?? '{}');
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('--json must contain an object.');
   return parsed as Record<string, unknown>;
+}
+
+function healthCommand(values: Record<string, string | boolean | undefined>) {
+  const action = z.enum(['scan', 'watch', 'check', 'recall']).parse(values.action ?? 'scan');
+  const shared = ['action', 'db', 'workspace', 'agent', 'read-only', 'no-capture', 'no-recall'];
+  const allowed = [...shared, ...(action === 'recall' ? ['query', 'limit', 'json'] : action === 'scan' ? [] : ['id', 'json'])];
+  if (Object.entries(values).some(([name, value]) => value !== undefined && !allowed.includes(name))) throw new Error('Unsupported option for this health action');
+  if (values['no-recall']) throw new Error('Maintenance recall is disabled');
+  if (['watch', 'check'].includes(action) && (values['read-only'] || values['no-capture'])) throw new Error('Health writes are disabled by current policy');
+  const text = (bytes: number) => z.string().refine(value => !!value.trim() && !value.includes('\0') && Buffer.byteLength(value) <= bytes);
+  const json = () => parseJsonWithSpans(Buffer.from(required(values.json as string | undefined, '--json')), { maxInputBytes: 65536, maxDepth: 8, maxNodes: 128 }).value;
+  if (action === 'scan') return { action } as const;
+  if (action === 'recall') return { action, input: { query: text(4096).parse(required(values.query as string | undefined, '--query')), limit: integer(values.limit as string | undefined, 20, 100), ...z.object({ requireWatched: z.boolean().optional() }).strict().parse(values.json === undefined ? {} : json()) } } as const;
+  const memoryId = text(160).parse(required(values.id as string | undefined, '--id'));
+  if (action === 'watch') return { action, input: { memoryId, ...z.object({ maxAgeMs: z.number().int().min(1).max(3650 * 86400_000), priority: z.number().int().min(0).max(100).optional() }).strict().parse(json()) } } as const;
+  return { action, input: { memoryId, ...z.object({ expectedStateHash: z.string().regex(/^[a-f0-9]{64}$/), observation: z.object({ status: z.enum(['confirmed', 'changed', 'unavailable']), evidence: text(8192), verifier: text(512), sourceRevision: text(1024).optional() }).strict() }).strict().parse(json()) } } as const;
 }
 
 function providerConfig(path: string | undefined) {
@@ -151,11 +188,16 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     adapter: { type: 'string' }, session: { type: 'string' }, mime: { type: 'string' },
     watch: { type: 'boolean' }, interval: { type: 'string' },
     'no-capture': { type: 'boolean' }, 'no-recall': { type: 'boolean' },
+    batch: { type: 'string' }, revision: { type: 'string' },
+    profile: { type: 'string' }, 'source-store': { type: 'string' }, 'source-owner': { type: 'string' },
+    'assume-missing-owner': { type: 'boolean' }, 'acknowledge-partial': { type: 'boolean' },
+    collection: { type: 'string' }, 'logical-path': { type: 'string' }, 'qdrant-text-field': { type: 'string' },
   } });
   if (values.version) { process.stdout.write(`${VERSION}\n`); return; }
   if (values.help || !positionals.length) { process.stdout.write(HELP); return; }
   if (positionals.length !== 1) throw new Error('Specify exactly one command.');
   const command = positionals[0];
+  if (command === 'migrate') { runMigrationCommand(values); return; }
   if (command === 'evaluate') {
     const settings = jsonInput(values.json);
     if (['embedder', 'signal', 'tempParent'].some(key => key in settings)) throw new Error('Evaluation JSON accepts dataset labels and numeric budgets; use --provider-config for embeddings.');
@@ -185,7 +227,9 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     } else print(report);
     return;
   }
-  if (!['mcp', 'store', 'recall', 'context', 'inspect', 'correct', 'forget', 'export', 'import', 'serve', 'capture', 'observe', 'jobs', 'run-jobs', 'index', 'model', 'skill', 'branch', 'entity'].includes(command)) throw new Error(`Unknown command: ${command}`);
+  if (!['mcp', 'store', 'recall', 'context', 'inspect', 'correct', 'forget', 'export', 'import', 'serve', 'capture', 'observe', 'jobs', 'run-jobs', 'index', 'model', 'skill', 'branch', 'entity', 'health'].includes(command)) throw new Error(`Unknown command: ${command}`);
+  const health = command === 'health' ? healthCommand(values) : undefined;
+  if (health) requireExistingDatabase(resolve(required(values.db, '--db')));
   const memory = createLocalMemory({ path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') });
   const runtime = new MemoryRuntime(memory, { captureEnabled: !values['no-capture'], recallEnabled: !values['no-recall'] });
   if (command === 'mcp') {
@@ -206,6 +250,14 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   }
   try {
     switch (command) {
+      case 'health': {
+        const maintenance = new MemoryMaintenance(runtime);
+        if (health!.action === 'scan') print(maintenance.scan());
+        else if (health!.action === 'recall') print(maintenance.recall(health!.input));
+        else if (health!.action === 'watch') print(maintenance.watchMemory(health!.input));
+        else print(maintenance.recordCheck(health!.input));
+        break;
+      }
       case 'store': {
         const trust = values.trust ?? 'observed';
         const kind = values.kind ?? 'observation';

@@ -65,7 +65,7 @@ jobs:
           const actual = execFileSync(process.execPath, ['node_modules/mnemosy-ai/dist/cli/index.js', '--version'], { encoding: 'utf8' }).trim();
           if (actual !== expected || VERSION !== expected) throw new Error('Installed package, CLI and MCP versions disagree.');
           NODE
-          node --input-type=module -e "await Promise.all(['mnemosy-ai', 'mnemosy-ai/local', 'mnemosy-ai/mcp', 'mnemosy-ai/reflection', 'mnemosy-ai/runtime', 'mnemosy-ai/http', 'mnemosy-ai/providers', 'mnemosy-ai/branches', 'mnemosy-ai/relations', 'mnemosy-ai/connectors', 'mnemosy-ai/adapters', 'mnemosy-ai/evaluation'].map(specifier => import(specifier)));"
+          node --input-type=module -e "await Promise.all(['mnemosy-ai', 'mnemosy-ai/local', 'mnemosy-ai/mcp', 'mnemosy-ai/reflection', 'mnemosy-ai/runtime', 'mnemosy-ai/http', 'mnemosy-ai/providers', 'mnemosy-ai/branches', 'mnemosy-ai/relations', 'mnemosy-ai/connectors', 'mnemosy-ai/adapters', 'mnemosy-ai/evaluation', 'mnemosy-ai/migration', 'mnemosy-ai/maintenance'].map(specifier => import(specifier)));"
           node -e "const report = require('./demo.json'); if (!report.checksTotal || report.checksPassed !== report.checksTotal) process.exit(1); console.log(report.checksPassed + '/' + report.checksTotal + ' demo checks passed');"
           node -e "const report = require('./learning-demo.json'); if (!report.passed || !report.checksTotal || report.checksPassed !== report.checksTotal || report.externalModelCalls !== 0 || report.kind !== 'deterministic integration demonstration') process.exit(1); console.log(report.checksPassed + '/' + report.checksTotal + ' learning integration checks passed');"
 
@@ -77,6 +77,12 @@ jobs:
 
       - name: Run the provider memory protocol example
         run: node --experimental-strip-types examples/provider-memory-tools.ts
+
+      - name: Run the migration lifecycle example
+        run: node --experimental-strip-types examples/migration.ts
+
+      - name: Run the source freshness and action check example
+        run: node --experimental-strip-types examples/maintenance.ts
 
   python:
     name: Python client (Python ${{ matrix.python }})

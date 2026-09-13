@@ -6,7 +6,7 @@ import { MemoryRuntime } from '../runtime/index.js';
 import { MemoryRelations } from '../relations/index.js';
 import { MemoryBranches } from '../branches/index.js';
 
-export const VERSION = '2.0.0-rc.4';
+export const VERSION = '2.0.0-rc.5';
 
 export interface MemoryServerOptions {
   /** Launch-time capability policy, never controlled by tool arguments. */

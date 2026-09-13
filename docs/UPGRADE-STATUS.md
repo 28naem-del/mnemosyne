@@ -42,7 +42,15 @@ Erasure covers this live store. Existing exports, device snapshots and context a
 
 Plain text, Markdown and JSON work directly. An explicit OpenAI-compatible vision adapter can extract text from selected PNG/JPEG/WebP images. Other binary documents require a caller-selected extractor. The repository now includes a live inspector, Python client, runtime guide, executable SDK example, and a second recorded website demo.
 
-The [native Anthropic memory adapter](ANTHROPIC-MEMORY.md) now maps six text commands to private virtual files, source revisions and forgetting. The [Responses and Gemini wrappers](PROVIDER-TOOLS.md) share a fresh generic namespace while preserving provider call identities and separate wire protocols. Their protocol examples run locally; no provider model session has been evaluated. Built-in PDF extraction, managed source connectors and cross-system migration remain distinct gaps. The earlier [v2 migration notes](MIGRATION-v2.md) describe compatibility and local snapshots; they do not yet claim a complete importer for other products.
+The [native Anthropic memory adapter](ANTHROPIC-MEMORY.md) maps six text commands to private virtual files, source revisions and forgetting. The [Responses and Gemini wrappers](PROVIDER-TOOLS.md) share a fresh generic namespace while preserving provider call identities and separate wire protocols. Their protocol examples run locally; no provider model session has been evaluated. Built-in PDF extraction and managed source connectors remain gaps.
+
+The [rc5 migration service](MIGRATION.md) adds seven explicit export profiles covering Mem0, Letta blocks, legacy Mnemosyne/Qdrant and Markdown. It previews supplied files without opening a destination database, retains exact selected record bytes, applies atomically, detects stable identity conflicts/replays and guards undo against later work. Privacy forgetting purges dependent live content and blocks the same source identity after restart. It is a bounded offline export importer, not a universal account-archive parser or live synchronization service. Local snapshot compatibility remains documented [separately](MIGRATION-v2.md).
+
+## Check facts that quietly become stale
+
+The [freshness service](MAINTENANCE.md) persists explicit recheck policies and last-confirmed source evidence. A bounded caller-supplied probe can record confirmed, changed or unavailable results. Freshness-aware lexical recall checks watched ancestors; stale evidence stays out of that path without rewriting its text or trust. Host-bound action read sets validate exact local dependencies, check state and outcomes immediately before the host considers an action.
+
+The host supplies source verification, scheduling and complete action dependencies. These checks do not authenticate factual truth, detect arbitrary implicit contradictions, or lock external actions. Existing generic recall/hybrid/MCP/HTTP operations are not automatically governed by the new service. The executable example uses a simulated clock and scripted source checks, with zero model calls.
 
 ## Research and evidence
 

@@ -2,6 +2,18 @@
 
 This release separates correctness checks, public-data retrieval measurements and memory-quality claims. No paid model calls, generated-answer evaluation or matched competitor experiments were performed.
 
+## Verified rc5 local checkpoint
+
+The rc5 source passed **580 TypeScript tests on Node 22.16.0 and 24.21.0**, plus source/example typechecking and build. New coverage includes 15 exact JSON parser tests, 44 migration planning tests, 60 migration service tests, 14 kernel rollback tests, 25 freshness/read-set tests and 51 migration/health CLI subprocess tests.
+
+Independent review exercised raw UTF-8 fidelity, duplicate-key and numeric handling, canonical replay, private scope, quarantined records, byte accounting, atomic failures, source tombstones after restart and snapshot restoration, and rollback against later hidden dependents or outcomes. CLI probes found and fixed a SQLite sidecar collision that could delete a supplied export, validation that opened a database before rejecting missing arguments, and previews that produced an unreadably large saved plan. Those cases now have regression coverage.
+
+Freshness review tested stale asynchronous confirmations, cancellation before callback entry, one deadline including preflight, failed check evidence, clock reversal, tampered action bindings and a full 2,048-record dependency chain. A repaired traversal removes repeated per-ancestor eligibility scans. These are local mechanism checks, not evidence of general reasoning or agent-task gains.
+
+An offline-installed rc5 package passed **14 entry-point imports**, package/CLI/MCP version agreement, both existing demos (14 and 13 checks) and all five runtime/native-provider/migration/maintenance examples. The new examples use temporary databases, exact source bytes, process reopenings, a simulated clock and scripted probes; zero model calls are made. Website docs/features were rendered at 1440×1000 and 390×844 with no observed horizontal overflow; navigation and copy controls passed browser checks.
+
+Dependency audit reported zero known vulnerabilities. Semgrep applied 22 matching security-audit rules to 14 changed/new source targets with zero findings; it retained a partial-parse warning on the existing type-only re-export in `src/local/index.ts` (approximately 99.9% parsed). Snyk was attempted on the new modules and examples but remains unauthenticated. Remote CI is recorded separately in the pull request. No actual user's memory was migrated, no live competitor account was connected, and the historical public retrieval baseline below is unchanged.
+
 ## Verified rc4 local checkpoint
 
 The rc4 source passed **371 TypeScript tests** on Node 22.16.0 and 24.21.0, source/example typechecking and build. Its 45 virtual-engine tests and 20 provider-wrapper tests cover shared generic provenance, existing Claude compatibility, completed-call validation, exact provider IDs, optional/null differences, correlated errors, policy, correction, forgetting and retries.

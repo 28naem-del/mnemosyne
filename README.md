@@ -6,9 +6,9 @@ Portable memory for agents that need to carry work forward, explain what they re
 
 Mnemosyne 2 combines a local SQLite memory engine with source capture, bounded observation jobs, source-backed project models, trial-gated skills, hybrid retrieval, and correction-aware provenance. Use it through TypeScript, MCP, the CLI, or an authenticated local HTTP service with a live inspector and Python client. The existing Qdrant integration remains available separately.
 
-**Status: 2.0.0-rc.4, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
+**Status: 2.0.0-rc.5, source release candidate.** The commands below build this checkout. They do not assume publication to npm, PyPI, or a production website.
 
-[Quickstart](docs/quickstart.md) · [Runtime and service guide](docs/RUNTIME.md) · [Native provider tools](docs/PROVIDER-TOOLS.md) · [API](docs/api.md) · [Migration](docs/MIGRATION-v2.md) · [Provider memory research](docs/PROVIDER-MEMORY-RESEARCH.md) · [Security boundaries](SECURITY.md)
+[Quickstart](docs/quickstart.md) · [Runtime and service guide](docs/RUNTIME.md) · [Native provider tools](docs/PROVIDER-TOOLS.md) · [Import existing memories](docs/MIGRATION.md) · [Source freshness](docs/MAINTENANCE.md) · [API](docs/api.md) · [Security boundaries](SECURITY.md)
 
 ## See it work
 
@@ -83,8 +83,35 @@ These package imports work from an installed build or this repository's package 
 - **Time, entities and proposals.** Query validity and knowledge time, resolve ambiguous entity aliases, traverse evidence-linked relationships, and stage isolated branch changes before an atomic merge.
 - **Bounded reflection.** A caller-selected model can propose lessons in one budgeted pass. Proposals do not write memory. A controller must validate a proposal before committing it; changed or failed evidence rejects stale proposals.
 - **A usable lifecycle.** Inspect, correct, export, restore, and forget through an SDK and CLI. MCP tools and bearer-token HTTP expose narrower authority. A live browser inspector and dependency-free Python client use the HTTP service.
+- **Bring existing memories.** Preview selected Mem0, Letta, legacy Mnemosyne/Qdrant and Markdown exports, then apply the reviewed source bytes atomically. Preserve original records, recognize retries and undo untouched imports. Forgetting also blocks replay of the same source identity.
+- **Check silent staleness.** Explicit source policies track the last confirmation independently of creation or retrieval. Freshness-aware recall withholds stale dependencies, and short-lived action read sets detect changed evidence before the host acts. Controllers supply check evidence; age does not rewrite facts.
 
 The local path needs no external service for lexical memory. Semantic indexing and generated observations require a caller-selected provider or callback; no model is chosen or downloaded automatically. Local vectors, entities, runtime artifacts and ordinary memories use the same SQLite store. Cloud synchronization, model training, unattended host-history discovery and a managed hosted service are not included. The Qdrant and local engines do not automatically synchronize.
+
+## Bring your existing memories
+
+```sh
+node dist/cli/index.js migrate \
+  --file ./mem0-export.json --profile mem0-array \
+  --source-store personal-mem0 --source-owner alice \
+  --workspace my-project --agent assistant \
+  --acknowledge-partial --out ./reviewed-plan.json
+
+node dist/cli/index.js migrate --action apply \
+  --file ./reviewed-plan.json --db ./agent-memory.sqlite \
+  --batch first-import --confirm
+```
+
+The preview opens no destination database. Imports are private and untrusted by default; accepted source assertions can be planned with explicit `--trust observed`. The [migration guide](docs/MIGRATION.md) lists all seven supported export shapes, page/owner declarations, exact-byte accounting, limits, inspection, undo and forgetting. There is no account discovery or automatic live migration.
+
+Run the new synthetic examples after building to see migration and silent-staleness checks on temporary stores:
+
+```sh
+node --experimental-strip-types examples/migration.ts
+node --experimental-strip-types examples/maintenance.ts
+```
+
+The [freshness guide](docs/MAINTENANCE.md) explains source checks, bounded probes and action read sets. Freshness filtering is an explicit SDK/CLI path; existing generic recall does not silently acquire a new policy. Neither example calls a model or accesses live sources.
 
 ## Open the live inspector
 
