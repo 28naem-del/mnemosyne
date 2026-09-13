@@ -1,15 +1,53 @@
 # Runnable examples
 
-Start with `npm run check` and `npm run demo` in the repository root. The demo runs the complete local handoff/correction workflow with synthetic data, without external services.
+Pick a task, build once, and run its example from the repository root. Node **22.16.0 or newer** is required; Node 24 is recommended. If you have not cloned the project yet, follow the [tagged source quickstart](../docs/quickstart.md).
 
-The three TypeScript examples here demonstrate the separate backend APIs. Build first, use Node >=22.16, and run with `node --experimental-strip-types examples/basic-usage.ts` (substitute the other filename as needed). Environment variables must be passed by your shell; if you use an `.env` file, add Node's `--env-file=.env` option explicitly. These examples do not load environment files automatically.
+```sh
+npm ci --ignore-scripts
+npm run build
+node --experimental-strip-types examples/agent-loop.ts
+```
 
-- `basic-usage.ts`: requires explicit `QDRANT_URL` and full `EMBEDDING_URL`; supports optional provider keys/model. Writes to isolated `example_*` collections, recalls, and forgets the sample ID. It does not delete the collections.
-- `with-redis.ts`: requires explicit `REDIS_URL`; demonstrates the actual publisher/subscriber classes, bounded delivery wait, and disconnect. No nonexistent factory subscription API is used.
-- `with-falkordb.ts`: requires explicit `GRAPH_URL`; demonstrates direct entity/relationship storage and lookup in `mnemosyne_example_graph`. Sample nodes remain in that example graph. An empty lookup is not proof of a successful live write; inspect your backend if needed.
+Substitute any filename below. `npm run demo` and `npm run demo:learning` are additional CLI walkthroughs. Run `npm run check` for the full contributor checks rather than as a prerequisite for every demonstration.
 
-Never point example writes at production services. These examples were checked against generated API declarations; live Redis/Qdrant/FalkorDB conformance is not part of the default local test suite. See [deployment](../docs/deployment.md) for optional infrastructure.
+## Offline examples
 
-## Experience runtime
+These **11 examples run in CI**. They use in-memory or isolated temporary SQLite databases, synthetic sources and explicit scripted callbacks. They require no API keys, model downloads or external service. A scripted proposal/reader call is not an external model call or a measurement of AI task quality.
 
-After building, run `node --experimental-strip-types examples/runtime-learning.ts` from the repository root. This isolated example captures original evidence, runs one scripted observation job, executes a controller trial, attributes an outcome, corrects the source and forgets the resulting chain. It uses no network or language model. See [the runtime guide](../docs/RUNTIME.md) for real-provider integration.
+| Example | Demonstrates | Guide |
+|---|---|---|
+| [agent-loop.ts](agent-loop.ts) | Capture a turn, process bounded observations, recall context and reject an action after its source changes. | [Agent lifecycle](../docs/AGENT.md) |
+| [runtime-learning.ts](runtime-learning.ts) | Capture original evidence, run a scripted job, trial a skill, then retire and erase its dependency chain. Uses the compatibility 1-task/1-verifier policy; select the recommended 2/2 policy for new applications. | [Runtime](../docs/RUNTIME.md) |
+| [adaptive-context.ts](adaptive-context.ts) | Compact source-backed summaries, reuse a selection plan, expand original bytes and invalidate after forgetting. | [Context](../docs/CONTEXT.md) |
+| [maintenance.ts](maintenance.ts) | Confirm source freshness, advance a test clock, persist checks and reject stale action read sets. | [Maintenance](../docs/MAINTENANCE.md) |
+| [gradual-migration.ts](gradual-migration.ts) | Adopt beside a simulated old store, reconcile a changed revision, retain fallback and return to legacy mode. The old store is read-only. | [Bridge](../docs/BRIDGE.md) |
+| [migration.ts](migration.ts) | Preview and apply synthetic export records, inspect source bytes and exercise migration consistency checks. | [Full migration](../docs/MIGRATION.md) |
+| [backup-restore.ts](backup-restore.ts) | Back up and verify a full database, then restore its state and forgetting protections into a new path. | [Recovery](../docs/OPERATIONS.md) |
+| [profiles.ts](profiles.ts) | Keep typed known, unknown and conflicting fields; refresh after correction and suppress erased evidence. | [Profiles](../docs/PROFILES.md) |
+| [anthropic-memory.ts](anthropic-memory.ts) | Handle native virtual-file memory commands, edit with stable replay IDs, and verify deletion. No provider SDK or live model is invoked. | [Memory tools](../docs/ANTHROPIC-MEMORY.md) |
+| [provider-memory-tools.ts](provider-memory-tools.ts) | Route explicit provider function-call envelopes, preserve call identities and return errors to the host loop. | [Provider tools](../docs/PROVIDER-TOOLS.md) |
+| [agent-benchmark.ts](agent-benchmark.ts) | Exercise four memory conditions with a scripted reader and synthetic update/erasure tasks. This checks the harness, not model accuracy. | [Agent evaluation](../docs/AGENT-EVALUATION.md) |
+
+## Optional CPU model example
+
+[local-semantic.ts](local-semantic.ts) uses real local embedding and reranking inference over synthetic memories. First follow [local model setup](../docs/LOCAL-MODELS.md), including the pinned optional runtime, application dependency override and explicit model provisioning. With that runtime installed and the model cache already populated:
+
+```sh
+node --experimental-strip-types examples/local-semantic.ts --cache /absolute/path/to/model-cache
+```
+
+The example fails clearly when its cache is missing. Add `--download` only when deliberately provisioning the documented public model artifacts. This example is excluded from the default offline CI run and is not a public answer-quality benchmark.
+
+## External service examples
+
+These three examples use the separate compatibility APIs. Provide isolated development endpoints; their configuration names below are actual runtime identifiers.
+
+| Example | Required configuration | Side effects and coverage |
+|---|---|---|
+| [basic-usage.ts](basic-usage.ts) | `QDRANT_URL` and full `EMBEDDING_URL`; optional provider credentials and model settings are listed in the file. | Writes to isolated `example_*` collections, recalls and forgets sample records. It leaves the collections in place and calls the selected embedding service. |
+| [with-redis.ts](with-redis.ts) | `REDIS_URL` | Publishes/subscribes to one synthetic broadcast with a bounded delivery wait and disconnect. |
+| [with-falkordb.ts](with-falkordb.ts) | `GRAPH_URL` | Writes sample nodes and a relation in `mnemosyne_example_graph`; these sample nodes remain. |
+
+All 15 examples are included in strict example typechecking. Live backend conformance is not part of the default local test suite; an empty graph lookup is not proof that a live write succeeded. Use [deployment](../docs/deployment.md) for the service configuration and keep example writes separate from production data.
+
+Pass environment variables through your shell. If you choose an environment file, add Node's `--env-file=.env` option explicitly; these examples do not load one automatically. Do not commit credentials, memory databases or backups.

@@ -1,34 +1,76 @@
-name: Bug Report
-description: Report a reproducible bug in Mnemosyne
+name: Bug report
+description: Report a reproducible problem with Mnemosyne
 title: "[Bug]: "
 labels: ["bug", "needs-triage"]
-assignees: []
 
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report! Please be as detailed as possible.
+        Help us reproduce the behavior with the smallest useful example.
+
+        **This issue is public.** Use synthetic memories and remove credentials, private conversations, personal data, private hostnames and local user paths from every field. Do not attach a production database or backup.
+
+        For a suspected vulnerability, use [the private reporting instructions](https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md) or email **28naime@gmail.com** instead of opening a public issue.
 
   - type: textarea
     id: description
     attributes:
-      label: Describe the bug
-      description: A clear and concise description of what the bug is.
-      placeholder: "When I call memory.recall() with a long query string, the process crashes with..."
+      label: What happened?
+      description: Describe the operation and its effect on your application.
+      placeholder: "After correcting a source, context compilation still includes a procedure that depends on it."
+    validations:
+      required: true
+
+  - type: input
+    id: mnemosyne-version
+    attributes:
+      label: Mnemosyne version or commit
+      description: Include the release tag or full commit SHA and how you installed it.
+      placeholder: "2.0.0-rc.8, installed from the GitHub release tarball"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface used
+      multiple: true
+      options:
+        - TypeScript or JavaScript SDK
+        - CLI
+        - MCP
+        - HTTP service or inspector
+        - Python HTTP client
+        - Host agent or provider tool adapter
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Memory engine or transition
+      multiple: true
+      options:
+        - Local engine
+        - Existing vector engine
+        - Gradual migration bridge
+        - Full export migration
+        - Unsure or not applicable
     validations:
       required: true
 
   - type: textarea
     id: reproduction
     attributes:
-      label: Steps to reproduce
-      description: Step-by-step instructions to reproduce the behavior.
+      label: Minimal reproduction
+      description: Provide exact commands or a short executable example with synthetic data, including setup and any restart or timing steps.
       placeholder: |
-        1. Configure Mnemosyne with `{ qdrantUrl: '...' }`
-        2. Call `memory.store({ text: '...' })`
-        3. Call `memory.recall({ query: '...' })`
-        4. See error
+        1. Build the tagged source with npm ci --ignore-scripts and npm run build.
+        2. Create a separate reproduction database with a synthetic source and dependent memory.
+        3. Run the smallest sequence of store, correct and compile calls that shows the problem.
+        4. Include the resulting output with sensitive details removed.
     validations:
       required: true
 
@@ -36,7 +78,7 @@ body:
     id: expected
     attributes:
       label: Expected behavior
-      description: What did you expect to happen?
+      description: State what you expected. Link the relevant contract or example if useful.
     validations:
       required: true
 
@@ -44,73 +86,32 @@ body:
     id: actual
     attributes:
       label: Actual behavior
-      description: What actually happened? Include full error messages and stack traces.
+      description: Include the relevant result or error. Remove secrets and private content before pasting logs.
     validations:
       required: true
-
-  - type: input
-    id: mnemosyne-version
-    attributes:
-      label: Mnemosyne version
-      placeholder: "e.g. 1.0.0"
-    validations:
-      required: true
-
-  - type: input
-    id: node-version
-    attributes:
-      label: Node.js version
-      placeholder: "e.g. 22.0.0 (run `node --version`)"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: os
-    attributes:
-      label: Operating system
-      options:
-        - macOS
-        - Linux
-        - Windows
-        - Docker / Container
-        - Other
-    validations:
-      required: true
-
-  - type: dropdown
-    id: backend
-    attributes:
-      label: Backend(s) in use
-      multiple: true
-      options:
-        - Qdrant
-        - Redis
-        - FalkorDB
-        - MongoDB
-        - Ollama
-        - OpenAI
-    validations:
-      required: false
 
   - type: textarea
-    id: config
+    id: environment
     attributes:
-      label: Configuration (sanitized)
-      description: Paste your Mnemosyne config (remove secrets).
+      label: Runtime and operating system
+      description: Include Node.js version, OS and architecture; add Python version for client issues and container details when relevant.
+      placeholder: "Node.js 24.x; Linux x86_64; Python 3.12 for the HTTP client"
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Relevant configuration and limits
+      description: Include only sanitized options that affect the issue, such as scope, context budget, source timing or optional provider settings. Never include keys, tokens, private endpoints or memory contents.
       render: typescript
-
-  - type: textarea
-    id: logs
-    attributes:
-      label: Relevant log output
-      render: text
 
   - type: checkboxes
     id: checklist
     attributes:
       label: Before submitting
       options:
-        - label: I have searched existing issues and this is not a duplicate
+        - label: I searched existing issues and included the exact affected version.
           required: true
-        - label: I have reproduced this on the latest version
+        - label: I removed secrets and private data and used synthetic reproduction data.
           required: true

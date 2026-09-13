@@ -38,6 +38,9 @@ jobs:
       - name: Security audit
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Check documentation navigation
+        run: npm run check:docs
+
       - name: Verify benchmark report index and digests
         run: >-
           node scripts/benchmark-index.mjs --check

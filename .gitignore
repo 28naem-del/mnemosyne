@@ -25,6 +25,7 @@ Thumbs.db
 !.env.example
 *.pem
 *.key
+memory-token.txt
 
 # Local tooling and Python build caches
 .Codex/
@@ -55,6 +56,7 @@ pnpm-lock.yaml
 *.sqlite3-*
 *.db
 *.db-*
+*.mnemo-backup
 
 # Locally packed releases
 *.tgz

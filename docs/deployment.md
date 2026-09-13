@@ -1,8 +1,8 @@
 # Deploying Mnemosyne 2
 
-Mnemosyne 2 has two storage paths. The local engine and its MCP server use a SQLite file and lexical retrieval by default. The existing `createMnemosyne()` API uses Qdrant and an embedding endpoint. The local MCP server does not connect to Qdrant, Redis, FalkorDB, or MongoDB. It makes no model-provider calls by default; an explicit `--provider-config` enables hybrid queries that send query text to the configured embedding endpoint. See [semantic indexing and hybrid recall](RUNTIME.md#hybrid-retrieval) for provider setup and data flow.
+Mnemosyne 2 has two storage paths. The local engine, MCP server and authenticated HTTP service use SQLite and BM25 retrieval by default. The existing `createMnemosyne()` API uses a separately configured vector service and embedding endpoint. Starting a local service does not connect optional legacy databases. It makes no model-provider calls by default; an explicit `--provider-config` enables hybrid queries that send query text to the configured embedding endpoint. See [semantic indexing and hybrid recall](RUNTIME.md#hybrid-retrieval) for provider setup and data flow.
 
-This guide describes the source build in this repository. A release candidate in source does not imply that its version is available on npm.
+This guide describes the **2.0.0-rc.8 source release**. Use the [tagged quickstart](quickstart.md) for a fresh clone. GitHub release assets, source updates and npm/PyPI publications are separate channels.
 
 ## Build and run locally
 
@@ -10,11 +10,12 @@ Use Node.js **22.16.0 or newer**; CI checks the minimum version and Node 24. Nod
 
 ```bash
 npm ci --ignore-scripts
-npm run check
-node dist/cli/index.js demo
+npm run build
+npm run demo
+npm run demo:learning
 ```
 
-The demo uses an isolated temporary database and checks handoffs, privacy, correction propagation, evidence, and forgetting. It does not call an LLM or measure agent intelligence.
+The demos use isolated temporary databases and check handoffs, privacy, correction propagation, evidence, runtime learning fixtures and forgetting. They do not call an LLM or measure agent intelligence. Run `npm run check` separately for the full contributor checks.
 
 Start an MCP server with an explicit persistent path and identity:
 
@@ -25,7 +26,7 @@ node dist/cli/index.js mcp \
   --agent coding-agent
 ```
 
-An MCP client launches this command and communicates over stdin/stdout. There is no HTTP port, health endpoint, or background service to install. Use an absolute path to a supported Node executable if the client has a different `PATH` from your terminal.
+An MCP client launches this command and communicates over stdin/stdout. This MCP command opens no HTTP port and installs no background service. Use an absolute path to a supported Node executable if the client has a different `PATH` from your terminal.
 
 Example client configuration; replace both absolute paths:
 
@@ -47,6 +48,12 @@ Example client configuration; replace both absolute paths:
 ```
 
 Add `--read-only` to expose retrieval and inspection tools without write tools. Forgetting is not exposed unless the controller adds `--allow-destructive`. These flags control tool availability, not filesystem permissions; the SQLite directory must still be writable.
+
+## Authenticated HTTP and browser inspector
+
+Use the separate `serve` command for a local browser or a Python/HTTP integration. The [runtime service example](RUNTIME.md#http-inspector-and-python) generates a private token file, starts the service and demonstrates the Python client. It binds to loopback by default and requires bearer authentication for data routes. Tokens select configured identities and capabilities; request bodies cannot choose another scope. Read-only mode and destructive access remain explicit host choices.
+
+The SDK supports multiple principals and explicit remote binding. It does not terminate TLS, supply organizational single sign-on or provision a managed public service. Configure those deployment boundaries in your application before exposing the service remotely. The static inspector shell is public, while memory data requires a valid token.
 
 ## Scope and persistence
 
@@ -141,7 +148,18 @@ node dist/cli/index.js import \
 
 Exports refuse to overwrite existing files. Imports validate the complete snapshot before committing and require the same workspace and agent IDs. Snapshots preserve owner records, outcomes, and idempotency mappings; records whose provenance depends on another owner are omitted to keep the snapshot self-contained. Check the snapshot's `omitted` count before relying on it for recovery. Export and import are bounded to 32 MiB and 100,000 records per snapshot collection.
 
-For a complete database backup, stop every process using that database cleanly and back up its containing directory, or use a SQLite-aware backup mechanism. Do not copy only the main database file from a live WAL database. Keep snapshots and backups outside Git and apply the same access restrictions as the original memory file.
+For complete recovery, use the built-in `mnemosy-ai/operations` helpers: `backupLocalDatabase`, `verifyLocalBackup` and `restoreLocalBackup`. They use a consistent SQLite snapshot, including committed WAL state, verify the bundle and restore to a **new** database path. The CLI exposes the same operations:
+
+```sh
+mkdir -m 700 ./backups ./recovery
+node dist/cli/index.js operations --action backup --db ./memory.sqlite --out ./backups/snapshot.mnemo-backup
+node dist/cli/index.js operations --action verify --file ./backups/snapshot.mnemo-backup
+node dist/cli/index.js operations --action restore --file ./backups/snapshot.mnemo-backup --out ./recovery/memory.sqlite
+```
+
+Use new operator-owned private directories and substitute your actual database path. Existing outputs are refused; restore does not replace a running database or switch your application to it. A whole-database backup contains every workspace and agent, so this operator capability has no owner filter. See [whole-database recovery](OPERATIONS.md) for POSIX filesystem requirements, bounds, cancellation and an operator rehearsal.
+
+Do not copy only the main file from a live WAL database. Bundles and exports contain plaintext data, and a SHA-256 digest is not an authenticity signature. Keep them outside Git in protected storage. A backup predating an erasure cannot contain the later tombstone; reconcile your retained deletion policy before making a restored database available.
 
 Forgetting purges content from the live local memory store and its searchable/derived state. It cannot erase prior exports, filesystem snapshots, external logs, or underlying storage-controller copies. Manage those copies separately. The legacy vector API has different storage semantics; consult its API documentation before operating on existing data.
 
@@ -149,4 +167,6 @@ Forgetting purges content from the live local memory store and its searchable/de
 
 CI runs typechecking, a build, tests, a production dependency audit, and an installation smoke test of the packed artifact on Node 22.16.0 and Node 24. CI and publishing use the same artifact verifier. It imports every declared package export, checks all declared JavaScript and type files, executes both installed CLI demonstrations, checks package/CLI/MCP version agreement, and verifies the tarball integrity and installation receipt.
 
-The publication workflow runs only on a published GitHub release and uses the existing `npm-publish` environment. It rejects package-name or release-tag mismatches and requires GitHub's prerelease status to agree with the package version. Prereleases go to the npm `next` tag; stable versions go to `latest`. It checks and installs the tarball before publishing that exact artifact with provenance. Repository changes alone do not publish a package.
+The [npm publication workflow](../.github/workflows/publish.yml) runs only through manual `workflow_dispatch`, with an explicit `release_tag` input and the `npm-publish` environment. It checks out `refs/tags/<release_tag>` and requires the package name to be `mnemosy-ai` and the tag to equal exactly `v` plus `package.json`'s version. A version containing a prerelease suffix goes to npm `next`; a stable version goes to `latest`.
+
+The workflow reruns checks and the dependency audit, then installs and verifies the packed tarball before publishing that exact file with provenance. Creating a GitHub prerelease, pushing source changes or updating the website does not trigger npm publication. The existence of this workflow is not evidence that a particular package version has been published to a registry.

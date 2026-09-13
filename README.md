@@ -1,4 +1,10 @@
+[![Mnemosyne — the next agent starts wiser. Persistent memory for AI agents.](assets/social-preview.png)](https://mnemosy.ai)
+
 # Mnemosyne
+
+[![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
+[![Source release: 2.0.0-rc.8](https://img.shields.io/badge/source-2.0.0--rc.8-b8f6dd?labelColor=111b2a)](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8)
+[![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
 
 **The next agent starts wiser.**
 
@@ -8,7 +14,7 @@ Mnemosyne connects memory to its consequences: a corrected requirement can retir
 
 **2.0.0-rc.8 · Source release candidate · MIT · Node.js ≥22.16**
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/api.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Release status](docs/UPGRADE-STATUS.md) · [Contributing](CONTRIBUTING.md)
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Download](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) · [Contributing](CONTRIBUTING.md)
 
 ## Start with a working demonstration
 
@@ -18,12 +24,14 @@ Build the source candidate. These commands do not depend on an rc.8 release bein
 git clone --branch v2.0.0-rc.8 --depth 1 https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm ci --ignore-scripts
-npm run check
+npm run build
 npm run demo
 npm run demo:learning
 ```
 
-`npm run check` typechecks, builds and tests the checkout. The first demo uses a temporary database to show a handoff, correction, private scope and forgetting. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Examples](examples/README.md).
+The first demo uses a temporary database to show a handoff, correction, private scope and forgetting. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
+
+For full contributor validation, run `npm run check`. A current `main` development checkout also includes `npm run check:docs`, introduced after rc.8. The release includes prebuilt JavaScript and Python downloads with [SHA-256 checksums](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8).
 
 To consume your built checkout from another project, run `npm install /absolute/path/to/mnemosyne` in that project. Keep the checkout and its `dist` directory available. Use the exact GitHub release tag when reproducing behavior; registry publication is a separate release step.
 

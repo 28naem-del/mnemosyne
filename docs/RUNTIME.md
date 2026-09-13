@@ -1,6 +1,6 @@
 # Runtime, retrieval and local service
 
-This guide describes the **Mnemosyne 2 source candidate**. Build the checkout with `npm ci --ignore-scripts && npm run build`. TypeScript package imports work from this repository after building, or from an installed package. Node >=22.16 is required; the Python client requires Python >=3.10.
+This guide describes the **Mnemosyne 2.0.0-rc.8 source release**. Follow the [tagged quickstart](quickstart.md), or build an existing checkout with `npm ci --ignore-scripts && npm run build`. TypeScript package imports work from this repository after building, or from an installed package. Node >=22.16 is required; the Python client requires Python >=3.10. GitHub source publication does not imply publication to npm or PyPI.
 
 The local engine, vectors, sources, models, skills, entity relations and branch state share one SQLite database. Workspace/agent identity comes from trusted host configuration. A source reference is provenance supplied by the caller, not remote authentication or permission to execute an action.
 
@@ -17,12 +17,14 @@ The first command runs 13 deterministic integration checks in temporary database
 
 ```ts
 import { createLocalMemory } from 'mnemosy-ai/local';
-import { MemoryRuntime } from 'mnemosy-ai/runtime';
+import { MemoryRuntime, RECOMMENDED_SKILL_PROMOTION_POLICY } from 'mnemosy-ai/runtime';
 
 const memory = createLocalMemory({
   path: './memory.sqlite', workspaceId: 'atlas', agentId: 'author',
 });
-const runtime = new MemoryRuntime(memory);
+const runtime = new MemoryRuntime(memory, {
+  skillPromotionPolicy: RECOMMENDED_SKILL_PROMOTION_POLICY,
+});
 const captured = runtime.capture({
   sessionId: 'export-task-1', adapter: 'generic', trust: 'observed',
   messages: [{ id: 'message-1', role: 'user', text: 'Trim whitespace from Atlas export labels.' }],
@@ -100,7 +102,11 @@ The worker command invokes the configured endpoint and can incur provider charge
 
 `runtime.createSkill({ name, prerequisites, steps, parameters, evidenceIds })` creates a private candidate. A candidate is excluded from ordinary context. A controller calls `trialSkill({ id, verifier })` with an asynchronous callback, or supplies `validation` containing `passed`, `prerequisitesSatisfied`, `evidence`, `verifier` and `taskId`. Use exactly one of those inputs. The controller must run the real test; setting `passed: true` is an assertion, not proof that anything executed.
 
-The [runnable example](../examples/runtime-learning.ts) executes a small fixture in its callback and derives `passed` from the actual result. A successful trial promotes the skill to observed, eligible advice and records an outcome. Failed prerequisites, failed outcomes, or changed transitive evidence retire or suppress it. `getSkill(id)` inspects the effective state; `retireSkill(id, reason)` explicitly retires it. Runtime code does not execute skill steps as shell commands or install skills in other applications.
+For new applications, the constructor above selects `RECOMMENDED_SKILL_PROMOTION_POLICY`: successful trials spanning at least **two distinct task IDs and two distinct verifier IDs**. The candidate remains non-advisory until its stored gate is satisfied. The policy is persisted with each new skill, so reopening that skill through a runtime configured with weaker defaults cannot downgrade its requirements. Existing skills retain their own stored requirements; changing the constructor does not retroactively upgrade them.
+
+Constructing `new MemoryRuntime(memory)` without a policy retains the compatibility default of one task and one verifier. The [runnable example](../examples/runtime-learning.ts) intentionally uses that default and derives `passed` from an executed fixture. Under the recommended policy one successful trial is insufficient. Distinct labels do not establish independent verification: the host must supply authentic task evidence and verifier identities.
+
+When the stored requirements are met, a successful trial promotes the skill to observed, eligible advice and records an outcome. Failed prerequisites, failed outcomes, or changed transitive evidence retire or suppress it. `getSkill(id)` inspects the effective state; `retireSkill(id, reason)` explicitly retires it. Runtime code does not execute skill steps as shell commands or install skills in other applications.
 
 `recordTrace({ taskId, query, retrievedIds, usedIds, outcome? })` records what was retrieved and actually used. Used IDs must be among retrieved IDs. An optional outcome has `success`, `evidence` and `verifier`; it records controller-observed task results on the owned used memories. Reusing a task/evidence identity with conflicting contents is rejected. This is retrieval feedback, not model-weight training.
 
@@ -123,15 +129,30 @@ const context = await memory.compileHybrid(
 console.log(context.text);
 ```
 
-Use the actual embedding dimension of your selected model. Indexing is incremental; its report returns indexed/skipped/remaining counts. Finish or repeat indexing as needed after new evidence arrives. Indexes are separated by endpoint/model/revision and dimensions. Retrieval revalidates scope, source changes and outcomes; stale vectors cannot make corrected advice eligible. Semantic search is a bounded local scan over stored vectors, not an ANN database or automatic synchronization with Qdrant.
+Use the actual embedding dimension of your selected model. Indexing is incremental; its report returns indexed/skipped/remaining counts. Finish or repeat indexing as needed after new evidence arrives. Indexes are separated by endpoint/model/revision and dimensions. Retrieval revalidates scope, source changes and outcomes; stale vectors cannot make corrected advice eligible. Semantic search scans the scoped stored-vector history with bounded result retention and a deadline. It is not an ANN database or an automatic bridge to another backend. The retained-candidate limit does not restrict search to a recent window or make its scan cost constant.
 
-`recallHybrid(input, { embedder, ...options })` and `compileHybrid(input, options)` combine semantic and lexical candidates. Lexical `recall`/`compile` continue to work without a provider. Only `ContextPacket.text` is within the configured context budget; diagnostics and structured records are separate. The default counter is conservative and byte-based; supply `tokenCounter` to use your own model-specific counting.
+`recallHybrid(input, { embedder, ...options })` and `compileHybrid(input, options)` combine independently generated semantic and lexical candidates through rank fusion, with optional reranking. Lexical `recall`/`compile` default to scoped BM25 and work without a provider; select `lexicalScoring: 'overlap'` explicitly for the earlier scorer. [Local CPU providers](LOCAL-MODELS.md) are an alternative to the configured endpoint above and require explicit runtime/model setup.
+
+Only `ContextPacket.text` is within the configured context budget; diagnostics and structured records are separate. The default counter is conservative and byte-based; supply `tokenCounter` to use your own model-specific counting.
 
 CLI `index` requires an embedding provider JSON including `dimensions`. After indexing, add the same `--provider-config` to `recall`, `context`, `mcp` or `serve`. Hybrid queries call the configured embedder for the query; they do not silently rebuild every missing vector.
 
 ## Time, entities and branches
 
-`memory.store` accepts inclusive `validFrom` and exclusive `validUntil`. `memory.recall({ query, asOf, knownAt })` separates when a fact applied from what had been recorded at the knowledge cutoff. Omit the times for current recall. `getAt(id, { asOf, knownAt })` projects an accessible record at those clocks, and `isEligible(id, { asOf, knownAt })` checks its eligibility. Historical graph paths use the same record projection. Ordinary `compile`/`compileHybrid` produce current context; their input has no historical-time fields.
+`memory.store` accepts inclusive `validFrom` and exclusive `validUntil`. `memory.recall({ query, asOf, knownAt })` separates when a fact applied from what had been recorded at the knowledge cutoff. Omit both times for current recall. If only `knownAt` is supplied, `asOf` defaults to that cutoff; if only `asOf` is supplied, the knowledge cutoff is now. `getAt(id, { asOf, knownAt })` projects an accessible record at those clocks, and `isEligible(id, { asOf, knownAt })` checks its eligibility. Historical graph paths use the same record projection.
+
+`compile` and `compileHybrid` accept those same fields and apply historical dependency/outcome checks. Their rendered evidence includes both clocks and a warning that historical evidence need not describe the present. For example, with the `memory` created above:
+
+```ts
+const historical = memory.compile({
+  query: 'Atlas export labels', maxTokens: 4096,
+  asOf: '2026-06-01T00:00:00.000Z',
+  knownAt: '2026-06-10T00:00:00.000Z',
+});
+console.log(historical.text);
+```
+
+A store without evidence at those clocks can return no useful historical context. Historical queries do not resurrect forgotten source text.
 
 `memory.list({ limit, cursor, kinds, metadata, includeInactive, includeUntrusted })` returns scoped pages. Cursors bind to the exact scope and filters. `memory.atomic(() => { ... })` makes synchronous controller changes transactional; asynchronous work is rejected and must finish before entering the transaction.
 
@@ -162,7 +183,17 @@ Stage returns a new record ID; use it for preview/merge. A merge rechecks the ba
 
 ## HTTP inspector and Python
 
-The [README service command](../README.md#open-the-live-inspector) starts `http://127.0.0.1:8765`. A token selects a preconfigured workspace and agent; request bodies cannot override identities or provider credentials. SDK hosts can supply multiple principals through `startMemoryHttp({ principals, host?, port?, requestsPerMinute? })`. The returned handle supports `close()` and `revoke(token)`; revocation is checked after delayed bodies and asynchronous reads. Use the exact printed origin: Host/Origin checks intentionally reject unrelated browser origins and DNS rebinding attempts.
+Create a new private token file and start the service from the built checkout:
+
+```sh
+node --input-type=module -e "import { randomBytes } from 'node:crypto'; import { writeFileSync } from 'node:fs'; writeFileSync('memory-token.txt', randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' });"
+node dist/cli/index.js serve --db ./memory.sqlite \
+  --workspace atlas --agent author --token-file ./memory-token.txt
+```
+
+Token creation refuses to overwrite an existing file. Open the printed loopback URL, then enter the token from your private file in the inspector. The server does not print the token. Keep the file out of source control. The default URL is `http://127.0.0.1:8765`; use the exact printed origin because Host/Origin checks intentionally reject unrelated browser origins and DNS rebinding attempts.
+
+A token selects a preconfigured workspace and agent; request bodies cannot override identities or provider credentials. SDK hosts can supply multiple principals through `startMemoryHttp({ principals, host?, port?, requestsPerMinute? })`. The returned handle supports `close()` and `revoke(token)`; revocation is checked after delayed bodies and asynchronous reads.
 
 The unauthenticated `/` and `/app.js` routes contain only the inspector shell. Data routes require `Authorization: Bearer TOKEN`. `GET /v1/capabilities` describes the principal. Other operations use `POST /v1/OPERATION` and uncompressed `application/json`, with strict field validation and 1 MiB request/response bounds. Oversized mutation responses warn that the operation may already have completed; inspect before retrying. Tokens and request data are not stored in browser localStorage.
 

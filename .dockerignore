@@ -1,5 +1,7 @@
-# Only package manifests, TypeScript configuration, and src are copied by Dockerfile.
+# Only build inputs and license notices are copied by Dockerfile.
 **
+!LICENSE
+!NOTICE.md
 !package.json
 !package-lock.json
 !tsconfig*.json
@@ -11,6 +13,10 @@
 # Keep accidental runtime data and secrets out even if they appear under src.
 **/.env
 **/.env.*
+**/*.pem
+**/*.key
+**/memory-token.txt
+**/*.mnemo-backup
 **/*.log
 **/*.sqlite
 **/*.sqlite-*

@@ -14,6 +14,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder /app/dist ./dist
+COPY LICENSE NOTICE.md ./
 
 # SQLite, its WAL, and its shared-memory file need the same writable directory.
 RUN mkdir /data && chown node:node /data && chmod 700 /data

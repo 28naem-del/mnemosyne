@@ -1,37 +1,33 @@
-name: Feature Request
-description: Suggest a new feature or improvement for Mnemosyne
+name: Feature request
+description: Describe a use case Mnemosyne should support better
 title: "[Feature]: "
 labels: ["enhancement", "needs-triage"]
-assignees: []
 
 body:
   - type: markdown
     attributes:
       value: |
-        Have an idea to make Mnemosyne better? We'd love to hear it!
+        Start with the work you need your agent to do and what currently prevents it.
+        Review [the current capabilities and remaining work](https://github.com/28naem-del/mnemosyne/blob/main/docs/UPGRADE-STATUS.md) before proposing a change.
+
+        **This issue is public.** Use synthetic examples; do not share credentials, private memories, customer data or production databases. For a confidential integration, custom memory requirement or partnership, contact **28naime@gmail.com** through [Aristotle Intelligence Inc.](https://mnemosy.ai/#company).
 
   - type: textarea
     id: problem
     attributes:
-      label: Problem statement
-      description: Is your feature request related to a problem? Describe it clearly.
-      placeholder: "I'm frustrated when I try to do X because..."
+      label: Problem or missing capability
+      description: Explain the concrete task and where the current behavior falls short.
+      placeholder: "A procedure has two independent supporting sources. Updating one source retires the procedure even though the other source still supports it."
     validations:
       required: true
 
   - type: textarea
-    id: solution
+    id: outcome
     attributes:
-      label: Proposed solution
-      description: Describe the feature you'd like and how it would work.
+      label: Desired behavior
+      description: Describe an observable result that would make the task work better.
     validations:
       required: true
-
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered
-      description: Describe any alternative solutions or workarounds you've considered.
 
   - type: dropdown
     id: area
@@ -39,53 +35,60 @@ body:
       label: Feature area
       multiple: true
       options:
-        - Core memory API
-        - Vector search / recall
-        - Knowledge graph (FalkorDB)
-        - Redis broadcasting
-        - Embedding backends
-        - Dream / consolidation
-        - Pattern mining
-        - TOMA / cross-agent
-        - Docker / deployment
-        - Developer experience
-        - Documentation
+        - Evidence, corrections and conflicts
+        - Recall, context and local intelligence
+        - Temporal history and freshness
+        - Host lifecycle and agent handoffs
+        - Observations, profiles and skill trials
+        - Gradual migration or full import
+        - Scope, privacy and forgetting
+        - Backup, recovery and deployment
+        - SDK, CLI, MCP, HTTP or Python interfaces
+        - Existing vector engine
+        - Evaluation and benchmarks
+        - Documentation and developer experience
         - Other
     validations:
       required: true
 
-  - type: dropdown
-    id: priority
+  - type: textarea
+    id: alternatives
     attributes:
-      label: How important is this to you?
-      options:
-        - Nice to have
-        - Important for my use case
-        - Blocking — I can't use Mnemosyne without this
-    validations:
-      required: true
+      label: Current workaround and alternatives
+      description: Explain what you have tried and the tradeoffs. State if there is no available workaround.
 
   - type: textarea
-    id: use-case
+    id: validation
     attributes:
-      label: Your use case
-      description: >
-        Briefly describe your project and how this feature would help.
-        This helps us prioritize and design the right API.
+      label: How would we verify the improvement?
+      description: Suggest a synthetic scenario, failure case or measurable acceptance criterion. Keep retrieval coverage separate from answer correctness.
 
   - type: textarea
     id: api-sketch
     attributes:
-      label: Proposed API sketch (optional)
-      description: If you have ideas for the API, show a code snippet.
+      label: Proposed API or integration sketch
+      description: Optional. Include only the relevant interface and synthetic example data.
       render: typescript
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact on your work
+      options:
+        - Helpful improvement
+        - Requires a workaround today
+        - Blocks adoption for my use case
+    validations:
+      required: true
 
   - type: checkboxes
     id: checklist
     attributes:
       label: Before submitting
       options:
-        - label: I have searched existing issues and this has not been requested before
+        - label: I reviewed the release status and searched existing issues.
           required: true
-        - label: I am willing to submit a pull request to implement this feature
+        - label: I removed secrets and private data from this request.
+          required: true
+        - label: I can help test or contribute to this improvement.
           required: false
