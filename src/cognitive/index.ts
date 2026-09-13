@@ -70,6 +70,7 @@ export {
 } from "./preferences.js";
 
 // -- Memory consolidation --
+export { maintainMemory, type MaintenanceReport, type MaintenanceAction } from "./maintenance.js";
 export {
   analyzeForConsolidation,
   findMergeCandidates,

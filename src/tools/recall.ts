@@ -54,7 +54,7 @@ export async function recall(
       options.filters,
     );
   } else {
-    results = await ctx.db.searchAll(vector, limit * 3, minScore);
+    results = await ctx.db.searchAll(vector, limit * 3, minScore, options.filters);
   }
 
   if (results.length === 0) return [];
@@ -84,6 +84,7 @@ export async function recall(
       undefined, // graphActivation
       strategy.boostTypes,
       strategy.penalizeTypes,
+      ctx.trustResolver,
     ),
   }));
 
@@ -96,8 +97,8 @@ export async function recall(
   // 8. Update access times (fire-and-forget)
   for (const r of diversified) {
     const collection = r.entry.classification === "private"
-      ? DEFAULT_COLLECTIONS.PRIVATE
-      : DEFAULT_COLLECTIONS.SHARED;
+      ? (ctx.db.collections?.private ?? DEFAULT_COLLECTIONS.PRIVATE)
+      : (ctx.db.collections?.shared ?? DEFAULT_COLLECTIONS.SHARED);
     ctx.db.updateAccessTime(collection, r.entry.id).catch(() => {});
   }
 

@@ -12,6 +12,7 @@
 
 import type { MemCellSearchResult } from "./types.js";
 import type { QdrantDB } from "./qdrant.js";
+import { qdrantRequest, type HttpOptions } from "./http.js";
 
 /** Term frequency statistics for a single document */
 interface TermStats {
@@ -45,6 +46,18 @@ export interface HybridResult {
   bm25Rank: number;
   fusedScore: number;  // RRF score
   entry: MemCellSearchResult;
+}
+
+export interface BM25BootstrapStatus {
+  collection: string;
+  loaded: number;
+  scanned: number;
+  truncated: boolean;
+  nextOffset: string | number | null;
+}
+
+export interface BM25BootstrapOptions extends HttpOptions {
+  filters?: Record<string, unknown>;
 }
 
 export class BM25Index {
@@ -194,6 +207,7 @@ export function reciprocalRankFusion(
   vectorResults: MemCellSearchResult[],
   bm25Results: BM25Result[],
   k = 60,
+  keywordEntries: MemCellSearchResult[] = [],
 ): HybridResult[] {
   const scores = new Map<string, { vectorRank: number; bm25Rank: number; score: number; entry?: MemCellSearchResult }>();
 
@@ -205,6 +219,12 @@ export function reciprocalRankFusion(
     existing.score += 1.0 / (k + rank + 1);
     existing.entry = vectorResults[rank];
     scores.set(id, existing);
+  }
+
+  for (const entry of keywordEntries) {
+    if (!scores.has(entry.entry.id)) {
+      scores.set(entry.entry.id, { vectorRank: -1, bm25Rank: -1, score: 0, entry });
+    }
   }
 
   // Score BM25 results
@@ -244,7 +264,7 @@ export async function hybridSearch(
 ): Promise<MemCellSearchResult[]> {
   // Run vector search and BM25 in parallel
   const [vectorResults, bm25Results] = await Promise.all([
-    qdrant.searchAll(queryVector, limit * 3, minScore),
+    qdrant.searchAll(queryVector, limit * 3, minScore, filters),
     Promise.resolve(bm25Index.search(queryText, limit * 3)),
   ]);
 
@@ -253,20 +273,35 @@ export async function hybridSearch(
     return vectorResults.slice(0, limit);
   }
 
-  // Fuse with RRF
-  const fused = reciprocalRankFusion(vectorResults, bm25Results);
+  // Hydrate exact lexical matches that did not clear the vector threshold.
+  const vectorIds = new Set(vectorResults.map(result => result.entry.id));
+  const missingIds = bm25Results.map(result => result.pointId).filter(id => !vectorIds.has(id));
+  const keywordCells = missingIds.length ? await qdrant.getSearchCandidates(missingIds, filters) : [];
+  const queryTerms = new Set(keywordCells.length ? bm25Index.tokenize(queryText) : []);
+  const keywordEntries: MemCellSearchResult[] = keywordCells.map(entry => {
+    const terms = new Set(bm25Index.tokenize(entry.text));
+    const matched = [...queryTerms].filter(term => terms.has(term)).length;
+    // Query coverage is bounded relevance, not a cosine similarity estimate.
+    return { entry, score: queryTerms.size ? matched / queryTerms.size : 0, source: "bm25" as const };
+  }).filter(result => result.score >= minScore);
+  const fused = reciprocalRankFusion(vectorResults, bm25Results, 60, keywordEntries);
 
-  // Map back to MemCellSearchResult format, using fused score
+  // RRF controls order. Preserve relevance on the original [0,1] scale for
+  // downstream thresholds and multi-signal reranking (RRF is only ~0.03).
   return fused.slice(0, limit).map(h => ({
-    entry: h.entry.entry,
-    score: h.fusedScore,
-    source: h.entry.source,
+    ...h.entry,
+    retrievalSignals: {
+      vectorSimilarity: h.vectorRank > 0 ? h.entry.score : undefined,
+      keywordScore: bm25Results.find(result => result.pointId === h.pointId)?.score,
+      rrfScore: h.fusedScore,
+    },
   }));
 }
 
 /**
  * Bootstrap the BM25 index from Qdrant scroll API.
- * Loads up to maxDocs documents in batches, non-blocking.
+ * Resolves only when scanning finishes. A corpus limit is reported explicitly;
+ * transport errors reject instead of exposing a silently partial index.
  */
 export async function bootstrapBM25Index(
   qdrantUrl: string,
@@ -274,58 +309,70 @@ export async function bootstrapBM25Index(
   bm25Index: BM25Index,
   maxDocs = 5000,
   batchSize = 100,
-  logger?: { info: (msg: string) => void },
-): Promise<void> {
+  logger?: { info: (msg: string) => void; warn?: (msg: string) => void },
+  options: BM25BootstrapOptions = {},
+): Promise<BM25BootstrapStatus> {
+  if (!Number.isSafeInteger(maxDocs) || maxDocs <= 0 || !Number.isSafeInteger(batchSize) || batchSize <= 0) {
+    throw new Error("BM25 maxDocs and batchSize must be positive safe integers");
+  }
   let loaded = 0;
+  let scanned = 0;
   let offset: string | number | null = null;
 
-  while (loaded < maxDocs) {
-    const remaining = Math.min(batchSize, maxDocs - loaded);
+  while (scanned < maxDocs) {
+    const remaining = Math.min(batchSize, maxDocs - scanned);
     const body: Record<string, unknown> = {
       limit: remaining,
-      filter: { must: [{ key: "deleted", match: { value: false } }] },
-      with_payload: { include: ["text"] },
+      filter: { must: [
+        { key: "deleted", match: { value: false } },
+        ...Object.entries(options.filters ?? {}).map(([key, value]) => ({ key, match: { value } })),
+      ] },
+      with_payload: { include: ["text", "content"] },
       with_vector: false,
     };
     if (offset !== null) {
       body.offset = offset;
     }
 
-    try {
-      const res = await fetch(`${qdrantUrl}/collections/${collection}/points/scroll`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+    const res = await qdrantRequest(qdrantUrl, `/collections/${encodeURIComponent(collection)}/points/scroll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }, options);
 
-      if (!res.ok) break;
-
-      const data = (await res.json()) as {
-        result: {
-          points: Array<{ id: string; payload: Record<string, unknown> }>;
-          next_page_offset?: string | number | null;
-        };
+    const data = (await res.json()) as {
+      result: {
+        points: Array<{ id: string; payload: Record<string, unknown> }>;
+        next_page_offset?: string | number | null;
       };
+    };
 
-      const points = data.result.points || [];
-      if (points.length === 0) break;
+    const points = data.result.points || [];
+    if (points.length === 0) { offset = null; break; }
+    scanned += points.length;
 
-      for (const point of points) {
-        const text = (point.payload.text as string) || (point.payload.content as string) || "";
-        if (text) {
-          bm25Index.addDocument(String(point.id), text);
-          loaded++;
-        }
+    for (const point of points) {
+      const text = (point.payload.text as string) || (point.payload.content as string) || "";
+      if (text) {
+        bm25Index.addDocument(String(point.id), text);
+        loaded++;
       }
-
-      offset = data.result.next_page_offset ?? null;
-      if (offset === null) break;
-    } catch {
-      break;
     }
+
+    const nextOffset = data.result.next_page_offset ?? null;
+    if (nextOffset !== null && nextOffset === offset) throw new Error("Qdrant BM25 scroll cursor did not advance");
+    offset = nextOffset;
+    if (offset === null) break;
   }
 
   logger?.info(`bm25: bootstrapped ${loaded} docs (${bm25Index.stats().termCount} terms)`);
+  const truncated = offset !== null;
+  if (truncated) {
+    const warning = `bm25: ${collection} reached its ${maxDocs}-point startup limit; keyword search covers only the loaded portion. Increase bm25MaxDocs to index the remainder.`;
+    if (logger?.warn) logger.warn(warning);
+    else console.warn(warning);
+  }
+  return { collection, loaded, scanned, truncated, nextOffset: offset };
 }
 
 /**
@@ -336,26 +383,21 @@ export async function createQdrantTextIndex(
   qdrantUrl: string,
   collection: string,
   logger?: { info: (msg: string) => void },
+  options: HttpOptions = {},
 ): Promise<void> {
-  try {
-    const res = await fetch(`${qdrantUrl}/collections/${collection}/index`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        field_name: "text",
-        field_schema: {
-          type: "text",
-          tokenizer: "word",
-          min_token_len: 2,
-          max_token_len: 40,
-          lowercase: true,
-        },
-      }),
-    });
-    if (res.ok) {
-      logger?.info(`bm25: text index created/verified on ${collection}`);
-    }
-  } catch {
-    // Non-fatal — BM25 in-memory index still works without Qdrant text index
-  }
+  await qdrantRequest(qdrantUrl, `/collections/${encodeURIComponent(collection)}/index`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      field_name: "text",
+      field_schema: {
+        type: "text",
+        tokenizer: "word",
+        min_token_len: 2,
+        max_token_len: 40,
+        lowercase: true,
+      },
+    }),
+  }, options);
+  logger?.info(`bm25: text index created/verified on ${collection}`);
 }

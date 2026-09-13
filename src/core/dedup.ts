@@ -77,6 +77,9 @@ export function shouldSemanticMerge(
 
   if (existing.score < 0.92) return noMerge;
   if (existing.entry.memoryType !== newType) return noMerge;
+  // Embedding similarity does not prove equivalent facts (especially changed
+  // numbers or negations). Retain non-identical text as separate evidence.
+  if (existing.entry.text !== newText) return noMerge;
 
   // Newer replaces older — keep the new one, link to old
   return {
@@ -114,6 +117,6 @@ export function buildMergedPayload(
       ...existingEntry.linkedMemories,
       existingEntry.id, // Link to the old memory
     ],
-    metadata: mergeResult.mergedMetadata || {},
+    metadata: { ...existingEntry.metadata, ...mergeResult.mergedMetadata },
   };
 }

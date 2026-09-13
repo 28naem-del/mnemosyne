@@ -1,72 +1,29 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+Mnemosyne 2.0.0-rc.8 is a release candidate. Review [migration notes](docs/MIGRATION-v2.md) before upgrading existing applications. Report security issues affecting this candidate or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
 
-We actively maintain security patches for the following versions:
+## Report a vulnerability privately
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x     | :white_check_mark: |
-| < 1.0   | :x:                |
+Email **[28naime@gmail.com](mailto:28naime@gmail.com)** with a subject beginning `[SECURITY] Mnemosyne`. Include the affected version or commit, expected and observed behavior, reproduction steps, impact and a minimal proof of concept using synthetic data. Do not disclose an unpatched vulnerability or put credentials, private memories or someone else's data in a public issue.
 
-## Reporting a Vulnerability
+## Controller and access boundaries
 
-We take security vulnerabilities seriously and appreciate your efforts to responsibly disclose your findings.
+The TypeScript SDK runs inside a trusted controller. Workspace and agent IDs select records; they are not login credentials, tenant authentication or protection from a process that can read the database. Give untrusted callers a constrained transport interface, not a controller SDK handle. Use separate processes or databases where stronger isolation is needed.
 
-**Please do NOT report security vulnerabilities through public GitHub issues.**
+The HTTP service binds bearer credentials to configured scopes and supports revocation and separate capture, recall and destructive-operation controls. It defaults to loopback. Remote TLS, identity management and deployment perimeter controls are application responsibilities. Keep token files private and outside version control. MCP authority is fixed at launch: models cannot choose arbitrary identities, claim verified trust, report successful trials or import snapshots.
 
-### How to Report
+Memories are fallible reference data. Stored instructions do not authorize commands, messages, access changes or other actions. Verified trust, source confirmation and successful trials are controller assertions; evidence fields and distinct verifier IDs cannot authenticate the underlying claims. Prompt boundaries and schema validation do not guarantee immunity to prompt injection. Action checks validate complete **declared** local dependencies at dispatch; they do not lock an external system or replace its authorization.
 
-Send an email to **[team@mnemosy.ai](mailto:team@mnemosy.ai)** with the subject line:
+## Storage, backups and erasure
 
-```
-[SECURITY] <brief description>
-```
+The local database and whole-database backups are **plaintext**. Anyone able to read them can access their contents, including private records and multiple workspaces. Protect storage permissions and use deployment-level encryption where required. Backup checksums and SQLite integrity checks detect corruption; they are not signatures, encryption or sender authentication. Restore goes to a new path and does not perform a service cutover.
 
-Include the following in your report:
+Local forgetting removes covered live content, correction history and dependent payloads, and uses tombstones to block replay of known source identities. It cannot erase old exports, backups, copied prompts, external logs, swap or physical storage remnants. Restoring an older backup cannot contain tombstones created after that backup. Maintain an appropriate recovery and deletion process. See [operations](docs/OPERATIONS.md).
 
-- **Type of issue** (e.g., remote code execution, SQL injection, information disclosure, etc.)
-- **Affected component** (e.g., vector store backend, Redis broadcast, FalkorDB integration)
-- **Location** — full path(s) of the source file(s) related to the issue
-- **Step-by-step reproduction instructions**
-- **Proof of concept or exploit code** (if available)
-- **Impact assessment** — what could an attacker achieve?
+The existing Qdrant path performs scoped explicit-point erasure and recall cache revalidation. Other graph, cache or exported copies are not covered by a distributed erasure guarantee. Do not test destructive behavior against a production database or shared volume.
 
-### Response Timeline
+## Providers and dependencies
 
-| Stage                        | Target SLA |
-| ---------------------------- | ---------- |
-| Acknowledgement of receipt   | 48 hours   |
-| Confirmation of the issue    | 5 business days |
-| Patch release (critical)     | 14 days    |
-| Patch release (high/medium)  | 30 days    |
-| Public disclosure            | After patch ships |
+The host explicitly chooses providers, endpoints and processing budgets. Timeout and cancellation signals cannot stop work or billing at a remote service that ignores them. Optional local model provisioning downloads selected artifacts only when requested; cached inference can run offline. Follow the pinned runtime, patched dependency and license requirements in [LOCAL-MODELS.md](docs/LOCAL-MODELS.md).
 
-### Responsible Disclosure
-
-We follow a coordinated disclosure model:
-
-1. Reporter sends details privately to **team@mnemosy.ai**.
-2. We confirm receipt and begin investigation.
-3. We develop and test a fix.
-4. We release a patched version and publish a security advisory.
-5. Reporter is credited in the advisory (unless anonymity is requested).
-
-### Scope
-
-The following are **in scope**:
-
-- The `mnemosyne` npm package and its TypeScript source
-- All supported backend integrations (Qdrant, FalkorDB, Redis, MongoDB)
-- The embedding pipeline (Ollama/OpenAI adapters)
-- Docker images published under `28naem-del/mnemosyne`
-
-The following are **out of scope**:
-
-- Vulnerabilities in third-party dependencies that are already publicly disclosed upstream
-- Issues in end-user infrastructure (self-hosted Qdrant, Redis, etc.)
-- Social engineering attacks
-
-### Thank You
-
-We are grateful to everyone who takes the time to responsibly report security issues. Your efforts make Mnemosyne safer for everyone.
+CI runs correctness, packaging and dependency checks. Most integration tests use isolated databases or mocked transports unless labeled otherwise. Passing them does not establish production isolation, semantic correctness or security against every threat. Preserve dependency notices and report new vulnerabilities through the private contact above.

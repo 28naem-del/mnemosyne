@@ -5,15 +5,20 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build & Typecheck
+  check:
+    name: Build, test, and pack (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.16.0', '24']
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -21,17 +26,103 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: ${{ matrix.node }}
+          cache: npm
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Build
-        run: npm run build
-
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Typecheck, build, and test
+        run: npm run check
 
       - name: Security audit
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify benchmark report index and digests
+        run: >-
+          node scripts/benchmark-index.mjs --check
+          --out docs/evaluation/BENCHMARKS.md
+          docs/evaluation/reports/longmemeval-s500-corpus-paired-bm25.json
+          docs/evaluation/reports/synthetic-corpus-smoke.json
+
+      - name: Check the installed release artifact
+        shell: bash
+        run: |
+          npm pack --json --ignore-scripts > "$RUNNER_TEMP/mnemosyne-pack.json"
+          PACK_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/mnemosyne-pack.json")
+          MNEMOSYNE_SMOKE_DIR=$(mktemp -d "$RUNNER_TEMP/mnemosyne-package.XXXXXX")
+          trap 'rm -rf "$MNEMOSYNE_SMOKE_DIR"' EXIT
+          npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund "$PWD/$PACK_NAME"
+          node scripts/verify-package.mjs --source package.json \
+            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
+            --tarball "$PWD/$PACK_NAME"
+
+          # Exercise the optional dependency tree without model downloads.
+          node --input-type=module - "$MNEMOSYNE_SMOKE_DIR/package.json" <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const file = process.argv[2];
+          const manifest = JSON.parse(readFileSync(file, 'utf8'));
+          manifest.dependencies['@huggingface/transformers'] = '3.8.1';
+          manifest.overrides = { ...manifest.overrides, '@huggingface/transformers@3.8.1': { sharp: '0.35.4' } };
+          writeFileSync(file, JSON.stringify(manifest, null, 2));
+          NODE
+          npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund
+          npm audit --prefix "$MNEMOSYNE_SMOKE_DIR" --omit=dev --audit-level=high
+          node scripts/verify-package.mjs --source package.json \
+            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
+            --tarball "$PWD/$PACK_NAME"
+
+      - name: Run the runtime SDK example
+        run: node --experimental-strip-types examples/runtime-learning.ts
+
+      - name: Run the native memory command example
+        run: node --experimental-strip-types examples/anthropic-memory.ts
+
+      - name: Run the provider memory protocol example
+        run: node --experimental-strip-types examples/provider-memory-tools.ts
+
+      - name: Run the migration lifecycle example
+        run: node --experimental-strip-types examples/migration.ts
+
+      - name: Run the source freshness and action check example
+        run: node --experimental-strip-types examples/maintenance.ts
+
+      - name: Run the opt-in host agent example
+        run: node --experimental-strip-types examples/agent-loop.ts
+
+      - name: Run the adaptive source context example
+        run: node --experimental-strip-types examples/adaptive-context.ts
+
+      - name: Run the matched experiment fixture without model calls
+        run: node --experimental-strip-types examples/agent-benchmark.ts
+
+      - name: Run whole-database recovery on synthetic data
+        run: node --experimental-strip-types examples/backup-restore.ts
+
+      - name: Run source-backed typed profiles
+        run: node --experimental-strip-types examples/profiles.ts
+
+      - name: Run gradual migration beside a synthetic legacy store
+        run: node --experimental-strip-types examples/gradual-migration.ts
+
+  python:
+    name: Python client (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Test the standard-library client against loopback fixtures
+        env:
+          PYTHONPATH: python
+        run: python -m unittest discover -s python/tests -v

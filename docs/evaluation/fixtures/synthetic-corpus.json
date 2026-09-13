@@ -1,0 +1,30 @@
+{
+  "protocol": "mnemosyne-corpus-retrieval-v1",
+  "adapter": "synthetic-protocol-example-v1",
+  "provenance": {
+    "dataset": "Synthetic corpus smoke test; not a public benchmark",
+    "revision": "fixture-v1",
+    "license": "MIT; first-party synthetic fixture",
+    "verification": "caller-supplied"
+  },
+  "corpora": [{
+    "id": "example-conversation",
+    "turns": [
+      { "id": "turn-1", "text": "I moved to Milan in January.", "role": "user", "evidenceGroups": ["turn:1"] },
+      { "id": "turn-2", "text": "I water the orchids every Tuesday.", "role": "user", "evidenceGroups": ["turn:2"] },
+      { "id": "turn-3", "text": "My basil needs water every Friday.", "role": "user", "evidenceGroups": ["turn:3"] },
+      { "id": "turn-4", "text": "Yesterday we discussed the weather in the mountains.", "role": "assistant", "evidenceGroups": ["turn:4"] }
+    ]
+  }],
+  "questions": [
+    { "id": "location", "corpusId": "example-conversation", "query": "Where did I move?", "category": "single-evidence" },
+    { "id": "plants", "corpusId": "example-conversation", "query": "When do I water my orchids and basil?", "category": "multiple-evidence" },
+    { "id": "birthday", "corpusId": "example-conversation", "query": "When is my birthday?", "category": "unanswerable" }
+  ],
+  "labels": [
+    { "questionId": "location", "evidenceGroups": ["turn:1"], "answerability": "answerable", "answerSchema": "text", "reference": "Milan" },
+    { "questionId": "plants", "evidenceGroups": ["turn:2", "turn:3"], "answerability": "answerable", "answerSchema": "text", "reference": "Orchids Tuesday; basil Friday" },
+    { "questionId": "birthday", "evidenceGroups": [], "answerability": "unanswerable", "answerSchema": "missing" }
+  ],
+  "notices": ["This hand-authored fixture demonstrates protocol wiring only. It cannot measure real-world retrieval quality."]
+}

@@ -1,32 +1,16 @@
-## Description
+## Change
 
-<!-- Brief description of what this PR does and why. Link to related issue(s). -->
+<!-- Describe the concrete problem and resulting behavior. Link relevant issues. -->
 
-Closes #
+## Validation
 
-## Type of Change
+<!-- State actual checks and results. Distinguish mocks, synthetic fixtures, and live integrations. -->
 
-- [ ] 🐛 Bug fix (non-breaking change that fixes an issue)
-- [ ] ✨ New feature (non-breaking change that adds functionality)
-- [ ] 💥 Breaking change (fix or feature that would cause existing functionality to change)
-- [ ] ⚡ Performance improvement
-- [ ] 📝 Documentation update
-- [ ] ♻️ Refactoring (no functional changes)
-- [ ] 🔧 Chore / build / CI
+- [ ] Relevant regression or behavior checks pass
+- [ ] `npm run check` passes
+- [ ] Documentation and migration notes match the change
+- [ ] Package entry points checked when packaging changes
 
-## Layer(s) Affected
+## Limits and compatibility
 
-- [ ] L1: Infrastructure
-- [ ] L2: Pipeline
-- [ ] L3: Knowledge Graph
-- [ ] L4: Cognitive
-- [ ] L5: Self-Improvement
-
-## Checklist
-
-- [ ] I have added tests that prove my fix/feature works
-- [ ] All new and existing tests pass (`npm test`)
-- [ ] I have updated the documentation accordingly
-- [ ] My code follows the project's style guidelines (`npm run lint`)
-- [ ] I have added a changelog entry if applicable
-- [ ] My changes generate no new TypeScript errors (`npm run build`)
+<!-- Explain breaking behavior, operational boundaries, untested integrations, and performance limitations that matter for this change. -->

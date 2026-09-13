@@ -1,0 +1,55 @@
+{
+  "dataset": "xiaowu0162/longmemeval-cleaned",
+  "revision": "98d7416c24c778c2fee6e6f3006e7a073259d48f",
+  "source_file": "longmemeval_s_cleaned.json",
+  "source_url": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json",
+  "license": "MIT per dataset card",
+  "source_bytes": 277383467,
+  "source_sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+  "full_source_hash_verified_against": "public repository LFS metadata",
+  "selection": "Every question accepted by the frozen adapter with question-day compatibility; explicit rejection inventory included, no text changed",
+  "questions": 499,
+  "question_types": {
+    "single-session-user": 70,
+    "multi-session": 133,
+    "single-session-preference": 30,
+    "temporal-reasoning": 133,
+    "knowledge-update": 77,
+    "single-session-assistant": 56
+  },
+  "abstention_questions": 30,
+  "engine_commit": "16105231405f49bb0d6c27b1c1a75a29e6a73772",
+  "protocol": "v1-turn-retrieval-session-evidence",
+  "topK": 20,
+  "maxCandidates": 1000,
+  "tuning": "No retrieval ranking or candidate/K parameters changed after first10. Added explicit question-day compatibility after strict parser rejected same-day dataset timestamps; descriptive baseline, not independent held-out evidence.",
+  "providerMode": "none",
+  "answerQuality": "not-evaluated",
+  "timestampPolicy": "question-day",
+  "temporal_compatibility": {
+    "strict_instant_initial_run": "rejected before retrieval",
+    "affected_questions": 76,
+    "history_sessions_after_question_time": 1475,
+    "evidence_occurrences_after_question_time": 75,
+    "history_sessions_on_later_days": 0,
+    "cutoff": "end of normalized UTC question day; original source dates preserved"
+  },
+  "engine_evaluation_change": "rc2 with explicit timestampPolicy option; core lexical ranking unchanged",
+  "evaluation_source_sha256": "b27c215aac6333ce488aa5c08c1223199fcd4c4a02b05274657882ec4da2c9a1",
+  "parentQuestions": 500,
+  "rejected": [
+    {
+      "index": 369,
+      "questionId": "852ce960",
+      "reason": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"haystack_sessions\",\n      8,\n      0,\n      \"content\"\n    ],\n    \"message\": \"Text exceeds 65536 bytes, is empty or contains NUL.\"\n  }\n]",
+      "questionType": "knowledge-update",
+      "turnBytes": 76719,
+      "maximumTurnBytes": 65536,
+      "exclusionDecision": "Preexisting per-turn size limit applied before scoring; no turn truncation or splitting"
+    }
+  ],
+  "subset_sha256": "ff96a64cad4e3ab7706e5bff5cc57f5a2d8a5c4b527f430208c4e4142b7b484f",
+  "subset_bytes": 256061190,
+  "raw_report_sha256": "edfcbc0092ff3db72bbfc6f1048469d6fb1106b77bb3b59cac27a0e12b4257a9",
+  "reproduction": "Use the pinned raw JSON file, verify source SHA256, remove only original array index369 with question_id852ce960, serialize with JSON.stringify(rows) plus LF; run CLI evaluate with topK20,maxCandidates1000,timestampPolicyquestion-day,maxQuestions500,maxDatasetBytes536870912,timeoutMs600000."
+}

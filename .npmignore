@@ -1,38 +1,22 @@
-# Source
+# package.json "files" is the release allowlist: dist, docs, site, python, README,
+# LICENSE, and NOTICE. Do not exclude docs or NOTICE here.
+node_modules/
 src/
-
-# Tests
 tests/
 coverage/
-.nyc_output/
-jest.config.*
-vitest.config.*
-
-# Docs
-docs/
-examples/
-launch/
-*.md
-!README.md
-!LICENSE
-
-# GitHub
 .github/
-
-# Config
-.eslintrc.json
-.prettierrc
-tsconfig.json
-.editorconfig
-
-# IDE
+.git/
 .idea/
 .vscode/
-
-# OS
+.env
+.env.*
+*.log
+*.tgz
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
 .DS_Store
 Thumbs.db
-
-# Dev
-.env*
-*.log

@@ -1,47 +1,80 @@
 name: Publish to npm
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish to npm (separate from a GitHub release)
+        required: true
+        type: string
 
-# Restrict permissions to minimum needed
 permissions:
   contents: read
-  id-token: write  # Required for npm provenance
+  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Environment protection — optional but recommended
+    timeout-minutes: 20
     environment: npm-publish
     steps:
-      - name: Checkout
+      - name: Checkout release
         uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          cache: npm
 
-      - name: Verify package integrity
+      - name: Verify release identity and channel
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          # Ensure package.json exists and has expected name
-          PKG_NAME=$(node -p "require('./package.json').name")
-          if [ "$PKG_NAME" != "mnemosy-ai" ]; then
-            echo "ERROR: Unexpected package name: $PKG_NAME"
-            exit 1
-          fi
-          echo "✅ Package: $PKG_NAME"
-          echo "✅ Version: $(node -p "require('./package.json').version")"
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          if (pkg.name !== 'mnemosy-ai') throw new Error('Unexpected package name');
+          if (`v${pkg.version}` !== process.env.RELEASE_TAG) {
+            throw new Error('Release tag must equal v plus package.json version');
+          }
+          const prerelease = pkg.version.includes('-');
+          const tag = prerelease ? 'next' : 'latest';
+          appendFileSync(process.env.GITHUB_OUTPUT, `dist-tag=${tag}\n`);
+          console.log(`Validated ${pkg.name}@${pkg.version} for npm tag ${tag}`);
+          NODE
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: Typecheck, build, and test
+        run: npm run check
+
       - name: Security audit
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Build and verify the publication artifact
+        id: package
+        shell: bash
+        run: |
+          npm pack --json --ignore-scripts > "$RUNNER_TEMP/mnemosyne-pack.json"
+          PACK_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/mnemosyne-pack.json")
+          MNEMOSYNE_SMOKE_DIR=$(mktemp -d "$RUNNER_TEMP/mnemosyne-package.XXXXXX")
+          trap 'rm -rf "$MNEMOSYNE_SMOKE_DIR"' EXIT
+          npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund "$PWD/$PACK_NAME"
+          node scripts/verify-package.mjs --source package.json \
+            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
+            --tarball "$PWD/$PACK_NAME"
+          printf 'filename=%s\n' "$PACK_NAME" >> "$GITHUB_OUTPUT"
+
+      # Publish the exact tarball just installed and checked, with no rebuild.
       - name: Publish with provenance
-        run: npm publish --access public --provenance
+        run: npm publish "$PACK_FILE" --tag "$NPM_DIST_TAG" --access public --provenance
         env:
+          PACK_FILE: ${{ steps.package.outputs.filename }}
+          NPM_DIST_TAG: ${{ steps.release.outputs.dist-tag }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

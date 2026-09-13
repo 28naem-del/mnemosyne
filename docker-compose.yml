@@ -1,36 +1,28 @@
-version: "3.9"
-
 services:
-  # ── Mnemosyne ────────────────────────────────────────────────────────────────
+  # Attach with `docker compose run --rm -T --no-deps mnemosyne` from an MCP client.
   mnemosyne:
     build:
       context: .
       target: production
-    container_name: mnemosyne
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      QDRANT_URL: http://qdrant:6333
-      EMBEDDING_URL: ${EMBEDDING_URL:-http://host.docker.internal:11434}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
-      AGENT_ID: ${AGENT_ID:-mnemosyne-agent}
-      COLLECTION_NAME: ${COLLECTION_NAME:-memories}
-      REDIS_URL: redis://redis:6379
-      FALKORDB_HOST: falkordb
-      FALKORDB_PORT: 6380
-      MONGODB_URL: mongodb://mongo:27017
-    depends_on:
-      qdrant:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      falkordb:
-        condition: service_started
-    networks:
-      - mnemosyne-net
+    restart: "no"
+    init: true
+    stdin_open: true
+    tty: false
+    network_mode: none
+    command:
+      - mcp
+      - --db
+      - /data/memory.sqlite
+      - --workspace
+      - ${MNEMOSYNE_WORKSPACE:-default}
+      - --agent
+      - ${MNEMOSYNE_AGENT:-docker-agent}
+    volumes:
+      - local-memory:/data
 
-  # ── Qdrant (vector store) ─────────────────────────────────────────────────────
+  # Optional services for applications using createMnemosyne(), not the local MCP server.
   qdrant:
+    profiles: [legacy]
     image: qdrant/qdrant:latest
     container_name: mnemosyne-qdrant
     restart: unless-stopped
@@ -49,6 +41,7 @@ services:
 
   # ── Redis (pub/sub broadcast) ─────────────────────────────────────────────────
   redis:
+    profiles: [legacy]
     image: redis:7-alpine
     container_name: mnemosyne-redis
     restart: unless-stopped
@@ -67,6 +60,7 @@ services:
 
   # ── FalkorDB (knowledge graph) ────────────────────────────────────────────────
   falkordb:
+    profiles: [legacy]
     image: falkordb/falkordb:latest
     container_name: mnemosyne-falkordb
     restart: unless-stopped
@@ -79,6 +73,7 @@ services:
 
   # ── MongoDB (optional document store) ────────────────────────────────────────
   mongo:
+    profiles: [legacy]
     image: mongo:7
     container_name: mnemosyne-mongo
     restart: unless-stopped
@@ -90,6 +85,8 @@ services:
       - mnemosyne-net
 
 volumes:
+  local-memory:
+  # Keep these names unchanged: existing installations may contain live data.
   qdrant-data:
   redis-data:
   falkordb-data:

@@ -1,23 +1,24 @@
 /**
- * consolidate — Run memory consolidation pipeline.
- *
- * Finds contradictions, merges near-duplicates, promotes popular
- * memories, and demotes stale ones.
+ * consolidate — Run scoped, nondestructive maintenance or preview its changes.
+ * URL-only legacy calls reject; supply a configured QdrantDB.
  */
 
-import { DEFAULT_COLLECTIONS } from "../core/types.js";
+import type { QdrantDB } from "../core/qdrant.js";
 import {
   runConsolidation,
   type ConsolidationReport,
 } from "../cognitive/consolidation.js";
 
 export interface ConsolidateContext {
-  qdrantUrl: string;
+  /** @deprecated Supply db; URL-only maintenance is disabled. */
+  qdrantUrl?: string;
+  db?: QdrantDB;
 }
 
 export interface ConsolidateOptions {
   collection?: string;
   batchSize?: number;
+  dryRun?: boolean;
 }
 
 export async function consolidate(
@@ -25,8 +26,9 @@ export async function consolidate(
   options: ConsolidateOptions = {},
 ): Promise<ConsolidationReport> {
   return runConsolidation(
-    ctx.qdrantUrl,
-    options.collection || DEFAULT_COLLECTIONS.SHARED,
+    ctx.db ?? ctx.qdrantUrl ?? "",
+    options.collection,
     options.batchSize || 200,
+    { dryRun: options.dryRun },
   );
 }

@@ -21,8 +21,18 @@ Thumbs.db
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local tooling and Python build caches
+.Codex/
+__pycache__/
+*.py[cod]
+*.egg-info/
+python/build/
+python/dist/
 
 # Logs
 *.log
@@ -37,3 +47,14 @@ tmp/
 # Package manager locks (we use npm)
 yarn.lock
 pnpm-lock.yaml
+
+# Local memory data and SQLite sidecars
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# Locally packed releases
+*.tgz

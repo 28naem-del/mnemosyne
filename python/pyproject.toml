@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mnemosyne-memory-client"
+version = "2.0.0rc8"
+description = "Scoped Python client for the Mnemosyne memory service"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "Aristotle Intelligence Inc.", email = "28naime@gmail.com"}]
+
+[project.urls]
+Homepage = "https://mnemosy.ai"
+Repository = "https://github.com/28naem-del/mnemosyne"
+Issues = "https://github.com/28naem-del/mnemosyne/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mnemosyne_memory*"]

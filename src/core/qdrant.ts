@@ -8,60 +8,56 @@
 import { randomUUID } from "node:crypto";
 import type { MemCell, MemCellSearchResult, Classification } from "./types.js";
 import { DEFAULT_COLLECTIONS } from "./types.js";
+import { qdrantRequest, QdrantHttpError, type HttpOptions } from "./http.js";
 
 export class QdrantDB {
   private readonly baseUrl: string;
   private readonly agentId: string;
-  private readonly collections: {
+  readonly collections: Readonly<{
     shared: string;
     private: string;
     profiles: string;
     skills: string;
-  };
+  }>;
 
   constructor(qdrantUrl: string, agentId: string, collections?: {
     shared?: string;
     private?: string;
     profiles?: string;
     skills?: string;
-  }) {
+  }, private readonly httpOptions: HttpOptions = {}) {
     this.baseUrl = qdrantUrl;
     this.agentId = agentId;
-    this.collections = {
+    this.collections = Object.freeze({
       shared: collections?.shared ?? DEFAULT_COLLECTIONS.SHARED,
       private: collections?.private ?? DEFAULT_COLLECTIONS.PRIVATE,
       profiles: collections?.profiles ?? DEFAULT_COLLECTIONS.PROFILES,
       skills: collections?.skills ?? DEFAULT_COLLECTIONS.SKILLS,
-    };
+    });
   }
 
   /** Create a collection if it doesn't already exist. */
   async ensureCollection(name: string, vectorSize: number = 768): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/collections/${name}`, { method: "GET" });
+    if (!Number.isSafeInteger(vectorSize) || vectorSize <= 0) throw new Error("vectorSize must be a positive integer");
+    const path = `/collections/${encodeURIComponent(name)}`;
+    const res = await qdrantRequest(this.baseUrl, path, {}, this.httpOptions, [404]);
     if (res.status === 404) {
-      const createRes = await fetch(`${this.baseUrl}/collections/${name}`, {
+      await this.request(path, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vectors: { size: vectorSize, distance: "Cosine" } }),
       });
-      if (!createRes.ok) {
-        const body = await createRes.text().catch(() => "");
-        throw new Error(`Failed to create collection ${name}: ${createRes.status} ${body}`);
-      }
+      return;
+    }
+    const data = await res.json() as { result?: { config?: { params?: { vectors?: { size?: number; distance?: string } } } } };
+    const vectors = data.result?.config?.params?.vectors;
+    if (!vectors || vectors.size !== vectorSize || vectors.distance !== "Cosine") {
+      throw new Error(`Collection ${name} must use an unnamed Cosine vector with ${vectorSize} dimensions; use a separate collection or migrate existing data`);
     }
   }
 
-  private async request(path: string, options: RequestInit = {}): Promise<Response> {
-    const url = `${this.baseUrl}${path}`;
-    const res = await fetch(url, {
-      ...options,
-      headers: { "Content-Type": "application/json", ...options.headers },
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Qdrant ${options.method || "GET"} ${path}: ${res.status} ${body}`);
-    }
-    return res;
+  async request(path: string, options: RequestInit = {}): Promise<Response> {
+    return qdrantRequest(this.baseUrl, path, options, this.httpOptions);
   }
 
   /** Determine which collection to use based on classification. */
@@ -106,9 +102,10 @@ export class QdrantDB {
       updated_at: now,
       deleted: false,
       metadata: cell.metadata || {},
+      category: cell.category,
     };
 
-    await this.request(`/collections/${collection}/points`, {
+    await this.request(`/collections/${encodeURIComponent(collection)}/points`, {
       method: "PUT",
       body: JSON.stringify({ wait: true, points: [{ id, vector, payload }] }),
     });
@@ -136,6 +133,7 @@ export class QdrantDB {
       updatedAt: payload.updated_at,
       deleted: false,
       metadata: payload.metadata,
+      category: payload.category,
     };
   }
 
@@ -155,11 +153,11 @@ export class QdrantDB {
       }
     }
 
-    if (collection === this.collections.private && !filters?.agent_id) {
+    if (collection === this.collections.private) {
       must.push({ key: "agent_id", match: { value: this.agentId } });
     }
 
-    const res = await this.request(`/collections/${collection}/points/search`, {
+    const res = await this.request(`/collections/${encodeURIComponent(collection)}/points/search`, {
       method: "POST",
       body: JSON.stringify({
         vector,
@@ -187,10 +185,11 @@ export class QdrantDB {
     vector: number[],
     limit = 5,
     minScore = 0.3,
+    filters?: Record<string, unknown>,
   ): Promise<MemCellSearchResult[]> {
     const [shared, priv] = await Promise.all([
-      this.search(this.collections.shared, vector, limit, minScore),
-      this.search(this.collections.private, vector, limit, minScore),
+      this.search(this.collections.shared, vector, limit, minScore, filters),
+      this.search(this.collections.private, vector, limit, minScore, filters),
     ]);
 
     return [...shared, ...priv]
@@ -198,9 +197,82 @@ export class QdrantDB {
       .slice(0, limit);
   }
 
+  /** Hydrate keyword-only candidates with the same scope and deletion filters as vector search. */
+  async getSearchCandidates(ids: string[], filters?: Record<string, unknown>): Promise<MemCell[]> {
+    if (ids.length === 0) return [];
+    const pages = await Promise.all([this.collections.shared, this.collections.private].map(async collection => {
+      const must: unknown[] = [
+        { has_id: ids },
+        { key: "deleted", match: { value: false } },
+        ...Object.entries(filters ?? {}).map(([key, value]) => ({ key, match: { value } })),
+      ];
+      if (collection === this.collections.private) must.push({ key: "agent_id", match: { value: this.agentId } });
+      const response = await this.request(`/collections/${encodeURIComponent(collection)}/points/scroll`, {
+        method: "POST",
+        body: JSON.stringify({ limit: ids.length, filter: { must }, with_payload: true, with_vector: false }),
+      });
+      const data = await response.json() as { result: { points: Array<{ id: string; payload: Record<string, unknown> }> } };
+      return data.result.points.map(point => this.payloadToMemCell(String(point.id), point.payload));
+    }));
+    return pages.flat();
+  }
+
+  async updatePayload(collection: string, id: string, payload: Record<string, unknown>): Promise<void> {
+    await this.request(`/collections/${encodeURIComponent(collection)}/points/payload?wait=true`, {
+      method: "POST",
+      body: JSON.stringify({ wait: true, points: [id], payload }),
+    });
+  }
+
+  /** Delete the point from the current live collection, not historical backups. */
+  async deletePoint(collection: string, id: string): Promise<void> {
+    await this.request(`/collections/${encodeURIComponent(collection)}/points/delete?wait=true`, {
+      method: "POST",
+      body: JSON.stringify({ points: [id] }),
+    });
+  }
+
+  /** Resolve only live memories readable by this configured agent. */
+  async getScopedPoint(id: string, collection?: string, options: { includeDeleted?: boolean } = {}): Promise<{ collection: string; cell: MemCell } | null> {
+    const allowed = [this.collections.shared, this.collections.private];
+    if (collection !== undefined && !allowed.includes(collection)) {
+      throw new Error("Collection is outside this memory instance's configured scope");
+    }
+    const found: Array<{ collection: string; cell: MemCell }> = [];
+    for (const name of collection === undefined ? [...new Set(allowed)] : [collection]) {
+      const cell = await this.getPoint(name, id);
+      if (!cell || (cell.deleted && !options.includeDeleted) || cell.classification === "secret") continue;
+      if ((name === this.collections.private || cell.classification === "private") && cell.agentId !== this.agentId) continue;
+      found.push({ collection: name, cell });
+    }
+    if (found.length > 1) throw new Error("Memory ID is ambiguous across collections; specify its configured collection");
+    return found[0] ?? null;
+  }
+
+  async deleteScopedPoint(id: string, collection?: string): Promise<boolean> {
+    const scoped = await this.getScopedPoint(id, collection, { includeDeleted: true });
+    if (!scoped) return false;
+    await this.deletePoint(scoped.collection, id);
+    return true;
+  }
+
+  async scanCollection(collection: string, limit: number): Promise<{ memories: MemCell[]; truncated: boolean }> {
+    const must: unknown[] = [{ key: "deleted", match: { value: false } }];
+    if (collection === this.collections.private) must.push({ key: "agent_id", match: { value: this.agentId } });
+    const response = await this.request(`/collections/${encodeURIComponent(collection)}/points/scroll`, {
+      method: "POST",
+      body: JSON.stringify({ limit, filter: { must }, with_payload: true, with_vector: false }),
+    });
+    const data = await response.json() as { result: { points: Array<{ id: string; payload: Record<string, unknown> }>; next_page_offset?: string | number | null } };
+    return {
+      memories: data.result.points.map(point => this.payloadToMemCell(String(point.id), point.payload)),
+      truncated: data.result.next_page_offset !== undefined && data.result.next_page_offset !== null,
+    };
+  }
+
   /** Soft-delete a point by setting deleted=true. */
   async softDelete(collection: string, id: string): Promise<void> {
-    await this.request(`/collections/${collection}/points/payload`, {
+    await this.request(`/collections/${encodeURIComponent(collection)}/points/payload`, {
       method: "POST",
       body: JSON.stringify({
         wait: true,
@@ -213,13 +285,13 @@ export class QdrantDB {
   /** Record a new access timestamp and increment the access counter. */
   async updateAccessTime(collection: string, id: string): Promise<void> {
     try {
-      const res = await this.request(`/collections/${collection}/points/${id}`);
+      const res = await this.request(`/collections/${encodeURIComponent(collection)}/points/${encodeURIComponent(id)}`);
       const data = (await res.json()) as { result: { payload: Record<string, unknown> } };
       const times = (data.result.payload.access_times as number[]) || [];
       times.push(Date.now());
       const count = ((data.result.payload.access_count as number) || 0) + 1;
 
-      await this.request(`/collections/${collection}/points/payload`, {
+      await this.request(`/collections/${encodeURIComponent(collection)}/points/payload`, {
         method: "POST",
         body: JSON.stringify({
           wait: true,
@@ -234,7 +306,7 @@ export class QdrantDB {
 
   /** Return the total number of points in a collection. */
   async count(collection: string): Promise<number> {
-    const res = await this.request(`/collections/${collection}`);
+    const res = await this.request(`/collections/${encodeURIComponent(collection)}`);
     const data = (await res.json()) as { result: { points_count: number } };
     return data.result.points_count;
   }
@@ -242,11 +314,12 @@ export class QdrantDB {
   /** Retrieve a single point by ID, or null if not found. */
   async getPoint(collection: string, id: string): Promise<MemCell | null> {
     try {
-      const res = await this.request(`/collections/${collection}/points/${id}`);
+      const res = await this.request(`/collections/${encodeURIComponent(collection)}/points/${encodeURIComponent(id)}`);
       const data = (await res.json()) as { result: { id: string; payload: Record<string, unknown> } };
       return this.payloadToMemCell(data.result.id, data.result.payload);
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof QdrantHttpError && error.status === 404) return null;
+      throw error;
     }
   }
 
@@ -274,6 +347,7 @@ export class QdrantDB {
       createdAt: (p.created_at as string) || "",
       updatedAt: (p.updated_at as string) || "",
       deleted: p.deleted === true,
+      category: typeof p.category === "string" ? p.category : undefined,
       metadata: (p.metadata && typeof p.metadata === "object" && !Array.isArray(p.metadata))
         ? (p.metadata as Record<string, unknown>) : {},
     };

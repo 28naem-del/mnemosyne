@@ -1,47 +1,25 @@
-# ── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
-
-# Install dependencies (including devDependencies for build)
 COPY package*.json ./
-RUN npm ci
-
-# Copy source and build
+RUN npm ci --ignore-scripts
 COPY tsconfig*.json ./
 COPY src/ ./src/
 RUN npm run build
 
-# ── Stage 2: Production ───────────────────────────────────────────────────────
-FROM node:22-alpine AS production
-
-# Add non-root user for security
-RUN addgroup -S mnemosyne && adduser -S mnemosyne -G mnemosyne
+FROM node:24-alpine AS production
 
 WORKDIR /app
-
-# Install production dependencies only
+ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-# Copy compiled output from builder
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 
-# Set ownership
-RUN chown -R mnemosyne:mnemosyne /app
-USER mnemosyne
+# SQLite, its WAL, and its shared-memory file need the same writable directory.
+RUN mkdir /data && chown node:node /data && chmod 700 /data
+VOLUME ["/data"]
+USER node
 
-# Environment defaults (override at runtime)
-ENV NODE_ENV=production \
-    QDRANT_URL=http://qdrant:6333 \
-    EMBEDDING_URL=http://ollama:11434 \
-    EMBEDDING_MODEL=nomic-embed-text \
-    AGENT_ID=mnemosyne-agent \
-    COLLECTION_NAME=memories \
-    REDIS_URL=redis://redis:6379 \
-    FALKORDB_HOST=falkordb \
-    FALKORDB_PORT=6380
-
-EXPOSE 3000
-
-CMD ["node", "dist/index.js"]
+# MCP uses stdin/stdout; there is no HTTP listener or exposed port.
+ENTRYPOINT ["node", "/app/dist/cli/index.js"]
+CMD ["mcp", "--db", "/data/memory.sqlite", "--workspace", "default", "--agent", "docker-agent"]

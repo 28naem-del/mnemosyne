@@ -1,0 +1,76 @@
+{
+  "kind": "paired synthetic ingestion investigation; not an LLM or competitor benchmark",
+  "fixture": {
+    "records": 20000,
+    "transactions": "per record unless batchSize is explicit",
+    "terms": 300000,
+    "runtime": "v26.4.0",
+    "platform": "darwin/arm64",
+    "databases": "fresh isolated temporary files per run; removed afterward"
+  },
+  "rc1BaselineRevision": "36ffe93",
+  "pairedPerRecordMs": {
+    "rc1": [
+      2233.591,
+      2238.922
+    ],
+    "rc2Before": [
+      10797.434,
+      10546.14
+    ],
+    "diagnosticWithoutPostingMaintenance": [
+      2273.707
+    ]
+  },
+  "storageOnlyChange": {
+    "newTables": "local_terms WITHOUT ROWID",
+    "existingTables": "unchanged; no rebuild or migration",
+    "allConstraintsAndTermIndex": "retained",
+    "beforeBytes": [
+      80162816,
+      80023552
+    ],
+    "compactBytes": [
+      61800448,
+      61743104
+    ],
+    "compactObservedMs": [
+      8830.39,
+      10615.522
+    ],
+    "speedClaim": "none; observed latency benefit is noisy"
+  },
+  "sameRc2WithExplicitAtomicBatches": [
+    {
+      "batchSize": 1,
+      "timesMs": [
+        10402.657,
+        10354.329
+      ],
+      "meanMs": 10378.493
+    },
+    {
+      "batchSize": 100,
+      "timesMs": [
+        8494.0,
+        7757.705
+      ],
+      "meanMs": 8125.853
+    },
+    {
+      "batchSize": 500,
+      "timesMs": [
+        5268.765,
+        5282.767
+      ],
+      "meanMs": 5275.766
+    }
+  ],
+  "defaults": "Cache, WAL checkpoint, synchronous durability, secure deletion and FK settings unchanged.",
+  "limits": [
+    "Timing is sensitive to host load and random UUID page placement.",
+    "The compact layout affects newly created derived tables only.",
+    "Atomic batches commit one whole group; they are not equivalent to independent per-record commit boundaries.",
+    "No process-kill durability test or distributed concurrency benchmark was performed by this investigation."
+  ]
+}

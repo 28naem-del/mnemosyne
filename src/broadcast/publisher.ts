@@ -48,8 +48,8 @@ export class MemoryPublisher {
         subscribers += await this.redis.publish(CHANNELS.PRIVATE(msg.agentId), payload);
       }
 
-      // High-priority memories also go to critical channel
-      if (msg.memoryType === "core" || msg.memoryType === "profile") {
+      // The critical channel is shared; private content stays on its owner channel.
+      if (msg.scope === "public" && (msg.memoryType === "core" || msg.memoryType === "profile")) {
         await this.redis.publish(CHANNELS.CRITICAL, payload);
       }
 

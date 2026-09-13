@@ -1,8 +1,6 @@
 /**
- * dream — Intensive overnight-style consolidation.
- *
- * Phases: aggressive dedup → merge episodic→semantic →
- * prune stale → strengthen popular → pattern mining.
+ * dream — Compatibility entry point for scoped, nondestructive maintenance.
+ * URL-only legacy calls reject; supply a configured QdrantDB.
  */
 
 import {
@@ -13,17 +11,19 @@ import {
   type DreamReport,
   type DreamConfig,
 } from "../cognitive/dream.js";
+import type { QdrantDB } from "../core/qdrant.js";
 
 export interface DreamContext {
   qdrantUrl: string;
   agentId: string;
+  db?: QdrantDB;
 }
 
 export async function dream(
   ctx: DreamContext,
   config?: Partial<DreamConfig>,
 ): Promise<DreamReport> {
-  return runDreamConsolidation(ctx.qdrantUrl, ctx.agentId, config);
+  return runDreamConsolidation(ctx.db ?? ctx.qdrantUrl, ctx.agentId, config);
 }
 
 export async function shouldRunDream(ctx: DreamContext): Promise<boolean> {
