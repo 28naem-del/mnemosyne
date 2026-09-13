@@ -345,3 +345,94 @@ html[data-motion=paused] { scroll-behavior: auto; }
 @media (max-width: 900px) {
   .bridge-panel { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Product orientation, carried forward from the original website. */
+.anchor-alias { display: block; height: 0; scroll-margin-top: 90px; }
+.architecture-section { display: grid; grid-template-columns: 1fr 1.1fr; gap: 95px; border-top: 1px solid var(--line); }
+.architecture-intro h2 { margin-bottom: 28px; }
+.architecture-intro > p:not(.eyebrow) { max-width: 400px; color: var(--slate); line-height: 1.8; }
+.architecture-intro .text-link { margin-top: 18px; }
+.architecture-route { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 48px; font-size: .67rem; color: #b8cbd6; }
+.architecture-route span { padding: 12px 13px; border: 1px solid #39505a; border-radius: 4px; background: #101c23; }
+.architecture-route i { color: var(--mint); font-style: normal; }
+.architecture-step { border-top: 1px solid #31404e; }
+.architecture-step:last-child { border-bottom: 1px solid #31404e; }
+.architecture-step summary { display: flex; gap: 22px; align-items: flex-start; padding: 26px 0; cursor: pointer; list-style: none; font-size: 1.15rem; }
+.architecture-step summary::-webkit-details-marker { display: none; }
+.architecture-step summary::after { content: '+'; margin-left: auto; color: var(--mint); font-size: 1.4rem; line-height: 1; }
+.architecture-step[open] summary::after { content: '−'; }
+.architecture-step .architecture-number { color: #83a69e; font: .64rem ui-monospace,monospace; padding-top: 5px; }
+.architecture-step summary small { display: block; margin-top: 10px; color: var(--slate); font-size: .75rem; }
+.architecture-step > div { padding: 0 25px 28px 38px; }
+.architecture-step p { color: var(--slate); font-size: .85rem; line-height: 1.85; margin: 0 0 18px; }
+.architecture-step a { color: #c8e7da; font-size: .72rem; text-underline-offset: 5px; }
+.use-case-section { border-top: 1px solid var(--line); }
+.use-case-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 56px; }
+.use-case { display: grid; grid-template-columns: 1fr 22px; padding: 30px 0 34px; border-top: 1px solid #263b49; text-decoration: none; color: inherit; gap: 18px; }
+.use-case-number { grid-column: 1 / -1; color: #89a79d; font: .62rem ui-monospace,monospace; letter-spacing: .1em; }
+.use-case h3 { font-size: 1.5rem; font-weight: 450; letter-spacing: -.045em; margin: 0 0 16px; }
+.use-case p { margin: 0; color: var(--slate); font-size: .88rem; line-height: 1.8; max-width: 455px; }
+.use-case > span:last-child { color: var(--mint); font-size: 1.3rem; transition: transform 160ms ease-out; }
+.use-case:hover > span:last-child { transform: translate(3px,-3px); }
+.integration-entry { padding-top: 15px; padding-bottom: 75px; }
+.integration-entry h2 { font-size: clamp(1.6rem,3vw,2.5rem); margin-bottom: 30px; }
+.integration-entry nav { display: flex; flex-wrap: wrap; gap: 10px; }
+.integration-entry nav a { padding: 15px 17px; border: 1px solid #344b5c; border-radius: 4px; color: #d5e4ee; font-size: .8rem; text-decoration: none; background: #101923; }
+.integration-entry nav a span { margin-left: 16px; color: var(--mint); }
+.integration-entry > p { color: var(--slate); font-size: .75rem; line-height: 1.7; margin-top: 22px; }
+.integration-entry > p a { color: #cce5da; text-underline-offset: 4px; }
+.existing-users { display: grid; grid-template-columns: 1.25fr 1fr; gap: 60px; padding-top: 50px; padding-bottom: 50px; border-bottom: 1px solid var(--line); }
+.existing-users h2 { font-size: 1.85rem; margin: 0 0 20px; }
+.existing-users p:not(.eyebrow) { color: var(--slate); font-size: .85rem; line-height: 1.8; max-width: 560px; }
+.existing-users > div:last-child { display: flex; flex-direction: column; justify-content: center; gap: 20px; align-items: flex-start; }
+.existing-users .text-link { font-size: .76rem; }
+.legacy-architecture { position: relative; }
+@media (max-width: 1000px) { .architecture-section { gap: 40px; } .architecture-route { gap: 7px; } .architecture-route span { padding: 10px; } }
+@media (max-width: 760px) {
+ .architecture-section, .existing-users { grid-template-columns: minmax(0,1fr); gap: 38px; }
+ .architecture-route { margin-top: 28px; }
+ .architecture-step summary { font-size: 1.05rem; gap: 16px; }
+ .architecture-step > div { padding-left: 30px; padding-right: 5px; }
+ .use-case-grid { grid-template-columns: minmax(0,1fr); }
+ .integration-entry { padding-bottom: 50px; }
+ .integration-entry nav a { padding: 13px 12px; font-size: .74rem; }
+ .existing-users { padding-top: 40px; padding-bottom: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .use-case > span:last-child { transition: none; transform: none; } }
+html[data-motion=paused] .use-case > span:last-child { transition: none; transform: none; }
+
+.company-section { border-top: 1px solid #334450; border-bottom: 1px solid #334450; background: radial-gradient(ellipse at 12% 10%, #17312e65, transparent 65%), #0b151d; }
+.company-inner { display: grid; grid-template-columns: 1.05fr 1fr; gap: 110px; padding-top: 110px; padding-bottom: 110px; }
+.company-story h2 { font-size: clamp(2.7rem,4.4vw,4.3rem); margin: 24px 0 30px; }
+.company-story > p:not(.eyebrow) { max-width: 510px; color: #a6b9c8; font-size: .94rem; line-height: 1.85; }
+.company-story strong { font-weight: 500; color: #e5f0f1; }
+.company-funding { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 13px; border: 1px solid #3b5557; padding: 12px 16px; border-radius: 4px; color: #cbe6da; font: .65rem ui-monospace,monospace; margin-top: 20px; }
+.company-funding i { width: 5px; height: 5px; border-radius: 50%; background: #b8f6dd; }
+.company-funding > span { color: #5f7a7c; }
+.company-contact > a { display: block; padding: 31px 0; color: inherit; text-decoration: none; border-top: 1px solid #39505a; }
+.company-contact > a:hover h3 { color: #b8f6dd; }
+.company-contact h3 { display: flex; gap: 20px; justify-content: space-between; font-size: clamp(1.2rem,2vw,1.7rem); font-weight: 450; letter-spacing: -.035em; margin: 20px 0 16px; }
+.company-contact h3 span { color: #b8f6dd; }
+.company-contact > a > p { color: #a6b9c8; font-size: .84rem; line-height: 1.8; max-width: 450px; }
+.company-email { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; border-top: 1px solid #39505a; padding-top: 25px; color: #819cac; font-size: .7rem; }
+.company-email a { color: #deeceb; font-size: .88rem; text-underline-offset: 5px; }
+.company-footer { display: flex; flex-wrap: wrap; flex-basis: 100%; gap: 12px 24px; align-items: center; padding-top: 23px; margin-top: 18px; border-top: 1px solid #273640; font-size: .65rem; color: #93a8b9; }
+.company-footer a { color: #bacdd5; text-decoration: none; }
+.company-footer a:last-child { margin-left: auto; }
+.site-footer { flex-wrap: wrap; }
+@media (max-width: 1000px) { .company-inner { gap: 55px; } }
+@media (max-width: 760px) { .company-inner { grid-template-columns: minmax(0,1fr); gap: 45px; padding-top: 75px; padding-bottom: 65px; } .company-story h2 { font-size: 2.65rem; } .company-footer { width: 100%; gap: 15px; } .company-footer a:last-child { margin-left: 0; } }
+
+.release-access { border: 1px solid #41635d; border-radius: 8px; background: #13231f; padding: 32px; }
+.release-access h3 { font-size: 1.65rem; line-height: 1.25; margin: 20px 0; letter-spacing: -.04em; }
+.release-access > p { color: #b8ccc6; font-size: .85rem; line-height: 1.8; }
+.release-access .button { margin-top: 16px; font-size: .8rem; }
+.release-current { display: block; margin-top: 25px; color: #c9ddd5; font-size: .73rem; text-underline-offset: 5px; }
+@media(max-width:760px) { .release-access { padding: 24px; } }
+
+.reference-page { padding-top: 65px; padding-bottom: 80px; max-width: 1000px; }
+.reference-notice { margin: 25px 0 45px; line-height: 1.8; }
+.reference-page .article { max-width: 100%; }
+.reference-page .article h1 { font-size: clamp(2rem,4vw,3.5rem); line-height: 1.15; }
+.reference-page .article table { display: block; max-width: 100%; overflow-x: auto; font-size: .85rem; }
+.reference-page .article th, .reference-page .article td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; }

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Claude native memory commands — Mnemosyne</title><meta name="description" content="Technical preview documentation for the next Mnemosyne source release."><meta name="theme-color" content="#070b12"><link rel="canonical" href="https://mnemosy.ai/docs/reference/ANTHROPIC-MEMORY.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>Source publication pending.</strong> This guide describes the next release. Code examples require that source revision; the public repository currently contains an earlier version. <a href="../#build">Release access and status</a>.</aside><article class="article"><h1 id="claude-native-memory-commands">Claude native memory commands</h1>
+<p>The <code>mnemosy-ai/adapters</code> entry point provides a client-side handler for Anthropic's native <code>memory_20250818</code> tool. Claude can view and edit virtual text files under <code>/memories</code>; Mnemosyne stores their contents, revisions and provenance in the caller's scoped SQLite database. The adapter makes no model calls and accesses no physical <code>/memories</code> directory.</p>
+<p>The native tool definition, command fields and client-execution pattern follow <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool">Anthropic's memory-tool documentation</a>. The runnable integration was checked against the public <a href="https://github.com/anthropics/anthropic-sdk-typescript/blob/135f71e9297683e14614d4307081c0273ed0a09c/src/helpers/beta/memory.ts">TypeScript SDK helper and runner contract</a>, version 0.125.0. This package does not require that SDK as a dependency or configure a Claude application.</p>
+<h2 id="bind-an-authorized-scope">Bind an authorized scope</h2>
+<pre><code class="language-ts">import { createLocalMemory } from 'mnemosy-ai/local';
+import { MemoryRuntime } from 'mnemosy-ai/runtime';
+import { createAnthropicMemoryAdapter } from 'mnemosy-ai/adapters';
+
+const memory = createLocalMemory({
+  path: '/absolute/path/chosen-by-your-app/memory.sqlite',
+  workspaceId: 'your-authorized-workspace',
+  agentId: 'your-authorized-agent',
+});
+const runtime = new MemoryRuntime(memory);
+const adapter = createAnthropicMemoryAdapter({
+  memory,
+  runtime,
+  namespace: 'project-notes',
+  policy: () =&gt; ({
+    recallEnabled: true,
+    captureEnabled: true,
+    readOnly: false,
+    allowDestructive: false,
+  }),
+});
+</code></pre>
+<p>The application chooses the database, owner, namespace, session ID and permissions. These values are not accepted from model command input. The runtime must wrap the same <code>LocalMemory</code> instance. Native files are private to that principal. A scope selector alone is not authentication; the host must authenticate its caller before constructing the adapter.</p>
+<p>Default permissions enable viewing and ordinary writes, with deletion disabled. Runtime capture/recall controls also apply. A trusted host can grant deletion independently; privacy deletion remains available under the documented policy when capture or recall is disabled. Close the memory instance when the host is finished.</p>
+<p>For a new namespace shared with OpenAI Responses or Gemini Generate Content, select the immutable <code>captureAdapter: "generic"</code> option and use the <a href="/docs/reference/PROVIDER-TOOLS.html">provider wrappers</a>. Existing default Claude namespaces retain their original capture identities; an opposite-mode namespace fails rather than relabeling old records.</p>
+<h2 id="manual-messages-loop">Manual Messages loop</h2>
+<p>Supply <code>adapter.definition</code> in your application's native tools array. When the API returns a matching tool-use block, execute it locally:</p>
+<pre><code class="language-ts">const result = adapter.handleToolUse(
+  {
+    type: 'tool_use',
+    id: 'actual-tool-use-id-from-the-api',
+    name: 'memory',
+    input: {
+      command: 'create',
+      path: '/memories/project.md',
+      file_text: 'Atlas releases on Tuesday.',
+    },
+  },
+  { sessionId: 'stable-session-id-chosen-by-the-host' },
+);
+// Return `result` in the next user-role tool_result message in your loop.
+</code></pre>
+<p>The handler returns a native <code>tool_result</code> with the original tool-use ID. Command failures set <code>is_error: true</code>. An invalid outer block or missing tool-use ID throws because there is no trustworthy ID for a result; the host should handle malformed API envelopes. An optional <code>AbortSignal</code> belongs in the second argument. The handler never sends an API request itself.</p>
+<p><code>adapter.asRunnable({ sessionId })</code> provides a structurally compatible native runnable tool for an Anthropic SDK runner. It validates input and consumes the runner's trusted tool-use ID and cancellation signal. It throws command failures so the runner can produce error results. Do not wrap it in a helper that drops the tool-use context: durable retry protection needs the actual ID.</p>
+<p>Run the <span title="Reference available with the corresponding source release">executable example</span> from a source checkout after building:</p>
+<pre><code class="language-sh">node --experimental-strip-types examples/anthropic-memory.ts
+</code></pre>
+<p>This example executes native command objects, correction, retry and deletion locally. It does not run Claude or establish model task performance.</p>
+<h2 id="text-operations">Text operations</h2>
+<ul>
+<li><code>view</code> lists a directory or displays numbered file lines. <code>view_range</code> is inclusive and 1-based; an end of <code>-1</code> reads through EOF within the result budget.</li>
+<li><code>create</code> creates a new file and implicit parent directories. Existing destinations fail; a committed retry with the same trusted ID does not create twice.</li>
+<li><code>str_replace</code> requires exactly one literal occurrence, including across multiple lines. Duplicate occurrences on one line are ambiguous. Omitted <code>new_str</code> deletes the match; replacement characters such as <code>$&amp;</code> remain literal.</li>
+<li><code>insert</code> inserts after a logical line. Zero prepends. Existing line bytes are preserved; necessary LF separators are added.</li>
+<li><code>rename</code> moves a file or directory subtree atomically. A pure rename preserves content identity and does not retire advice derived from unchanged text.</li>
+<li><code>delete</code> removes a file or subtree only when the host grants destructive permission. It forgets original revisions and their dependent content.</li>
+</ul>
+<p>Before editing a file first encountered in a session, view it in that adapter session. A successful create or edit also establishes the current revision observation, so consecutive edits to that revision are allowed. If its revision changes elsewhere before an edit, the command fails with a conflict requiring a fresh view. Revision observations are held in memory; restarting the adapter requires another view. This makes stale line-number edits detectable, without adding unsupported fields to the native schema.</p>
+<p>Line numbering splits on LF and retains CR characters. One terminal LF does not create a phantom final line. Empty files have zero lines. For example, inserting <code>x</code> after line 1 transforms <code>a\nb</code> into <code>a\nx\nb</code>, and transforms <code>a\n</code> into <code>a\nx\n</code>. This convention is explicit because the current official SDK helpers differ at newline boundaries.</p>
+<h2 id="evidence-and-replay">Evidence and replay</h2>
+<p>Nonblank text becomes a model-authored captured source with <code>untrusted</code> provenance by default. Explicit file viewing remains available, while ordinary advice retrieval excludes untrusted notes. The host can set <code>writeTrust: "observed"</code> when it intends these notes to participate in recall. “Observed” means the host witnessed the text; it does not certify that its assertions are true. Native commands cannot mark facts verified, promote skills, execute code, change provider configuration or choose another owner.</p>
+<p>Content edits correct the source and suppress advice that depends on its old version. Original captured text remains inspectable until forgotten. Blank values retain their exact UTF-8 bytes through a validated base64 control representation and do not become fabricated semantic evidence. Edits return bounded acknowledgements; use view to inspect the resulting text. The protected <code>/memories/_sources</code> mount exposes bounded original-source inspection and accepts no writes. It follows the owner and workspace scope across virtual namespaces; namespace names alone are not separate privacy principals.</p>
+<p>Mutation receipts use the trusted session and tool-use ID plus normalized command hash. Replaying a committed operation cannot duplicate an insertion or resurrect a deleted file. Reusing an ID with different input fails. Receipts retain no original text or result snippets. A new authorized create after deletion gets a new file identity.</p>
+<p>Deletion covers this live store and its dependent records. It cannot erase earlier API messages, exported copies or backups. An explicitly shared derived record can be invalidated or removed when its underlying private evidence is corrected or forgotten; that is the same dependency behavior as the local kernel.</p>
+<h2 id="deliberate-boundaries">Deliberate boundaries</h2>
+<p>Paths are case-sensitive virtual keys. Traversal components, backslashes, control characters, percent escapes and paths outside <code>/memories</code> are rejected. Repeated and trailing slashes are normalized; canonical root aliases can be viewed but remain protected against writes. The source mount is also protected. The adapter never resolves symlinks or interprets paths as host files.</p>
+<p>This delivery supports text only, create-exclusive behavior and implicit directories. Empty directories disappear when their last file leaves; there is no <code>mkdir</code>. Hidden names and <code>node_modules</code> are omitted from listings but remain addressable by explicit valid paths and included in deletion. Default bounds are 512 files, 32,000 UTF-8 bytes per file, 8 MiB live content, 10,000 control records, 128 listing entries, 16,000 rendered view characters and 65,536 result bytes. Views retain up to 4,096 revision observations. Receipt capacity is finite and requires controller maintenance when exhausted; no automatic pruning weakens replay protection. Results and inventory scans have explicit bounds; exceeding a complete-scan budget fails before mutation.</p>
+<p>Native protocol integration does not install hooks, discover chat histories, provide a background scheduler or evaluate Claude's use of the tool. Use the <a href="/docs/reference/RUNTIME.html">runtime guide</a> for explicit capture and job processing, and <span title="Reference available with the corresponding source release">provider research</span> for the distinction between provider products and this client-owned tool.</p></article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer></body></html>

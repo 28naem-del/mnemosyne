@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Detect stale evidence before using it — Mnemosyne</title><meta name="description" content="Technical preview documentation for the next Mnemosyne source release."><meta name="theme-color" content="#070b12"><link rel="canonical" href="https://mnemosy.ai/docs/reference/MAINTENANCE.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>Source publication pending.</strong> This guide describes the next release. Code examples require that source revision; the public repository currently contains an earlier version. <a href="../#build">Release access and status</a>.</aside><article class="article"><h1 id="detect-stale-evidence-before-using-it">Detect stale evidence before using it</h1>
+<p>The rc5 <code>MemoryMaintenance</code> service adds explicit source freshness checks and short-lived action read sets to the existing provenance engine. A stored fact can age without receiving a contradictory message. This service makes that uncertainty visible and can withhold it from a freshness-aware retrieval path. Age alone never changes a fact's text, truth, trust or historical validity.</p>
+<p>The service runs locally through <code>mnemosy-ai/maintenance</code> or the <code>health</code> CLI. It does not fetch URLs, read source files, choose a model, install a scheduler, or rewrite facts automatically. A controller chooses which facts need checking, provides check evidence and decides how to handle a changed source.</p>
+<h2 id="a-clock-and-a-source-policy">A clock and a source policy</h2>
+<pre><code class="language-js">import { createLocalMemory } from 'mnemosy-ai/local';
+import { MemoryRuntime } from 'mnemosy-ai/runtime';
+import { MemoryMaintenance } from 'mnemosy-ai/maintenance';
+
+const memory = createLocalMemory({
+  path: './agent-memory.sqlite', workspaceId: 'my-project', agentId: 'assistant',
+});
+const runtime = new MemoryRuntime(memory);
+const health = new MemoryMaintenance(runtime);
+
+const constraint = memory.store({
+  text: 'The release window starts at 18:00 UTC.',
+  source: { uri: 'project://release-calendar' },
+  trust: 'observed', kind: 'fact',
+});
+
+const pending = health.watchMemory({
+  memoryId: constraint.id, maxAgeMs: 60 * 60 * 1000, priority: 90,
+});
+// A new watch needs evidence. Merely storing or retrieving a fact does not confirm it.
+const confirmed = health.recordCheck({
+  memoryId: constraint.id, expectedStateHash: pending.stateHash,
+  observation: {
+    status: 'confirmed',
+    evidence: 'Controller checked the current release-calendar entry.',
+    verifier: 'release-calendar-controller', sourceRevision: 'calendar-r42',
+  },
+});
+console.log(confirmed.status); // fresh
+console.log(health.recall({ query: 'release window' }));
+</code></pre>
+<p>Use the executable <span title="Reference available with the corresponding source release">maintenance example</span> for a temporary database, injected clock, elapsed-time checks and reopening. The SDK accepts <code>now: () =&gt; Date</code> so tests can advance time without changing the system clock.</p>
+<p><code>lastConfirmedAt</code> records the latest accepted source check, distinct from when the fact was first stored or last retrieved. The policy's interval expires from that confirmation. Policies are explicit per memory revision; no guessed half-life or confidence score is used. Repeating the same watch is idempotent. Changing an existing watch policy currently requires a new target revision.</p>
+<h2 id="what-a-check-means">What a check means</h2>
+<p>The controller returns one of three results, with evidence and a verifier:</p>
+<ul>
+<li><code>confirmed</code>: evidence supports retaining the current assertion; it starts a new freshness interval.</li>
+<li><code>changed</code>: the witnessed source changed; the assertion needs review or ordinary correction. This does not invent a replacement.</li>
+<li><code>unavailable</code>: verification could not establish the current state; it remains unresolved.</li>
+</ul>
+<p>Confirmation is a controller assertion, not authenticated truth. A matching document hash establishes only unchanged bytes, not that its claims are still true in the world. Define the meaning of <code>confirmed</code> in the host adapter. Watches never promote trust; untrusted imports are ineligible for confirmation until the host supplies eligible evidence through the ordinary lifecycle. Failed watch/check outcomes, missing evidence and changed revisions prevent those checks from authorizing freshness.</p>
+<p><code>expectedStateHash</code> binds a submitted check to the exact target and earlier check state. If another check or correction arrived while a probe was running, the stale result is rejected. Source corrections use the existing memory/runtime lifecycle; source forgetting removes dependent watch/check content with it.</p>
+<h2 id="run-bounded-checks">Run bounded checks</h2>
+<p><code>health.scan()</code> lists watched records and their status without contacting any source. States distinguish fresh, needs-check, stale, source-changed, unavailable, ineligible, missing and clock-skew. <code>unwatched</code> means no freshness policy was supplied; it does not mean recently verified.</p>
+<p><code>health.probeDue({ probe, maxChecks, timeoutMs, signal })</code> calls your asynchronous probe for due records, ordered by explicit priority and due state. Defaults are ten checks and a single ten-second budget for the whole operation, including preflight. Maximums are 100 checks and 60 seconds. The report counts attempted, confirmed, changed, unavailable, failed and deferred work. Budget exhaustion never counts an unchecked fact as confirmed.</p>
+<p>The probe receives an <code>AbortSignal</code>. Canceled work is not started, late results cannot commit, and the probe must honor cancellation to stop its own compute. Synchronous database scans cannot be interrupted mid-statement. Running another sweep later is the host's scheduling responsibility.</p>
+<p>The <code>health.recall</code> path filters ordinary lexical candidates by the freshness of their transitive dependencies. It returns excluded record IDs/statuses without the stale text. It checks at most 100 candidates and 2,048 distinct dependencies. Unwatched evidence is allowed by default; <code>requireWatched: true</code> requires fresh watches across the entire dependency closure. Plain <code>memory.recall</code>, <code>memory.compile</code>, hybrid retrieval and existing MCP/HTTP tools do not automatically gain this new policy. A host must use the maintenance path or enforce equivalent checks where it matters.</p>
+<h2 id="recheck-the-evidence-behind-an-action">Recheck the evidence behind an action</h2>
+<p>A source can change between planning and execution. Bind the memory evidence used by a plan to a particular action, then validate it immediately before the host considers that action:</p>
+<pre><code class="language-js">const actionKey = 'release:catalogue:r42:arguments-sha256';
+const readSet = health.createReadSet({
+  memoryIds: [constraint.id],
+  actionKey,
+  dependenciesComplete: true,
+  lifetimeMs: 10_000,
+  requireWatched: true,
+});
+
+const check = health.validateReadSet(readSet, actionKey);
+if (!check.valid) {
+  // Fetch/review current evidence and create a new plan before retrying.
+  console.log(check.reason);
+}
+memory.close(); // Close after the host has finished using the store.
+</code></pre>
+<p>The host must supply all action-relevant memory roots and derive <code>actionKey</code> from the exact operation and arguments, for example a digest of a canonical action object. <code>dependenciesComplete: true</code> is that host declaration; the library cannot discover omitted external dependencies. A static label shared by different argument sets does not bind those arguments.</p>
+<p>Read sets include exact local record fingerprints, source-check state, outcomes and transitive lineage. Corrections, failed outcomes, expired checks, new conflicts or missing dependencies invalidate them. Unrelated memory updates do not. Tampering with the ticket, changing its action key, or validating it under another service instance fails. Up to 64 roots and 2,048 records are supported; lifetime cannot exceed 60 seconds or the next required source check.</p>
+<p>This is a <strong>point-in-time check of local evidence</strong>. It neither grants permission to act nor locks an external service between validation and execution. Use the external system's own version preconditions or transaction mechanism where available. Tickets use a private per-instance signing key and deliberately expire on process/service replacement; stored watch/check records survive reopening. Within a service instance, observed backward clock movement prevents expired tickets from reviving. Clock integrity across process restarts remains a host responsibility.</p>
+<h2 id="cli">CLI</h2>
+<pre><code class="language-sh">node dist/cli/index.js health --action watch \
+  --db ./agent-memory.sqlite --workspace my-project --agent assistant \
+  --id MEMORY_ID --json '{&quot;maxAgeMs&quot;:3600000,&quot;priority&quot;:90}'
+
+node dist/cli/index.js health --action scan \
+  --db ./agent-memory.sqlite --workspace my-project --agent assistant
+
+node dist/cli/index.js health --action check \
+  --db ./agent-memory.sqlite --workspace my-project --agent assistant \
+  --id MEMORY_ID --json '{&quot;expectedStateHash&quot;:&quot;STATE_HASH&quot;,&quot;observation&quot;:{&quot;status&quot;:&quot;confirmed&quot;,&quot;evidence&quot;:&quot;Checked the current source.&quot;,&quot;verifier&quot;:&quot;controller&quot;}}'
+
+node dist/cli/index.js health --action recall \
+  --db ./agent-memory.sqlite --workspace my-project --agent assistant \
+  --query 'release window' --json '{&quot;requireWatched&quot;:true}'
+</code></pre>
+<p>Use IDs and the current state hash returned by watch or scan. Every health action requires an existing regular database with no linked database or sidecar file; invalid action arguments are rejected before opening it. The host-only read-set API remains in the SDK because its key belongs to the live service instance. Capture/recall policy switches remain enforced; read-only blocks watch/check mutations.</p>
+<h2 id="research-and-the-supplied-guide">Research and the supplied guide</h2>
+<p>The user-supplied Instagram guide by <strong>@datasciencebrain</strong>, <em>Build an Agent That Repairs Its Own Stale Memories</em>, usefully distinguishes new-message updates from silent aging, and separates valid time, recorded time and last verification. Its setup commands and model choices were not adopted. The existing local engine already supports validity/knowledge-time queries and source correction.</p>
+<p>Primary research sharpened the additional design: <a href="https://arxiv.org/abs/2605.06527">STALE/CUPMem</a> studies implicit conflicts; <a href="https://arxiv.org/abs/2609.03340">PlanFence</a> binds plans to exact input lineage; <a href="https://arxiv.org/abs/2608.25553">budgeted verification research</a> investigates which evidence gets checked under a limited budget. These implementations and controlled experiments have their own assumptions and limits. Mnemosyne's explicit freshness service is not a reproduction of those methods, a universal contradiction detector, or a measured agent-quality improvement. Its behavioral checks and remaining evaluation gaps are recorded in <span title="Reference available with the corresponding source release">evaluation evidence</span>.</p></article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer></body></html>

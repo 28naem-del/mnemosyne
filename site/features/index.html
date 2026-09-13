@@ -24,14 +24,14 @@
   <a class="skip" href="#main">Skip to content</a>
   <header class="site-header wrap">
     <a class="brand" href="../" aria-label="Mnemosyne home"><svg class="brand-symbol" viewBox="0 0 34 38" aria-hidden="true"><path d="M4 30V16a6.5 6.5 0 0 1 13 0v14m0-14a6.5 6.5 0 0 1 13 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>mnemosyne</a>
-    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="./" aria-current="page">Features</a><a href="../docs/">Docs</a><a href="../compare/">Compare</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
+    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="./" aria-current="page">Features</a><a href="../docs/">Docs</a><a href="../compare/">Approach</a><a href="../#company">Company</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
   </header>
   <main id="main">
     <section class="page-hero wrap" aria-labelledby="page-title">
       <p class="feature-kicker">The complete memory lifecycle</p>
       <h1 id="page-title">Memory that carries<br>the work forward.</h1>
       <p>Give agents lasting context, keep it connected to its evidence, and update what they reuse when the world changes. One local memory system, from the first source to the next agent.</p>
-      <div class="actions"><a class="button" href="../docs/">Start building</a><a class="button secondary" href="../docs/#gradual-migration">Keep your current memory system</a></div>
+      <div class="actions"><a class="button" href="../docs/">Explore the docs</a><a class="button secondary" href="../docs/#gradual-migration">Keep your current memory system</a></div>
       <nav class="feature-index" aria-label="Explore capabilities"><a href="#remember">Remember &amp; resume</a><a href="#find">Find evidence</a><a href="#current">Keep current</a><a href="#learn">Learn from experience</a><a href="#connect">Bring across tools</a><a href="#control">Inspect &amp; control</a></nav>
     </section>
     <div class="wrap">
@@ -44,7 +44,7 @@
         </div>
         <div class="feature-grid">
           <article class="feature-item"><h3>Original evidence</h3><p>Capture selected documents and visible conversations with stable source identities. Direct text, Markdown and JSON retain their exact text; explicit extractors handle images and other binary documents. Selected file watches track revisions.</p></article>
-          <article class="feature-item"><h3>Memory in the host loop</h3><p>Prepare context before a turn, capture the visible exchange after it, and queue bounded follow-up work. Completed Codex and Claude events have explicit adapters. Durable reservations guard against repeating an ambiguously completed turn.</p></article>
+          <article class="feature-item"><h3>Memory in the host loop</h3><p>Prepare context before a turn, capture the visible exchange after it, and queue bounded follow-up work. Explicit event adapters accept selected, completed agent messages. Durable reservations guard against repeating an ambiguously completed turn.</p></article>
           <article class="feature-item"><h3>Handoffs with a next step</h3><p>Carry completed work, open tasks, decisions, constraints and rejected approaches across sessions and explicitly shared agents. Source-dependent checkpoints stop being resumable when their evidence becomes invalid.</p></article>
           <article class="feature-item"><h3>Profiles with uncertainty</h3><p>Define typed preferences or project state. Each field reports a supported value, an unknown, or conflicting candidates with source citations. Reads recheck the source state before returning values.</p><a class="text-link" href="../docs/#profiles">Explore typed profiles</a></article>
         </div>
@@ -100,9 +100,9 @@
         </div>
         <div class="feature-grid">
           <article class="feature-item"><h3>Migrate through use</h3><p>A read-only legacy search adapter copies the records your agent retrieves. Successful paired recall checks move routing from shadow to assist to local preference. The old store stays connected and unchanged, with immediate legacy-routing rollback.</p></article>
-          <article class="feature-item"><h3>A reviewed full import</h3><p>Preview and atomically apply selected exports through 11 profiles: Mem0, Letta, LangGraph, Graphiti, Hindsight, Supermemory, legacy Mnemosyne/Qdrant and Markdown. Inspect original record bytes, replay safely and undo unchanged batches without discarding later work.</p><a class="text-link" href="../docs/#migration">See supported export formats</a></article>
+          <article class="feature-item"><h3>A reviewed full import</h3><p>Preview and atomically apply memories through 11 selected export profiles. Inspect original record bytes, replay safely and undo unchanged batches without discarding later work.</p><a class="text-link" href="../docs/#migration">See supported export formats</a></article>
           <article class="feature-item"><h3>One store, several interfaces</h3><p>Use the TypeScript SDK, CLI, MCP server, authenticated HTTP service or bundled Python client. Share selected workspace records across agent identities while ownership continues to govern edits.</p><a class="text-link" href="../docs/#mcp">Connect through MCP</a></article>
-          <article class="feature-item"><h3>Provider memory tools</h3><p>Expose scoped virtual memory files through Claude's native memory commands, OpenAI Responses functions or Gemini Generate Content tools. Your host keeps control of model requests, conversation state and permissions.</p><a class="text-link" href="https://github.com/28naem-del/mnemosyne/blob/codex/mnemosyne-2-local-learning/docs/PROVIDER-TOOLS.md">Read the provider integration guide</a></article>
+          <article class="feature-item"><h3>Provider memory tools</h3><p>Expose scoped virtual memory files through provider memory tools and supported function-calling interfaces. Your host keeps control of model requests, conversation state and permissions.</p><a class="text-link" href="/docs/reference/PROVIDER-TOOLS.html">Read the provider integration guide</a></article>
         </div>
       </section>
       <section class="section feature-section" id="control" aria-labelledby="control-title">
@@ -113,22 +113,23 @@
           <a class="text-link" href="../docs/#boundaries">Read the operating boundaries</a>
         </div>
         <div class="feature-grid">
-          <article class="feature-item"><h3>Local storage and access controls</h3><p>Run SQLite without a separate database server. Records are private by default. The HTTP inspector uses scoped, revocable credentials, with independent capture, recall, read-only and destructive-operation controls.</p></article>
+          <article class="feature-item"><h3>Local storage and access controls</h3><p>Run the local engine without a separate database server. Records are private by default. The HTTP inspector uses scoped, revocable credentials, with independent capture, recall, read-only and destructive-operation controls.</p></article>
           <article class="feature-item"><h3>Changes you can preview</h3><p>Stage additions and corrections in a private memory branch. Inspect the proposed change, then merge atomically only while its base evidence remains current. Drafts and controller job records stay out of ordinary advice.</p></article>
-          <article class="feature-item"><h3>Backup and recovery</h3><p>Take a consistent whole-database snapshot, verify its digest and SQLite integrity, then restore to a new path. Preserve workspaces, pending jobs and erasure tombstones. Scoped exports remain a separate transfer option.</p><a class="text-link" href="../docs/#recovery">Rehearse recovery</a></article>
+          <article class="feature-item"><h3>Backup and recovery</h3><p>Take a consistent whole-database snapshot, verify its digest and database integrity, then restore to a new path. Preserve workspaces, pending jobs and erasure tombstones. Scoped exports remain a separate transfer option.</p><a class="text-link" href="../docs/#recovery">Rehearse recovery</a></article>
           <article class="feature-item"><h3>Forgetting across the lifecycle</h3><p>Erase source generations and dependent live content. Hashed tombstones block replay after restart, including across full and gradual migration when the source identity matches. Legacy stores and existing external copies remain under your own retention controls.</p></article>
           <article class="feature-item"><h3>Measure benefit and harm</h3><p>Compare no memory, recent history, lexical memory and adaptive context under one reader and budget policy. Track answer and action correctness, grounding, stale actions and negative transfer, keeping failed attempts in the denominator.</p><a class="text-link" href="../docs/#evaluation">Inspect the evaluation protocol</a></article>
-          <article class="feature-item"><h3>The existing vector backend</h3><p>The original Qdrant-backed API remains available for vector and hybrid recall, with optional Redis and graph integrations. It is a separate backend from the local SQLite engine; no automatic synchronization between the two is implied.</p><a class="text-link" href="https://github.com/28naem-del/mnemosyne/blob/codex/mnemosyne-2-local-learning/docs/MIGRATION-v2.md">Read the existing-user guide</a></article>
+          <article class="feature-item"><h3>Mnemosyne Vector Engine</h3><p>Keep vector and hybrid recall with improved relevance scoring, broader startup indexing and scoped cache revalidation. The Mnemosyne Vector Engine remains separate from the local engine, with explicit migration when you choose to move records.</p><a class="text-link" href="/docs/reference/MIGRATION-v2.html">Read the existing-user guide</a></article>
         </div>
       </section>
+      <aside class="comparison-note legacy-architecture" aria-labelledby="legacy-architecture-title"><span id="l1" class="anchor-alias" aria-hidden="true"></span><span id="l2" class="anchor-alias" aria-hidden="true"></span><span id="l3" class="anchor-alias" aria-hidden="true"></span><span id="l4" class="anchor-alias" aria-hidden="true"></span><span id="l5" class="anchor-alias" aria-hidden="true"></span><h2 id="legacy-architecture-title">Already using the Mnemosyne Vector Engine?</h2><p>Older feature links point to the Mnemosyne Vector Engine. It remains available alongside the local engine, with upgraded retrieval and explicit controls for maintenance and erasure. The two backends are separate and their data is not automatically synchronized.</p><p><a href="../docs/#existing-qdrant">Read the existing-user guidance</a> or <a href="../#architecture">explore the current memory loop</a>.</p></aside>
       <aside class="comparison-note" aria-labelledby="scope-title">
         <h2 id="scope-title">Know what you are building on.</h2>
         <p>These capabilities are implemented in the <strong>2.0.0-rc.8 source candidate</strong>. Your application supplies trusted scope, selected source checks and model callbacks. Provider tools do not transfer consumer account memories; export profiles do not recreate every upstream feature.</p>
         <p>Gradual adoption measures the queries seen so far and continues to check the old backend. Recovery files are plaintext, erasure cannot reach existing backups, and production identity, remote TLS and managed synchronization remain application work. The <a href="../docs/#boundaries">documentation</a> makes those boundaries explicit.</p>
       </aside>
-      <section class="final-cta"><div><h2>Start with one agent.<br>Keep the evidence.</h2><p>Run the local examples, inspect the behavior, then connect your own workflow.</p></div><a class="button" href="../docs/">Build from source</a></section>
+      <section class="final-cta"><div><h2>Start with one agent.<br>Keep the evidence.</h2><p>Preview the guides and recorded examples. Source publication for the next release is pending.</p></div><a class="button" href="../docs/">Explore the next release</a></section>
     </div>
   </main>
-  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../compare/">Compare systems</a></div></footer>
+  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../compare/">The Mnemosyne approach</a></div><div class="company-footer"><a href="../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer>
 </body>
 </html>

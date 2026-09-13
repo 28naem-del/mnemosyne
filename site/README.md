@@ -42,6 +42,16 @@ The dark cinematic identity is in `cinematic.css`, layered over the shared struc
 
 ## Publication order
 
-Publish the reviewed source branch before the website so the clone instructions and linked API guides resolve to this candidate. Deploy the complete `site/` directory, including its JSON evidence and image assets, to the existing website host. Source publication, a GitHub release/npm publication, and a website deployment are separate actions; updating this static directory triggers none of them by itself.
+The website may be deployed as an rc.8 preview while the matching public source and package release remain pending. Deploy the complete `site/` directory, including its JSON evidence, locally rendered reference guides and image assets, to the existing website host. Keep the preview status visible and qualify setup and reproduction examples until the matching source release is published.
 
-Before publishing, confirm the source branch links exist and coordinate the source-preview status with the actual package release. This work does not deploy to mnemosy.ai.
+Website deployment is authorized. Publishing the GitHub upgrade remains pending separate user approval; a GitHub release and npm publication are separate actions too. Before website deployment, verify local reference links and public earlier-version links, and retain the rc.8 preview status. Updating this static directory triggers none of these publications by itself.
+
+## Public preview and existing URLs
+
+The website currently previews rc.8 while the GitHub source upgrade remains pending separate approval. Setup examples and locally rendered reference guides carry that status. The public page offers early-access enquiries instead of implying that the existing public branch already contains rc.8. Update this status and restore source quickstarts when the matching source release is published.
+
+`docs.html`, `features.html` and `compare.html` are compatibility pages. `legacy-route.js` redirects only those fixed same-origin paths and preserves their query strings and fragments. The new directory routes work directly with a basic static file server. Old feature-layer bookmarks land on an explicit Vector Engine note; old API/configuration/deployment bookmarks land on existing-user guidance.
+
+Reference HTML is rendered from the specifically linked Markdown guides with `python3 scripts/build-site-reference.py` (requires Python-Markdown at build time). Unavailable source-file links become descriptive text until public source release. No memory-engine implementation files, user memory or service credentials are deployed with the site. The reference guides contain code examples; the website includes its client-side presentation code.
+
+Public product names describe Mnemosyne's own layers and enhancements. Technical setup references and required third-party licenses retain accurate underlying dependency names. Company, Delaware status, self-funded status and contact details were supplied by the project owner.

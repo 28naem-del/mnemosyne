@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Deploying Mnemosyne 2 — Mnemosyne</title><meta name="description" content="Technical preview documentation for the next Mnemosyne source release."><meta name="theme-color" content="#070b12"><link rel="canonical" href="https://mnemosy.ai/docs/reference/deployment.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>Source publication pending.</strong> This guide describes the next release. Code examples require that source revision; the public repository currently contains an earlier version. <a href="../#build">Release access and status</a>.</aside><article class="article"><h1 id="deploying-mnemosyne-2">Deploying Mnemosyne 2</h1>
+<p>Mnemosyne 2 has two storage paths. The local engine and its MCP server use a SQLite file and lexical retrieval by default. The existing <code>createMnemosyne()</code> API uses Qdrant and an embedding endpoint. The local MCP server does not connect to Qdrant, Redis, FalkorDB, or MongoDB. It makes no model-provider calls by default; an explicit <code>--provider-config</code> enables hybrid queries that send query text to the configured embedding endpoint. See <a href="/docs/reference/RUNTIME.html#hybrid-retrieval">semantic indexing and hybrid recall</a> for provider setup and data flow.</p>
+<p>This guide describes the source build in this repository. A release candidate in source does not imply that its version is available on npm.</p>
+<h2 id="build-and-run-locally">Build and run locally</h2>
+<p>Use Node.js <strong>22.16.0 or newer</strong>; CI checks the minimum version and Node 24. Node's built-in SQLite may emit an experimental warning on stderr on some versions.</p>
+<pre><code class="language-bash">npm ci --ignore-scripts
+npm run check
+node dist/cli/index.js demo
+</code></pre>
+<p>The demo uses an isolated temporary database and checks handoffs, privacy, correction propagation, evidence, and forgetting. It does not call an LLM or measure agent intelligence.</p>
+<p>Start an MCP server with an explicit persistent path and identity:</p>
+<pre><code class="language-bash">node dist/cli/index.js mcp \
+  --db /absolute/path/to/memory.sqlite \
+  --workspace my-project \
+  --agent coding-agent
+</code></pre>
+<p>An MCP client launches this command and communicates over stdin/stdout. There is no HTTP port, health endpoint, or background service to install. Use an absolute path to a supported Node executable if the client has a different <code>PATH</code> from your terminal.</p>
+<p>Example client configuration; replace both absolute paths:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;mnemosyne&quot;: {
+      &quot;command&quot;: &quot;/absolute/path/to/node&quot;,
+      &quot;args&quot;: [
+        &quot;/absolute/path/to/mnemosyne/dist/cli/index.js&quot;,
+        &quot;mcp&quot;,
+        &quot;--db&quot;, &quot;/absolute/path/to/memory.sqlite&quot;,
+        &quot;--workspace&quot;, &quot;my-project&quot;,
+        &quot;--agent&quot;, &quot;coding-agent&quot;
+      ]
+    }
+  }
+}
+</code></pre>
+<p>Add <code>--read-only</code> to expose retrieval and inspection tools without write tools. Forgetting is not exposed unless the controller adds <code>--allow-destructive</code>. These flags control tool availability, not filesystem permissions; the SQLite directory must still be writable.</p>
+<h2 id="scope-and-persistence">Scope and persistence</h2>
+<p>Use the same database path and workspace ID for agents that should share explicitly shared memories. Give each agent its own stable agent ID. Memories default to private; sharing is an explicit choice. The launching application chooses these identities, and should not take them from untrusted model arguments.</p>
+<p>Workspace and agent IDs are selectors enforced by the memory API, <strong>not authentication or encryption</strong>. Anyone able to open the underlying file directly has access to its contents. Use separate operating-system accounts or files for mutually untrusted applications, and host-managed encrypted storage when required.</p>
+<p>Keep the SQLite file on a local persistent filesystem. Its containing directory must also permit the process to create SQLite <code>-wal</code> and <code>-shm</code> files. The engine uses transactions, WAL, and a bounded busy timeout; concurrent writes can still require application-level handling of an exhausted timeout. Network filesystems and multi-host SQLite access are not a supported deployment model.</p>
+<h2 id="container">Container</h2>
+<p>Build a local image first:</p>
+<pre><code class="language-bash">docker build --target production -t mnemosyne:local .
+</code></pre>
+<p>The image runs Node 24 as the unprivileged <code>node</code> user. <code>/data</code> is the writable memory directory. The application code and dependencies remain owned by root. No port is exposed.</p>
+<pre><code class="language-bash">docker run --rm -i --network none \
+  --mount type=volume,src=mnemosyne-local,dst=/data \
+  mnemosyne:local mcp \
+  --db /data/memory.sqlite \
+  --workspace my-project \
+  --agent coding-agent
+</code></pre>
+<p>Use <code>-i</code> without <code>-t</code>: a terminal must not alter the MCP protocol stream. A named volume survives removal of the container. A host bind mount must be writable by the container's <code>node</code> user (UID 1000); do not make private memory directories world-writable to solve a permission error.</p>
+<p>The image entrypoint is the CLI. Arguments after the image name replace its default <code>mcp</code> arguments, so include the command and all scope flags when overriding defaults.</p>
+<p>The included Compose file offers the same local MCP service:</p>
+<pre><code class="language-bash">docker compose build mnemosyne
+MNEMOSYNE_WORKSPACE=my-project MNEMOSYNE_AGENT=coding-agent \
+  docker compose run --rm -T --no-deps mnemosyne
+</code></pre>
+<p><code>MNEMOSYNE_WORKSPACE</code> and <code>MNEMOSYNE_AGENT</code> are <strong>Compose interpolation variables</strong> for command-line flags. They are not automatically read by the library or CLI. Run the Compose command from an MCP client that owns its standard streams; <code>docker compose up -d</code> does not establish an MCP client connection. The service has no network access and no automatic restart loop when stdin closes.</p>
+<h2 id="existing-qdrant-applications">Existing Qdrant applications</h2>
+<p>Existing Qdrant collections are not imported, renamed, or deleted by the local engine. Keep using <code>createMnemosyne()</code> for the vector-backed API and select collection names explicitly when needed. Do not repoint a production application to a new database merely to try the local demo.</p>
+<p>The Compose services <code>qdrant</code>, <code>redis</code>, <code>falkordb</code>, and <code>mongo</code> are under the optional <code>legacy</code> profile. Their existing named-volume keys remain <code>qdrant-data</code>, <code>redis-data</code>, <code>falkordb-data</code>, and <code>mongo-data</code>. Docker Compose prefixes volume names with its project name, so retain your existing project name and volume mapping when maintaining an existing installation. Never use <code>docker compose down --volumes</code> on memory data you intend to keep.</p>
+<p>For a new isolated development deployment, starting only Qdrant is enough for the database side of the vector API:</p>
+<pre><code class="language-bash">docker compose --profile legacy up -d qdrant
+</code></pre>
+<p>An embedding endpoint is also required. Optional Redis and FalkorDB services must be configured by the application; starting their containers does not activate library features. The MongoDB service is retained for existing companion applications and is not used by the local MCP server or automatically connected by <code>createMnemosyne()</code>.</p>
+<p>Example application configuration:</p>
+<pre><code class="language-typescript">import { createMnemosyne } from 'mnemosy-ai';
+
+const memory = await createMnemosyne({
+  vectorDbUrl: 'http://127.0.0.1:6333',
+  embeddingUrl: 'http://127.0.0.1:11434/v1/embeddings',
+  embeddingModel: 'nomic-embed-text',
+  agentId: 'coding-agent',
+  requestTimeoutMs: 15_000,
+  enableGraph: false,
+  enableBroadcast: false,
+});
+</code></pre>
+<p>The embedding model must actually be available from that endpoint. <code>embeddingDimensions</code> can assert the expected output dimension; an existing Qdrant collection must match it. For authenticated services, the application passes <code>qdrantApiKey</code> and <code>embeddingApiKey</code>. Optional feature fields are <code>redisUrl</code> and <code>graphUrl</code>; the old <code>cacheUrl</code> and <code>graphDbUrl</code> examples were incorrect. There is no automatic environment-to-configuration mapping.</p>
+<p>The provided optional service images and settings are development defaults. Pin tested image versions and configure service authentication, backups, and resource limits for your own deployment. The Compose ports bind to loopback; the memory package does not manage service credentials or fleet operations.</p>
+<h2 id="export-recovery-and-forgetting">Export, recovery, and forgetting</h2>
+<p>A CLI snapshot is an owner-scoped portable export, not a whole-database backup:</p>
+<pre><code class="language-bash">node dist/cli/index.js export \
+  --db /absolute/path/to/memory.sqlite \
+  --workspace my-project --agent coding-agent \
+  --out /absolute/path/to/new-snapshot.json
+
+node dist/cli/index.js import \
+  --db /absolute/path/to/restored.sqlite \
+  --workspace my-project --agent coding-agent \
+  --file /absolute/path/to/new-snapshot.json
+</code></pre>
+<p>Exports refuse to overwrite existing files. Imports validate the complete snapshot before committing and require the same workspace and agent IDs. Snapshots preserve owner records, outcomes, and idempotency mappings; records whose provenance depends on another owner are omitted to keep the snapshot self-contained. Check the snapshot's <code>omitted</code> count before relying on it for recovery. Export and import are bounded to 32 MiB and 100,000 records per snapshot collection.</p>
+<p>For a complete database backup, stop every process using that database cleanly and back up its containing directory, or use a SQLite-aware backup mechanism. Do not copy only the main database file from a live WAL database. Keep snapshots and backups outside Git and apply the same access restrictions as the original memory file.</p>
+<p>Forgetting purges content from the live local memory store and its searchable/derived state. It cannot erase prior exports, filesystem snapshots, external logs, or underlying storage-controller copies. Manage those copies separately. The legacy vector API has different storage semantics; consult its API documentation before operating on existing data.</p>
+<h2 id="release-checks">Release checks</h2>
+<p>CI runs typechecking, a build, tests, a production dependency audit, and an installation smoke test of the packed artifact on Node 22.16.0 and Node 24. CI and publishing use the same artifact verifier. It imports every declared package export, checks all declared JavaScript and type files, executes both installed CLI demonstrations, checks package/CLI/MCP version agreement, and verifies the tarball integrity and installation receipt.</p>
+<p>The publication workflow runs only on a published GitHub release and uses the existing <code>npm-publish</code> environment. It rejects package-name or release-tag mismatches and requires GitHub's prerelease status to agree with the package version. Prereleases go to the npm <code>next</code> tag; stable versions go to <code>latest</code>. It checks and installs the tarball before publishing that exact artifact with provenance. Repository changes alone do not publish a package.</p></article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer></body></html>

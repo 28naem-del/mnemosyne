@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect an existing agent — Mnemosyne</title><meta name="description" content="Technical preview documentation for the next Mnemosyne source release."><meta name="theme-color" content="#070b12"><link rel="canonical" href="https://mnemosy.ai/docs/reference/AGENT.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>Source publication pending.</strong> This guide describes the next release. Code examples require that source revision; the public repository currently contains an earlier version. <a href="../#build">Release access and status</a>.</aside><article class="article"><h1 id="connect-an-existing-agent">Connect an existing agent</h1>
+<p><code>mnemosy-ai/agent</code> joins the local memory lifecycle to a host-owned agent loop. It recalls current context, captures supplied visible messages exactly, schedules durable observation jobs, and checks memory dependencies immediately before a host action. Construction starts no timers, reads no host history, installs no hooks, and calls no provider.</p>
+<h2 id="one-host-turn">One host turn</h2>
+<pre><code class="language-ts">import { createLocalMemory } from 'mnemosy-ai/local';
+import { MemoryRuntime } from 'mnemosy-ai/runtime';
+import { MemoryAgent } from 'mnemosy-ai/agent';
+
+const memory = createLocalMemory({
+  path: './memory.sqlite', workspaceId: 'atlas', agentId: 'assistant',
+});
+const agent = new MemoryAgent(new MemoryRuntime(memory), {
+  captureTrust: 'observed',
+});
+
+try {
+  const result = await agent.runTurn({
+    sessionId: 'conversation-123', turnId: 'turn-456',
+    input: 'What does our Atlas release require?',
+    query: 'Atlas release requirements', maxTokens: 4096,
+  }, async ({ input, context, signal }) =&gt; {
+    // Call your existing, explicitly authorized model here.
+    // Supply context.text as reference data, not system instructions.
+    return yourHost.respond({ input, memory: context.text, signal });
+  });
+  console.log(result.response);
+} finally {
+  await agent.close();
+  memory.close();
+}
+</code></pre>
+<p><code>runTurn</code> invokes the supplied responder at most once for a retained <code>(workspace, agent, sessionId, turnId)</code> identity. It never retries the responder. Use a new turn ID for genuinely new user input. A durable reservation is written immediately before dispatch. It contains identity/input hashes and a nonce, not raw conversation text. A replay, ambiguous crash, or previously failed attempt rejects with <code>AgentOperationError.code === 'already-attempted'</code>. A crash between reservation and dispatch can therefore require host reconciliation. This is not an external exactly-once guarantee.</p>
+<p>Successful visible input and response are captured together, preserving whitespace and UTF-8 text. Each eligible message receives its own durable observation job in the same transaction, so appending a replayed transcript does not schedule duplicate work. Source identity tombstones block forgotten message replay. The turn reservation remains after source forgetting to prevent the host callback running again; it contains no raw source bytes.</p>
+<p>If the host returned a response but capture failed, <code>AgentOperationError.code</code> is <code>capture-failed</code> and its in-memory <code>response</code> property lets the host reconcile the visible result. The result and raw exception are not persisted. Do not blindly retry external work. Timeouts and cancellation signal the host and ignore late results; the library cannot undo an action a callback already performed.</p>
+<p>The default capture trust is <code>untrusted</code>, which stays out of advisory recall and observation jobs. Set <code>captureTrust: 'observed'</code> only when your host witnessed the supplied messages. Observed content remains a source assertion, not independently verified truth. Sharing defaults to private; an explicit <code>visibility: 'workspace'</code> exposes the source to other agents in the same workspace. Generated observations remain private unless deliberately shared by another controller operation.</p>
+<h2 id="gradual-migration-beside-an-existing-memory-system">Gradual migration beside an existing memory system</h2>
+<p>Pass <code>contextProvider: bridge.contextProvider</code> to use the <a href="/docs/reference/BRIDGE.html">MemoryBridge</a> inside the existing agent loop. Full export migration remains a separate option. The bridge reads the explicitly supplied legacy adapter and stages source records, so its provider declares <code>requiresCapture: true</code>; read-only or capture-disabled agents reject it before calling the adapter. Recall-disabled agents return disabled context without invoking it.</p>
+<p>A custom <code>AgentContextProvider</code> has an asynchronous <code>build</code> and a <strong>synchronous</strong> <code>validate(context)</code> that throws when its packet or supporting source state is no longer valid. The agent invokes validation after construction and again immediately before responder dispatch. The rendered context fields are bound against mutation. Asynchronous validation is rejected; it cannot authorize dispatch while still pending. Provider methods are bound at construction, and <code>contextBuilder</code> and <code>contextProvider</code> are mutually exclusive.</p>
+<p>The provider remains trusted host code and must bind all claims to complete source evidence. Use the supplied bridge provider to retain its additional origin, lease and freshness checks. A final validation checks locally recorded evidence; it does not make an external legacy database and host action one distributed transaction.</p>
+<h2 id="existing-lifecycle-and-event-streams">Existing lifecycle and event streams</h2>
+<p>For hosts that already control turn boundaries, call <code>beforeTurn({query,maxTokens})</code>, then <code>afterTurn({sessionId,messages})</code>. A message contains a stable <code>id</code>, visible <code>role</code> and exact <code>text</code>. These methods allow you to keep the host's own retry, streaming, approval and error semantics.</p>
+<p><code>beforeTurn</code> uses <a href="/docs/reference/CONTEXT.html">adaptive context</a>: source-backed representations, budget accounting, current provenance, and freshness throughout the dependency chain. Context construction makes no provider call. It checks the result again after asynchronous construction. The optional <code>contextBuilder</code> is trusted host code: it must report every rendered claim's supporting <code>memoryIds</code> and honest token accounting. Pass a custom adaptive-context builder when you need your model's actual tokenizer; the default uses a conservative UTF-8 byte estimate, not a provider tokenizer. <code>runTurn</code> revalidates its default context again immediately before responder dispatch.</p>
+<p><code>afterTranscript({adapter,sessionId,jsonl})</code> accepts the existing generic/Claude/Codex supplied transcript formats. <code>afterEvents({adapter,sessionId,events})</code> additionally accepts these SDK event envelopes:</p>
+<ul>
+<li><strong>Codex:</strong> completed <code>agent_message</code> items from <code>item.completed</code>. Partial updates, reasoning, tools, and command output are ignored. An included <code>thread.started</code> must match the explicitly selected session. The SDK item event itself carries no thread identity: the host must route a stream to the correct instance/session. User input is captured separately through <code>afterTurn</code> or <code>runTurn</code>.</li>
+<li><strong>Claude:</strong> visible user/assistant SDK messages with stable <code>uuid</code> and a matching <code>session_id</code>. Text content blocks concatenate verbatim. Thinking/tool/image blocks, synthetic messages, tool-result envelopes, errors, subagent messages, partial events and duplicate result summaries are excluded. Supply stable IDs for user messages that lack an SDK UUID; no random identity is invented.</li>
+</ul>
+<p>SDK events use a distinct <code>sdk:</code> session namespace. Do not mix transcript and SDK ingestion for the same conversation and expect cross-format deduplication. Batch adapters handle at most 256 events/messages, 64 KiB per visible message and 1 MiB of captured text. A supplied turn can contain at most 64 KiB per input/response. Session/message identifiers follow the runtime's bounded identifier contract.</p>
+<p>These adapters were checked against the <a href="https://github.com/openai/codex/blob/main/sdk/typescript/src/events.ts">Codex TypeScript event definitions</a>, <a href="https://github.com/openai/codex/blob/main/sdk/typescript/src/items.ts">Codex item definitions</a>, and <a href="https://code.claude.com/docs/en/agent-sdk/typescript">Claude Agent SDK reference</a> on September 13, 2026. They consume caller-supplied events; they are not installed Codex/Claude hooks and have not been verified against a live authenticated model session.</p>
+<h2 id="bounded-learning-while-the-host-runs">Bounded learning while the host runs</h2>
+<p>With no proposer, capture and recall work locally; <code>drain()</code> reports <code>no-proposer</code>, and observation jobs remain queued. To synthesize observations, pass a deliberately chosen <code>RuntimeProposer</code> in the constructor. Provider selection, credentials and any billing remain with the host.</p>
+<pre><code class="language-ts">const agent = new MemoryAgent(runtime, {
+  captureTrust: 'observed',
+  proposer: yourAuthorizedProposer,
+  jobBudgets: { maxJobs: 4, maxCalls: 2, timeoutMs: 10000 },
+});
+const worker = agent.start({
+  intervalMs: 1000, maxCycles: 60, maxDurationMs: 60000,
+  maxCalls: 8, maxTotalInputBytes: 1024 * 1024,
+  signal: shutdown.signal,
+});
+// Continue your host work, then await worker.done or stop it explicitly.
+const report = await worker.stop();
+</code></pre>
+<p>A start has finite cycle, duration, total call and total input-byte limits. Default limits are 60 cycles, 60 seconds, 16 proposer calls and 1 MiB of input. Calls/bytes are shared across cycles, not reset each tick. Each runtime call also obeys its job, retry, input/output, timeout and lease limits. <code>jobBudgets.maxInputBytes</code> defaults to 256 KiB for a 64 KiB visible message plus its envelope. The runtime's default total batch input remains 128 KiB. Use <code>drain()</code> for one manual bounded batch.</p>
+<p>Only one drain runs per <code>MemoryAgent</code>. Repeated concurrent <code>start()</code> calls return the first handle and preserve its limits; repeated manual drains join the first operation and use its cancellation signal. Manual drain and scheduled drain cannot begin together. <code>stop()</code> cancels both types of drain; <code>close()</code> cancels/waits for work and prevents further calls, but leaves the caller-owned database open. Await close before closing the database. Idle loops stop at their bounds. Process exit removes the in-process timer; queued jobs and lease state survive in SQLite. After reopening, a new explicitly started worker can recover expired leases. Two independent clients use the existing runtime compare-and-set leases to avoid committing the same job generation twice.</p>
+<p>Raw provider or host error strings are never persisted by this layer. Cancellation depends on callback cooperation for stopping external work; late memory writes are rejected. Processing never automatically creates or trusts skills. Use the separate runtime skill trial and controller verification APIs for that decision.</p>
+<h2 id="check-evidence-immediately-before-an-action">Check evidence immediately before an action</h2>
+<pre><code class="language-ts">const planned = agent.prepareAction({
+  name: 'release', args: { project: 'Atlas', reviewers: 2 },
+  memoryIds: [policySourceId], dependenciesComplete: true,
+  requireWatched: true, lifetimeMs: 10000,
+});
+// The host obtains approvals or performs other work here.
+const result = await agent.executeAction(planned, async ({ args, signal }) =&gt; {
+  return yourAuthorizedReleaseAction(args, signal);
+});
+</code></pre>
+<p>The host asserts that <code>memoryIds</code> cover every memory dependency of the exact proposed action. The action name and bounded JSON arguments are copied, frozen and bound to a short-lived authenticated read set. <code>executeAction</code> rechecks it in the dispatch microtask and calls the host without another await in between. Correction, forgetting, failed outcomes, stale source checks, expired tickets, tampering and action replay reject before dispatch. Plans are instance-bound and single-use; creating a new agent requires preparing a new action.</p>
+<p>Freshness policies and source checks come from <code>agent.maintenance</code>; no URL or document is fetched automatically. <code>requireWatched: true</code> requires every dependency to have a current confirmation. With the default false, unwatched eligible memories are allowed, while any watched stale dependency is still rejected. This is a point-in-time gate, not a transaction over an external service. The host still owns action authorization, complete dependency selection and any downstream idempotency key.</p>
+<h2 id="restrictive-policies">Restrictive policies</h2>
+<p><code>recallEnabled: false</code> prevents context construction and learning; direct capture remains possible and does not inspect source text for processing. <code>captureEnabled: false</code> prevents capture and learning. <code>readOnly: true</code> on <code>MemoryAgent</code> also denies erasure. These policies are checked before invoking builders/proposers. <code>runTurn</code> requires capture capability because its replay reservation and after-turn capture are part of its contract; recall-only hosts can call <code>beforeTurn</code> and their own responder directly.</p>
+<p>Explicit <code>forgetSource</code> remains available when capture or recall is disabled, so restrictive collection settings do not prevent privacy erasure. It is denied in read-only mode. This wrapper controls operations performed through itself; callers that retain direct access to <code>runtime</code> or the database remain responsible for their own access policy.</p>
+<p>The offline <span title="Reference available with the corresponding source release">agent-loop example</span> exercises capture, synthesized observations, reuse, correction, stale action rejection and forgetting. Its responder/proposer are scripted fixtures, not claims of real model quality.</p></article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer></body></html>

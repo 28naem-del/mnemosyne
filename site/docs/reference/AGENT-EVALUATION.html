@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Matched agent-memory experiments — Mnemosyne</title><meta name="description" content="Technical preview documentation for the next Mnemosyne source release."><meta name="theme-color" content="#070b12"><link rel="canonical" href="https://mnemosy.ai/docs/reference/AGENT-EVALUATION.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>Source publication pending.</strong> This guide describes the next release. Code examples require that source revision; the public repository currently contains an earlier version. <a href="../#build">Release access and status</a>.</aside><article class="article"><h1 id="matched-agent-memory-experiments">Matched agent-memory experiments</h1>
+<p>The <code>mnemosy-ai/evaluation</code> module runs the same reader against isolated memory conditions. It measures answer correctness, action/abstention decisions, provenance, stale actions and harmful memory separately. This fills the evaluation plumbing gap; running the harness on synthetic fixtures does <strong>not</strong> establish superior model performance.</p>
+<h2 id="what-is-controlled">What is controlled</h2>
+<ul>
+<li>One explicit reader/model revision, the same trial seed and output allowance for every condition.</li>
+<li>Fresh memory state for each condition, episode and trial; updates and erasure arrive in the same order.</li>
+<li>Rotated condition order to reduce systematic ordering effects.</li>
+<li>The complete memory envelope, including citation keys and JSON escaping, fits the context allowance. Default units are UTF-8 <strong>bytes</strong>, not estimated model tokens. A named exact tokenizer can be supplied through the SDK.</li>
+<li>Answer labels, source labels used by the grader, categories and task identities are withheld from the reader callback.</li>
+<li>Failed, cancelled and budget-exhausted attempts remain in the success denominator. Cleanup failures make a report incomplete.</li>
+</ul>
+<p>The four shipped conditions are no memory, current facts in recency order, Mnemosyne lexical retrieval and Mnemosyne adaptive context. The recency condition is a plain-history baseline; it is not an LLM summarizer. Adaptive selection uses no extra model calls in this experiment. Supply additional <code>BenchmarkCondition</code> factories for a strong summary baseline or a particular competitor version. Those integrations and their external computation must be recorded by the experiment owner; the harness cannot authenticate a callback's model or hidden spending.</p>
+<h2 id="run-with-an-explicitly-chosen-model">Run with an explicitly chosen model</h2>
+<p>Create a local provider configuration containing <code>baseUrl</code>, <code>model</code> and <code>revision</code>. An optional <code>apiKeyEnv</code> names the one environment variable to read; no provider, credential or account is discovered automatically. HTTPS is required except for local endpoints. Requests reject redirects. Constructing an adapter makes no request.</p>
+<pre><code class="language-json">{
+  &quot;baseUrl&quot;: &quot;http://127.0.0.1:8000/v1&quot;,
+  &quot;model&quot;: &quot;your-served-model&quot;,
+  &quot;revision&quot;: &quot;your-exact-model-revision&quot;
+}
+</code></pre>
+<pre><code class="language-sh">mnemosy benchmark-agent --file held-out-tasks.json \
+  --provider-config provider.json --out results.json \
+  --json '{&quot;trials&quot;:3,&quot;maxContextUnits&quot;:8192,&quot;maxOutputTokens&quot;:512,&quot;maxReaderCalls&quot;:600,&quot;timeoutMs&quot;:600000}'
+</code></pre>
+<p>This command calls the chosen model. The output is created exclusively with private permissions before any reader request, so an existing report is never replaced. No live memory database is opened. Keep the dataset, configuration, model revision and report together. <code>includeResponses</code> defaults to false: reports retain answer hashes and scores, not source text or returned answers. Queries and memory still reach the explicitly selected provider.</p>
+<h2 id="dataset-format">Dataset format</h2>
+<pre><code class="language-json">{
+  &quot;protocol&quot;: &quot;mnemosyne-agent-benchmark-v1&quot;,
+  &quot;name&quot;: &quot;Deployment updates&quot;,
+  &quot;revision&quot;: &quot;1&quot;,
+  &quot;split&quot;: &quot;test&quot;,
+  &quot;episodes&quot;: [{
+    &quot;id&quot;: &quot;project&quot;,
+    &quot;category&quot;: &quot;updates&quot;,
+    &quot;events&quot;: [
+      {&quot;operation&quot;:&quot;remember&quot;,&quot;key&quot;:&quot;region&quot;,&quot;text&quot;:&quot;Deployment region: Oslo.&quot;},
+      {&quot;operation&quot;:&quot;correct&quot;,&quot;key&quot;:&quot;region&quot;,&quot;text&quot;:&quot;Deployment region: Bern.&quot;},
+      {&quot;operation&quot;:&quot;task&quot;,&quot;id&quot;:&quot;current&quot;,&quot;query&quot;:&quot;Deployment region?&quot;,&quot;answers&quot;:[&quot;Bern&quot;],&quot;action&quot;:&quot;act&quot;,&quot;evidenceKeys&quot;:[&quot;region&quot;],&quot;staleAnswers&quot;:[&quot;Oslo&quot;]},
+      {&quot;operation&quot;:&quot;forget&quot;,&quot;key&quot;:&quot;region&quot;},
+      {&quot;operation&quot;:&quot;task&quot;,&quot;id&quot;:&quot;erased&quot;,&quot;query&quot;:&quot;Deployment region?&quot;,&quot;answers&quot;:[&quot;unknown&quot;],&quot;action&quot;:&quot;abstain&quot;,&quot;evidenceKeys&quot;:[]}
+    ]
+  }]
+}
+</code></pre>
+<p>Use distinct immutable identities and explicit update events. Source keys cannot be silently reused after erasure. The parser bounds bytes, depth through the declared schema, event counts and planned attempts. Calling a dataset <code>test</code> does not make it held out: freeze it before tuning and keep reference labels out of the implementation workflow.</p>
+<h2 id="reading-the-result">Reading the result</h2>
+<p><code>successRate</code> requires a correct normalized exact answer and the correct act/abstain decision. <code>groundedSuccessRate</code> additionally requires valid citations that cover the labeled evidence. A no-memory reader can succeed without citations; otherwise provenance would manufacture an apparent memory advantage. <code>positiveTransferRate</code> measures success where the paired no-memory attempt failed; <code>negativeTransferRate</code> measures failure where that baseline succeeded.</p>
+<p><code>staleActionRate</code>, <code>unsupportedAnswerRate</code>, answer accuracy, action accuracy, context units and latency are separate measurements. Provider failures are reported, not guessed to be stale answers. <code>observedAnyTrialSuccessRate</code> and <code>allTrialsSuccessRate</code> describe observed repeated trials; neither is an unbiased pass@k estimate. Provider-reported token usage comes from the response envelope, never a usage field generated inside the answer.</p>
+<p>This is a text-answer/decision harness, not a browser or shell task executor. The exact-match grader does not measure arbitrary open-ended work. There is no learned judge, automatically running competitor service, billing meter or hardware-controlled latency benchmark. Callbacks must honor cancellation and clean up their own external resources; the harness bounds waiting but cannot forcibly stop arbitrary external code.</p>
+<p>The <span title="Reference available with the corresponding source release">scripted example</span> checks the experiment machinery without a network or model. Public evaluations such as <a href="https://github.com/xiaowu0162/LongMemEval">LongMemEval</a>, <a href="https://github.com/xiaowu0162/LongMemEval-V2">LongMemEval-V2</a> and <a href="https://github.com/snap-research/locomo">LoCoMo</a> have their own datasets and evaluation protocols. This harness is not an official implementation of those protocols. Mnemosyne's existing LongMemEval retrieval result remains a retrieval measurement, not an answer-quality or competitor score.</p></article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer></body></html>

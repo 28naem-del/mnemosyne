@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Share virtual memory across native tool loops — Mnemosyne</title><meta name="description" content="Technical preview documentation for the next Mnemosyne source release."><meta name="theme-color" content="#070b12"><link rel="canonical" href="https://mnemosy.ai/docs/reference/PROVIDER-TOOLS.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>Source publication pending.</strong> This guide describes the next release. Code examples require that source revision; the public repository currently contains an earlier version. <a href="../#build">Release access and status</a>.</aside><article class="article"><h1 id="share-virtual-memory-across-native-tool-loops">Share virtual memory across native tool loops</h1>
+<p>The provider adapters expose Mnemosyne's six virtual memory operations as OpenAI Responses functions and Gemini Generate Content function declarations. A fresh, explicitly generic memory namespace can also serve Claude's native memory tool. These handlers execute local commands; the host owns its model requests, conversation history and authorization.</p>
+<p>This is separate from ChatGPT or Gemini consumer memory, Vertex AI Memory Bank, OpenAI Chat Completions, and Gemini Interactions. It neither configures those products nor transfers their saved memories automatically.</p>
+<h2 id="create-one-shared-engine">Create one shared engine</h2>
+<pre><code class="language-ts">import { createLocalMemory } from 'mnemosy-ai/local';
+import { MemoryRuntime } from 'mnemosy-ai/runtime';
+import { createAnthropicMemoryAdapter, createProviderMemoryTools } from 'mnemosy-ai/adapters';
+
+const memory = createLocalMemory({
+  path: ':memory:', // Or an explicit persistent SQLite path chosen by the host.
+  workspaceId: 'authorized-workspace',
+  agentId: 'authorized-agent',
+});
+const engine = createAnthropicMemoryAdapter({
+  memory,
+  runtime: new MemoryRuntime(memory),
+  namespace: 'fresh-shared-provider-notes',
+  captureAdapter: 'generic',
+});
+const tools = createProviderMemoryTools({ engine });
+</code></pre>
+<p>The existing engine retains its Anthropic class/factory names and native methods. <code>captureAdapter: 'generic'</code> is an immutable host choice that prevents OpenAI or Gemini writes from being mislabeled as Claude transcript records. All providers using this generic engine share its private notes. Namespaces isolate virtual file bindings, not privacy principals: the protected <code>_sources</code> mount can inspect owned captured sources across namespaces in the same workspace and agent scope. Use distinct authorized scopes when source privacy must be separate. Existing default Claude namespaces retain their original provenance; selecting the opposite mode for an existing namespace fails. Use a fresh generic namespace until an explicit migration is available.</p>
+<p>Write trust defaults to <code>untrusted</code>; explicit file views remain available. The host may select <code>writeTrust: 'observed'</code> for application-witnessed text, which does not certify the truth of that text. Policy, source corrections, stale-view guards, deletion and replay protection are the <a href="/docs/reference/ANTHROPIC-MEMORY.html">same engine contracts</a>. No transport parameter can select another owner, change trust or promote a skill.</p>
+<h2 id="openai-responses">OpenAI Responses</h2>
+<p>Supply <code>[...tools.openAIResponsesTools]</code> as the request's <code>tools</code>. Definitions are flat Responses function objects with explicit <code>strict: true</code>, closed argument objects and every property required. Nullable values represent the two optional meanings: send <code>view_range: null</code> for a normal view and <code>new_str: null</code> to delete the matched text. Omitting these fields is rejected on this transport. <a href="https://developers.openai.com/api/docs/guides/function-calling">Official function-calling guide</a>.</p>
+<p>After assembling a completed response, dispatch each selected memory function-call item:</p>
+<pre><code class="language-ts">const output = tools.handleOpenAIResponsesCall(callItem, {
+  sessionId: 'stable-session-chosen-by-the-host',
+  signal: abortController.signal,
+});
+// null means an unrelated tool name: route it through your other tool handlers.
+// Otherwise append `output` as a function_call_output in your next request.
+</code></pre>
+<p>The wrapper echoes <code>call_id</code>, which differs from the output item's <code>id</code> and the response's <code>id</code>. It accepts complete direct calls with <code>status: 'completed'</code>; streaming, incomplete, asynchronous, programmatic and namespaced variants are outside this wrapper's contract. This status requirement is deliberately stricter than the SDK's optional input field. <a href="https://github.com/openai/openai-node/blob/c037ba724235cd58943e95d5b3b98ff76235e83c/src/resources/responses/responses.ts">Pinned official Responses types, SDK 7.13.0</a>.</p>
+<p>For manually managed history, preserve every original response output item, including reasoning items, before appending tool outputs. Alternatively the host may use the actual response ID as <code>previous_response_id</code> with new outputs. The wrapper does not choose between those modes or configure storage/retention. <code>call_id</code> is not a conversation continuation ID. <a href="https://developers.openai.com/api/docs/guides/conversation-state">Conversation-state guide</a>.</p>
+<p>Prefer <code>parallel_tool_calls: false</code> for mutable memory. If several calls arrive, dispatch them serially in order and supply a result for each before continuing the model. Separate operations are separate transactions; a later failure does not undo an earlier success.</p>
+<h2 id="gemini-generate-content">Gemini Generate Content</h2>
+<p>Supply <code>[...tools.geminiGenerateContentTools]</code> as <code>tools</code> for the Gemini Developer API Generate Content request. This module targets the <code>v1beta</code> Generate Content contract, which current Google navigation labels Legacy; it does not claim Interactions compatibility. The declarations use the documented OpenAPI-style <code>parameters</code> schema with uppercase types. They contain neither OpenAI's <code>strict</code> field nor JSON Schema union types. <a href="https://ai.google.dev/gemini-api/docs/generate-content/function-calling?hl=en">Official Generate Content function calling</a>.</p>
+<p>Select one complete candidate, retain its complete model <code>content</code>, and dispatch its function-call parts:</p>
+<pre><code class="language-ts">const part = tools.handleGeminiFunctionCall(functionCall, {
+  sessionId: 'stable-session-chosen-by-the-host',
+  // Required only when the provider omitted functionCall.id:
+  operationId: 'persisted-generation-key:candidate-0:part-2',
+});
+// null means an unrelated tool name.
+// Append collected functionResponse parts in one new role:'user' Content,
+// after the unchanged original model Content.
+</code></pre>
+<p>Arguments are objects. <code>view_range</code> and <code>new_str</code> may be omitted or null on this transport. A present <code>functionCall.id</code> is copied to <code>functionResponse.id</code>; a generation's <code>responseId</code> cannot replace it. When a call lacks an ID, the host must persist a stable operation identity for that exact generation, selected candidate and part. Do not generate a new identity for a retry or use one generation ID for multiple calls. <a href="https://ai.google.dev/api/generate-content">Gemini REST reference</a>.</p>
+<p>Preserve all original model parts, their order and every opaque <code>thoughtSignature</code>. Do not rebuild history from the convenience function-call list or copy only the call parts. Retain earlier contents in the same multistep turn as well. The wrapper handles individual calls and cannot enforce candidate selection or history preservation for the host. <a href="https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures">Thought-signature requirements</a>.</p>
+<h2 id="results-identities-and-limits">Results, identities and limits</h2>
+<p>The six names are <code>memory_view</code>, <code>memory_create</code>, <code>memory_str_replace</code>, <code>memory_insert</code>, <code>memory_delete</code> and <code>memory_rename</code>. <code>tools.handlesName(name)</code> tests exact membership. Descriptions and local validation follow the virtual <code>/memories</code> engine; function arguments are closed and never treated as executable instructions.</p>
+<p>Successful payloads are <code>{ ok: true, result: string }</code>; failed commands return <code>{ ok: false, error: { code, message } }</code>. Responses encodes that payload as JSON in <code>output</code>; Gemini places the object in <code>functionResponse.response</code>. Malformed envelopes without usable correlation throw <code>ProviderMemoryToolError</code>. Unknown names return null without dispatching memory operations. Unexpected failures are sanitized.</p>
+<p>Provider IDs are namespaced before becoming engine receipt identities, so the same raw OpenAI and Gemini ID cannot collide. Mutation retries recheck live permissions and return a content-free acknowledgement without applying again. Read results are fresh; the wrapper never caches source text for replay. The neutral engine also exposes <code>execute(input, { sessionId, operationId, signal })</code> for trusted host integrations; input uses the native six-command shape and failures throw a bounded engine error.</p>
+<p>The host must bound calls per step, total steps and time. It must finish assembling streaming output, select one candidate, dispatch every selected call and route unrelated tools. These are host responsibilities, not protections supplied by a single-call handler. The adapters do not create model clients, invoke an autonomous loop, perform network requests, configure applications or access host memory folders.</p>
+<h2 id="run-the-local-protocol-example">Run the local protocol example</h2>
+<pre><code class="language-sh">node --experimental-strip-types examples/provider-memory-tools.ts
+</code></pre>
+<p>The <span title="Reference available with the corresponding source release">example</span> uses synthetic complete provider envelopes with real isolated SQLite: OpenAI creates a note, Gemini views and edits it, and Claude's native interface reads the same revision. It preserves original Responses reasoning items and Gemini model contents/signature sentinels, with a 32-call per-step bound. It also preserves correlated failures alongside successful results and avoids generating an empty tool-result turn for a final text-only reply. Those sentinels are test data, not valid provider signatures. Passing this example proves local protocol handling; a live model/API session remains a separate evaluation.</p></article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer></body></html>

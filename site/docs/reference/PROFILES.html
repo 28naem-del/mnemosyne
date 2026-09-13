@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Typed profiles with source evidence — Mnemosyne</title><meta name="description" content="Technical preview documentation for the next Mnemosyne source release."><meta name="theme-color" content="#070b12"><link rel="canonical" href="https://mnemosy.ai/docs/reference/PROFILES.html"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>Source publication pending.</strong> This guide describes the next release. Code examples require that source revision; the public repository currently contains an earlier version. <a href="../#build">Release access and status</a>.</aside><article class="article"><h1 id="typed-profiles-with-source-evidence">Typed profiles with source evidence</h1>
+<p><code>MemoryProfiles</code> keeps a caller-defined profile as a private, source-backed projection. Each field is explicitly <code>known</code>, <code>unknown</code>, or <code>conflict</code>. A known value carries supporting source IDs; conflicting candidates each carry their own supporting IDs. The library does not select a winner or infer missing fields automatically.</p>
+<pre><code class="language-ts">import { z } from 'zod';
+import { createLocalMemory } from 'mnemosy-ai/local';
+import { MemoryRuntime } from 'mnemosy-ai/runtime';
+import { MemoryProfiles } from 'mnemosy-ai/profiles';
+
+const memory = createLocalMemory({
+  path: './memory.sqlite', workspaceId: 'my-workspace', agentId: 'my-agent',
+});
+const runtime = new MemoryRuntime(memory);
+const profiles = new MemoryProfiles(runtime);
+const preferences = profiles.define({
+  key: 'user-preferences', version: '1',
+  fields: {
+    language: z.enum(['en', 'de', 'ar']),
+    theme: z.enum(['light', 'dark']),
+    city: z.string().max(120),
+  },
+});
+
+// Reading never calls a proposer. Initially every field is unknown.
+const current = profiles.get(preferences);
+if (current.status === 'ready' &amp;&amp; current.fields.language.status === 'known') {
+  const language: 'en' | 'de' | 'ar' = current.fields.language.value;
+}
+memory.close();
+</code></pre>
+<h2 id="explicit-refresh">Explicit refresh</h2>
+<p>Call <code>profiles.refresh({ definition, sourceIds, proposerId, proposer, ...budgets })</code> with scoped source IDs and a host-owned callback. The callback receives original supplied source records, per-field JSON Schemas, instructions, byte limits, and an abort signal. It returns <code>{ fields: { ... } }</code>, either as an object or JSON text:</p>
+<pre><code class="language-ts">const result = await profiles.refresh({
+  definition: preferences,
+  sourceIds: [firstSource.id, secondSource.id],
+  proposerId: 'my-model-and-profile-prompt-v1',
+  proposer: async ({ sources, signal }) =&gt; {
+    // Host-owned extraction/model call; no provider is chosen by Mnemosyne.
+    return {
+      fields: {
+        language: { status: 'known', value: 'en', sourceIds: [sources[0].id] },
+        theme: { status: 'unknown' },
+        city: {
+          status: 'conflict',
+          candidates: [
+            { value: 'Dubai', sourceIds: [sources[0].id] },
+            { value: 'Berlin', sourceIds: [sources[1].id] },
+          ],
+        },
+      },
+    };
+  },
+});
+</code></pre>
+<p>Those example values illustrate the response format. A real proposer must derive its claims from the provided evidence. <code>known</code> describes a schema-valid claim with attribution, not factual certification. A citation alone does not prove that a source entails a value. Profiles remain advisory and <code>observed</code>, never automatically <code>verified</code>; source trust labels are controller assertions, not authentication.</p>
+<p>Every defined field must appear exactly once. Unknown fields contain only <code>status</code>. Known fields need a schema-valid JSON value and at least one supplied source ID. Conflicts need two to eight distinct values, each with supporting supplied IDs. Duplicate citations, foreign IDs, extra properties, missing fields, invalid values, and silent Zod stripping/coercion are rejected before persistence. All supplied inputs become dependencies, including inputs that no individual field cites. Transitive dependencies retain their existing exact source lineage.</p>
+<p>Refresh from original evidence or intermediates belonging to other profile definitions. A profile cannot depend directly or transitively on an earlier revision of the same definition. Such a refresh is rejected before the proposer runs, preserving the current profile and preventing an ambiguous pair of active revisions.</p>
+<p>An unchanged refresh reuses its durable projection with <code>modelCalls: 0</code> when reuse is found before dispatch. A fresh generation invokes the callback once, with no automatic retry. <code>inputBytes</code> measures the complete serializable request delivered to that callback, including the field schemas and instructions. Identical concurrent generations can converge on a single committed record; a callback already dispatched still reports <code>modelCalls: 1</code> and its input bytes even if the returned status is <code>reused</code>. The host remains responsible for any additional calls or spending inside its callback.</p>
+<h2 id="freshness-correction-and-forgetting">Freshness, correction and forgetting</h2>
+<p>Profiles use <code>AdaptiveContext.refresh({ representation: 'structured' })</code> and <code>inspectProjection</code>, sharing the existing full dependency, source-check, outcome and projection integrity checks. Structured storage allows schema overhead to exceed the length of a short original fact; all byte and dependency limits still apply. The profile adapter also validates a complete read set immediately before handing sources to the host callback.</p>
+<p><code>get(definition)</code> revalidates stored schema shape and the complete source state every time. It returns:</p>
+<ul>
+<li><code>ready</code>: the unique active projection and its typed fields.</li>
+<li><code>unknown</code>: no matching stored profile; all fields are unknown.</li>
+<li><code>stale</code>: evidence, shape, or the active revision is unusable or ambiguous; all fields are unknown and no old values are returned.</li>
+<li><code>disabled</code>: runtime recall is disabled; all fields are unknown and records are not read.</li>
+</ul>
+<p>A correction, erasure, expiry, changed source check, or success/failure outcome anywhere in the supplied dependency closure invalidates the old profile. Reconfirming a source does not silently certify the old interpretation: call <code>refresh</code> explicitly. Forgotten source lineages remove dependent profiles, and captured transcript tombstones continue to block replay. No profile text is retained in an internal cache.</p>
+<p>By default, unwatched sources may be used, and existing watches must be fresh. Set <code>requireWatched: true</code> on refresh/get to require fresh watched original evidence throughout the closure. Generated intermediates derive their validity from that evidence; if they also have an explicit watch, it must be fresh too. Nothing here fetches a source or schedules a check. Use <a href="/docs/reference/MAINTENANCE.html">memory maintenance</a> for host-supplied checks, and <a href="/docs/reference/AGENT.html">host action guards</a> immediately before consequential host actions. A returned profile is a point-in-time snapshot, not a lock on future source changes.</p>
+<h2 id="definitions-scope-and-limits">Definitions, scope and limits</h2>
+<p>Recreate a definition after reopening using the same key, version and schemas. Its durable identity includes the JSON Schema fingerprint. Changing the schema shape or explicit version yields a separate profile. Increment <code>version</code> for changes to custom refinements or other validation semantics that JSON Schema cannot express. Every read still runs current validation. Definitions are instance-bound tokens; copies and tokens from another <code>MemoryProfiles</code> instance are rejected.</p>
+<p>Use synchronous, pure Zod validators for JSON values. The accepted parsed value must equal the supplied JSON, so defaults, stripping and coercion cannot change claims silently. Types that cannot produce a JSON Schema, async validation, non-JSON values, cyclic values, accessors, sparse arrays and unsafe object keys are unsupported. Schema callbacks are host-owned code; the library cannot preempt blocking JavaScript inside a schema or proposer.</p>
+<p>The fixed limits are 32 fields, 64 unique source IDs, eight candidates per conflict, 4,096 UTF-8 bytes per JSON value, six levels of nested value containers, 4,096 nodes per serialized JSON envelope, and 16 KiB of JSON Schema descriptors. Options permit <code>maxInputBytes</code> up to 1 MiB (default 64 KiB), <code>maxOutputBytes</code> up to 16 KiB (default 16 KiB), and <code>timeoutMs</code> up to 60 seconds (default 10 seconds). The output budget includes the persisted profile envelope and the context proposal wrapper, so leave space for attribution and JSON escaping. Timeouts abort the supplied signal and discard late results; stopping external work requires a cooperating host callback.</p>
+<p><code>MemoryProfiles(runtime, { maintenance?, maxScanRecords?, maxDependencyRecords? })</code> supports the existing context inventory and dependency bounds. Inventory exhaustion fails closed. Profile values remain private to the creating agent and workspace; explicit shared source records may contribute to independently generated private profiles. Both capture and recall must be enabled to refresh. With capture disabled, existing fresh profiles remain readable. There are no implicit model calls, account discovery, configuration changes, timers, network clients or managed synchronization.</p>
+<p>The executable <span title="Reference available with the corresponding source release">synthetic example</span> demonstrates typed conflict preservation, correction invalidation, and explicit refresh without a provider or network call.</p></article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer></body></html>
