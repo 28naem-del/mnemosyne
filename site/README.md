@@ -32,4 +32,12 @@ The live inspector is a separate authenticated HTTP service started with `mnemos
 
 The demo is manually stepped and never auto-plays. Native buttons support keyboard activation, inspector tabs support arrows/Home/End, focus is visible and step changes are announced politely. Reduced-motion preferences disable transitions and smooth scrolling. The site stacks down to phone width. Raw JSON and source commands remain available when JavaScript or the demo load fails.
 
+The shared launch identity is in `launch.css`; `styles.css` retains the recorded demo and documentation components. `launch.js` progressively enhances the mobile navigation and three-stage migration guide. Without JavaScript the navigation and all three guide panels remain available. The guide illustrates routing policy and never connects to a user's memory store. Its tabs support arrows, Home, End and Space. Mobile navigation supports Escape and restores focus across layout breakpoints.
+
+`assets/memory-architecture.png` is an original generated brand illustration, not a product screenshot. Its intrinsic dimensions reserve layout space; the hero loads it with high priority. No third-party fonts or remote runtime assets are loaded. All four routes include canonical and social metadata for `mnemosy.ai`, with crawl routes in `sitemap.xml` and `robots.txt`.
+
+## Publication order
+
+Publish the reviewed source branch before the website so the clone instructions and linked API guides resolve to this candidate. Deploy the complete `site/` directory, including its JSON evidence and image assets, to the existing website host. Source publication, a GitHub release/npm publication, and a website deployment are separate actions; updating this static directory triggers none of them by itself.
+
 Before publishing, confirm the source branch links exist and coordinate the source-preview status with the actual package release. This work does not deploy to mnemosy.ai.
