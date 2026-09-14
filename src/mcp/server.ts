@@ -77,7 +77,7 @@ export function createMemoryServer(memory: LocalMemory, options: MemoryServerOpt
 
   server.registerTool('memory_context', {
     description: 'Compile cited, scoped context with contradictions and abstention under a conservative byte-based token budget. Pass only packet.text as context; diagnostics are outside the budget.',
-    inputSchema: z.object({ query: queryText, maxTokens: z.number().int().min(64).max(32_768).default(4_096), taskId: shortText.optional() }).strict(),
+    inputSchema: z.object({ query: queryText, maxTokens: z.number().int().min(64).max(32_768).default(4_096), taskId: shortText.optional(), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional(), lexicalScoring: z.enum(['overlap', 'bm25']).optional() }).strict(),
     annotations: readAnnotations,
   }, (input) => asyncResult(async () => { requireRecall(); return options.hybrid ? memory.compileHybrid(input, options.hybrid) : memory.compile(input); }));
 
