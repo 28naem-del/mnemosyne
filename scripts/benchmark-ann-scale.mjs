@@ -110,20 +110,28 @@ function open(mode) {
 }
 
 if (phase === 'build') {
+  // Storing and vector-materialising are separate phases so each finishes inside
+  // a normal foreground run at a million records.
   mkdirSync(dirname(STORE), { recursive: true });
-  for (const suffix of ['', '-wal', '-shm', '-hnsw', '-hnsw.meta.json']) { try { rmSync(STORE + suffix); } catch { /* absent */ } }
-  console.log(`building ${RECORDS} records x ${DIMENSIONS}d, ${CLUSTERS} clusters -> ${STORE}`);
+  // `--offset` appends, so a large store can be built across several runs.
+  const OFFSET = Number(flag('offset', 0));
+  if (OFFSET === 0) for (const suffix of ['', '-wal', '-shm', '-hnsw', '-hnsw.meta.json']) { try { rmSync(STORE + suffix); } catch { /* absent */ } }
+  console.log(`building ${RECORDS} records x ${DIMENSIONS}d, ${CLUSTERS} clusters from offset ${OFFSET} -> ${STORE}`);
   const db = open('exact');
-  let t = performance.now();
-  for (let index = 0; index < RECORDS; index++) {
+  const t = performance.now();
+  for (let index = OFFSET; index < RECORDS; index++) {
     db.store({ text: textFor(index), source: { uri: `benchmark://ann/${index}` }, trust: 'observed', visibility: 'workspace' });
-    if (index && index % 100_000 === 0) process.stderr.write(`  stored ${index} @ ${fmt(index / ((performance.now() - t) / 1000))}/s\r`);
+    if (index && index % 100_000 === 0) process.stderr.write(`  stored ${index} @ ${fmt((index - OFFSET) / ((performance.now() - t) / 1000))}/s\r`);
   }
-  console.log(`stored  ${RECORDS} in ${fmt((performance.now() - t) / 1000)}s`);
+  console.log(`stored ${RECORDS - OFFSET} records (offset ${OFFSET}) in ${fmt((performance.now() - t) / 1000)}s`);
+  db.close();
+  console.log(`store size after records only: ${(sizeOf(STORE) / 1e9).toFixed(2)} GB`);
+} else if (phase === 'index') {
   // The read path is what writes vectors, so one recall materialises the lot.
-  t = performance.now();
+  const db = open(MODE);
+  const t = performance.now();
   db.recall({ query: textFor(0), limit: 10, maxCandidates: MAX_CANDIDATES });
-  console.log(`embedded+indexed on first recall: ${fmt((performance.now() - t) / 1000)}s`);
+  console.log(`mode=${MODE} embedded+indexed on first recall: ${fmt((performance.now() - t) / 1000)}s  index=${JSON.stringify(db.retrieval.index)}`);
   db.close();
   console.log(`store size: ${(sizeOf(STORE) / 1e9).toFixed(2)} GB`);
 } else if (phase === 'geometry') {

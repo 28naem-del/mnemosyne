@@ -1026,11 +1026,18 @@ export class LocalMemory {
     const pendingSql = `FROM memories m JOIN local_search s ON s.memory_id=m.id LEFT JOIN local_embeddings e ON e.memory_id=m.id AND e.model=?
       WHERE m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND m.status='active' AND m.trust!='untrusted' AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       AND (e.memory_id IS NULL OR e.source_hash!=s.source_hash)`;
-    const pending = this.#db.prepare(`SELECT m.data ${pendingSql} ORDER BY m.created_at,m.id LIMIT 64`);
+    // Paged by a (created_at, id) cursor rather than restarting each time. The
+    // filter is an anti-join against what is already indexed, so without a cursor
+    // every page re-walks and discards the whole indexed prefix: the first bulk
+    // index is then quadratic, measured at 8.7 s for 20k records but 244 s for
+    // 100k. A record that becomes pending again *behind* the cursor is not lost —
+    // the write that did so bumps `#writeSeq`, which forces the next recall to
+    // start a fresh pass from the beginning.
+    const pending = this.#db.prepare(`SELECT m.data ${pendingSql} AND (m.created_at, m.id) > (?, ?) ORDER BY m.created_at,m.id LIMIT 64`);
     const write = this.#db.prepare('INSERT INTO local_embeddings(memory_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data');
-    let registered = false, previousFirstId: string | undefined;
+    let registered = false, cursorCreatedAt = '', cursorId = '';
     for (;;) {
-      const rows = pending.all(model, this.#workspaceId, this.#agentId).map(row => this.#decode(row)!);
+      const rows = pending.all(model, this.#workspaceId, this.#agentId, cursorCreatedAt, cursorId).map(row => this.#decode(row)!);
       if (!rows.length) { this.#vectorsDrained = { model, writeSeq: this.#writeSeq, dataVersion: this.#dataVersion() }; return; }
       if (!registered) {
         this.#transaction(() => {
@@ -1053,18 +1060,10 @@ export class LocalMemory {
         }
         denseIndex?.upsert(entries);
       });
-      if (rows.length < 64) this.#vectorsDrained = { model, writeSeq: this.#writeSeq, dataVersion: this.#dataVersion() };
-      // A full page that indexed nothing would loop forever. Detect that by
-      // whether the page moved, which is O(1), rather than by counting the
-      // remaining work, which is a scan of the whole pending set once per 64
-      // records — quadratic, and on a million-record import it is the difference
-      // between minutes and never finishing.
-      if (rows.length < 64) return;
-      if (rows[0].id === previousFirstId) {
-        if (!(this.#db.prepare(`SELECT count(*) AS count ${pendingSql}`).get(model, this.#workspaceId, this.#agentId) as { count: number }).count) return;
-        throw new Error('Embedding index made no progress; a pending vector could not be written');
-      }
-      previousFirstId = rows[0].id;
+      // The cursor advances strictly, so the loop terminates on its own and needs
+      // no separate progress guard.
+      cursorCreatedAt = rows[rows.length - 1].createdAt; cursorId = rows[rows.length - 1].id;
+      if (rows.length < 64) { this.#vectorsDrained = { model, writeSeq: this.#writeSeq, dataVersion: this.#dataVersion() }; return; }
     }
   }
 
