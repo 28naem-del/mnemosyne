@@ -33,8 +33,31 @@ import type { DatabaseSync } from 'node:sqlite';
  * even possible for a workspace and {@link markTemporalBoundsIfNeeded} states
  * the exact predicate; until some record schedules a crossing, live-view stats
  * are cached exactly like a historical one.
+ *
+ * All of that reasoning — and {@link markTemporalBoundsIfNeeded}'s "already
+ * `<= now` at insert, so no later `asOf` can push it out" argument in
+ * particular — holds only while the reader's clock runs *forwards*. Nothing
+ * guarantees that: `#time()` does not check it and `LocalMemoryOptions.now`
+ * is a public constructor option with no monotonicity contract, so an NTP
+ * step, a sleep/resume, a VM snapshot restore or simply a caller's own clock
+ * can move `now` backwards across a warm entry. A backward step re-opens
+ * every boundary the flag declined to record precisely *because* it was
+ * already crossed, and no write happens, so neither `writeSeq` nor
+ * `dataVersion` moves and no sticky flag can fire. Hence {@link
+ * CorpusStatsEntry.computedAt}: an entry is only reusable at an instant at or
+ * after the one it was computed for. On a monotone clock that test never
+ * fires and nothing about the caching changes.
  */
-export type CorpusStatsEntry = { documents: number; totalLength: number; writeSeq: number; dataVersion: number };
+export type CorpusStatsEntry = {
+  documents: number; totalLength: number; writeSeq: number; dataVersion: number;
+  /** The instant this entry's scope was evaluated at, so a *backward* move of
+   * the clock invalidates it. For a live view this is the reader's own clock
+   * (`#temporal()` sets `asOf === knownAt === #time()`); for a historical one
+   * it is the pinned `asOf`, which {@link corpusStatsCacheKey} already puts in
+   * the key, so it never varies within a key and historical caching is
+   * untouched. */
+  computedAt: string;
+};
 export type CorpusStatsCache = Map<string, CorpusStatsEntry>;
 
 /** Bounded so a caller sweeping many distinct historical instants (a
@@ -60,6 +83,12 @@ export function corpusStats(args: {
   cacheable: boolean;
   writeSeq: number;
   dataVersion: number;
+  /** The instant to evaluate this scope at — for a live view the reader's
+   * current clock. Stored on the entry so a clock that moves *backwards*
+   * (NTP step, sleep/resume, snapshot restore, an injected `now`) misses
+   * instead of serving counts computed for a later instant; see
+   * {@link CorpusStatsEntry.computedAt}. */
+  computedAt: string;
   /** True if a row whose `data` (as stored, not yet decoded to the live
    * record) reads back as temporally visible under the caller's current
    * view. Only called for rows the query already flags as non-`active`
@@ -67,7 +96,11 @@ export function corpusStats(args: {
   isVisible: (temporalData: string) => boolean;
 }): { documents: number; totalLength: number } {
   const cached = args.cache.get(args.key);
-  if (cached && cached.writeSeq === args.writeSeq && cached.dataVersion === args.dataVersion) return cached;
+  // `computedAt` guards the one direction the write counters cannot: a clock
+  // that moves backwards re-opens boundaries that were already crossed when
+  // the entry was built, with no write to bump `writeSeq`/`dataVersion`.
+  // Forward moves stay hits, so a monotone clock is unaffected.
+  if (cached && cached.writeSeq === args.writeSeq && cached.dataVersion === args.dataVersion && args.computedAt >= cached.computedAt) return cached;
   const statement = args.db.prepare(`SELECT CASE WHEN m.status='active' THEN NULL ELSE m.data END AS temporal_data,s.token_count
     FROM memories m JOIN local_search s ON s.memory_id=m.id WHERE ${args.scope}`);
   let documents = 0, totalLength = 0;
@@ -76,7 +109,7 @@ export function corpusStats(args: {
     if (row.temporal_data !== null && !args.isVisible(row.temporal_data)) continue;
     documents++; totalLength += row.token_count;
   }
-  const result = { documents, totalLength, writeSeq: args.writeSeq, dataVersion: args.dataVersion };
+  const result = { documents, totalLength, writeSeq: args.writeSeq, dataVersion: args.dataVersion, computedAt: args.computedAt };
   if (args.cacheable) {
     if (args.cache.size >= MAX_CACHE_ENTRIES) args.cache.clear();
     args.cache.set(args.key, result);

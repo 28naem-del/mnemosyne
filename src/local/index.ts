@@ -1409,6 +1409,10 @@ export class LocalMemory {
       db: this.#db, cache: this.#bm25StatsCache, scope, parameters,
       key: corpusStatsCacheKey(input.includeUntrusted, kinds, time),
       cacheable: time.historical || !hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds),
+      // The instant this scope is evaluated at. For a live view `#temporal()`
+      // sets `asOf === knownAt === #time()`, so this is the reader's own clock
+      // read once, with no extra tick of an injected or monotonic one.
+      computedAt: time.asOf,
       writeSeq: this.#writeSeq, dataVersion: this.#dataVersion(),
       isVisible: (temporalData) => !!this.#at(this.#decode({ data: temporalData })!, time),
     });
