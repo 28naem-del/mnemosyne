@@ -1,4 +1,4 @@
-import type { MemoryEmbedder } from '../local/index.js';
+import type { MemoryEmbedder, MemoryReranker } from '../local/index.js';
 
 /** Public history and questions are separate from evaluator-only reference labels. */
 export interface EvaluationTurn {
@@ -51,6 +51,12 @@ export interface CorpusBenchmarkOptions {
    * convention. It must declare the same model identity and width as `embedder`,
    * because both sides have to land in one vector space. Defaults to `embedder`. */
   queryEmbedder?: MemoryEmbedder;
+  /** Cross-encoder applied to the hybrid condition only, after fusion. The
+   * zero-model conditions never see it, so their numbers stay comparable across runs. */
+  reranker?: MemoryReranker;
+  /** Fused candidates handed to `reranker`, 1-1000. Defaults to 50, matching the
+   * engine's default hybrid path, so the benchmark measures the shipped configuration. */
+  rerankTopN?: number;
   /** Additional named condition, keeping the existing overlap baseline unchanged. */
   includeBm25?: boolean;
   hybridLexicalScoring?: 'overlap' | 'bm25';

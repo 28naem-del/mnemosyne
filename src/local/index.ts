@@ -1289,7 +1289,7 @@ export class LocalMemory {
   /** RRF over local lexical and exact cosine candidates; optional reranking cannot invent IDs. */
   async recallHybrid(input: RecallInput, options: HybridRecallOptions): Promise<RecallResult[]> {
     this.#assertOpen();
-    v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'signal', 'timeoutMs', 'maxCandidates', 'rrfK'], 'hybrid options');
+    v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'rerankTopN', 'signal', 'timeoutMs', 'maxCandidates', 'rrfK'], 'hybrid options');
     const { model, dimensions } = this.#embeddingContract(options.embedder);
     const maxCandidates = v.limit(options.maxCandidates, 1000, 10000);
     const count = v.limit(input.limit, 10);
@@ -1316,7 +1316,7 @@ export class LocalMemory {
         candidates = ranked.flatMap(entry => {
           const current = this.get(entry.id), memory = current && this.#at(current, time);
           return memory && eligible(memory) ? [{ ...entry, memory }] : [];
-        }).slice(0, 100);
+        }).slice(0, v.limit(options.rerankTopN, 100, 1000));
         // Rehydrate immediately before dispatch, then isolate adapter mutation.
         const supplied = candidates.map(entry => JSON.parse(JSON.stringify(entry.memory)) as MemoryRecord);
         return supplied.length ? options.reranker!.rerank(input.query, supplied, { signal }) : Promise.resolve([]);

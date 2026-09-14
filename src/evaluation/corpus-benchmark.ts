@@ -115,7 +115,7 @@ function summary(rows: CorpusAttempt[]): CorpusSummary {
 
 /** No generation or judge path. Optional embeddings use only explicit caller callbacks. */
 export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBenchmarkOptions = {}): Promise<CorpusBenchmarkReport> {
-  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'includeBm25', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId'];
+  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId'];
   if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !optionKeys.includes(key))) throw new Error('Unknown corpus evaluation option.');
   if (options.includeBm25 !== undefined && typeof options.includeBm25 !== 'boolean') throw new Error('includeBm25 must be boolean.');
   if (options.hybridLexicalScoring !== undefined && !['overlap', 'bm25'].includes(options.hybridLexicalScoring)) throw new Error('Invalid hybrid lexical scoring.');
@@ -126,7 +126,10 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
     maxCorpusBytes: integer(options.maxCorpusBytes, 67_108_864, 1, 536_870_912), maxTotalBytes: integer(options.maxTotalBytes, 536_870_912, 1, 2_147_483_648),
     maxCandidates: integer(options.maxCandidates, 10000, 1, 10000), timeoutMs: integer(options.timeoutMs, 600000, 1, 3_600_000),
     maxEmbeddingCalls: integer(options.maxEmbeddingCalls, 10000, 1, 1000000), maxEmbeddingInputBytes: integer(options.maxEmbeddingInputBytes, 536_870_912, 1, 2_147_483_648),
-    accountingId: options.accountingId ?? 'utf8-bytes-v1', bm25Condition: options.includeBm25 ? 'enabled' : 'disabled', hybridLexicalScoring: options.hybridLexicalScoring ?? 'overlap' };
+    rerankTopN: integer(options.rerankTopN, 50, 1, 1000),
+    accountingId: options.accountingId ?? 'utf8-bytes-v1', bm25Condition: options.includeBm25 ? 'enabled' : 'disabled', hybridLexicalScoring: options.hybridLexicalScoring ?? 'overlap',
+    // Recorded so a report says whether the hybrid condition was reranked, and by what.
+    reranker: options.reranker ? 'enabled' : 'disabled' };
   if (options.countContext && (!options.accountingId || typeof options.countContext !== 'function')) throw new Error('Custom counter requires an accounting identity.');
   if (typeof settings.accountingId !== 'string' || !settings.accountingId.trim() || settings.accountingId.length > 256) throw new Error('Invalid accounting identity.');
   if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) throw new Error('Invalid cancellation signal.');
@@ -143,6 +146,8 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
   if (supplied && !valid(supplied)) throw new Error('Invalid explicit embedder.');
   if (options.queryEmbedder && !supplied) throw new Error('A query embedder requires a document embedder.');
   if (options.queryEmbedder && !valid(options.queryEmbedder)) throw new Error('Invalid explicit query embedder.');
+  if (options.reranker !== undefined && typeof options.reranker.rerank !== 'function') throw new Error('Invalid reranker.');
+  if (options.reranker !== undefined && !supplied) throw new Error('A reranker requires a document embedder.');
   // Both sides must land in one vector space, or a cosine between them is meaningless.
   if (options.queryEmbedder && supplied && (options.queryEmbedder.model !== supplied.model || options.queryEmbedder.dimensions !== supplied.dimensions)) throw new Error('Query and document embedders must declare the same model identity and width.');
   const meter = (target: MemoryEmbedder) => ({ model: target.model, dimensions: target.dimensions, async embed(texts: string[], operation: { signal: AbortSignal }) {
@@ -205,7 +210,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
             const retrievalStarted = performance.now();
             const hits = condition === 'no-memory' ? [] : condition === 'full-context' ? chunks : (condition === 'lexical' || condition === 'bm25'
               ? memory!.recall({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: condition === 'bm25' ? 'bm25' : 'overlap' })
-              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap' }, { embedder: queryEmbedder!, maxCandidates: settings.maxCandidates, timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
+              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap' }, { embedder: queryEmbedder!, maxCandidates: settings.maxCandidates, ...(options.reranker ? { reranker: options.reranker, rerankTopN: settings.rerankTopN } : {}), timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
             row.retrievalMs = performance.now() - retrievalStarted;
             check(); row.retrieval = score(hits, label); row.retrievedChunks = hits.length;
             const packingStarted = performance.now(); let selected: Chunk[] = [];

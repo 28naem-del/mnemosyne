@@ -375,6 +375,10 @@ export interface HybridRecallOptions {
   /** Reciprocal rank fusion constant, 1-1000. Defaults to the memory's setting. */
   rrfK?: number;
   reranker?: MemoryReranker;
+  /** Fused candidates handed to the reranker, 1-1000. Defaults to 100, which is
+   * the depth this path has always rescored. The synchronous default path uses
+   * its own `rerankTopN` (50); set this to match when comparing the two. */
+  rerankTopN?: number;
   signal?: AbortSignal;
   /** Deadline for each provider call and for the cooperative full vector scan; incomplete scans reject. */
   timeoutMs?: number;

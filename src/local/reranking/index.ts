@@ -2,3 +2,5 @@ export { BUNDLED_RERANKER_ID, BUNDLED_RERANKER_MODEL, bundledRerankerDir, bundle
 export { createBundledReranker, LocalRerankerUnavailableError, type BundledRerankerOptions } from './onnx-reranker.js';
 export { acquireSharedReranker, releaseSharedReranker, resetSharedRerankers } from './shared.js';
 export type { SyncMemoryReranker } from '../types.js';
+
+export { asMemoryReranker } from './adapter.js';

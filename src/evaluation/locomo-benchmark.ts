@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { adaptLoCoMoCorpus, runCorpusBenchmark, type CorpusCondition } from './corpus-benchmark.js';
 import { createBundledEmbedder, type SyncMemoryEmbedder } from '../local/embedding/index.js';
+import { asMemoryReranker, createBundledReranker, type SyncMemoryReranker } from '../local/reranking/index.js';
 
 /**
  * LoCoMo retrieval evaluation of the local engine.
@@ -21,10 +22,12 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: {
     file: { type: 'string' }, out: { type: 'string' }, 'top-k': { type: 'string' },
     'min-recall': { type: 'string' }, 'max-questions': { type: 'string' }, lexical: { type: 'boolean' }, help: { type: 'boolean' },
+    'no-rerank': { type: 'boolean' }, 'rerank-top-n': { type: 'string' },
   } });
   if (values.help) {
-    console.log('node dist/evaluation/locomo-benchmark.js [--file CORPUS.json] [--out REPORT.json] [--top-k 10] [--min-recall 70] [--max-questions N] [--lexical]\n'
-      + 'Defaults to benchmarks/data/locomo10.json, or $MNEMOSYNE_LOCOMO_PATH. --lexical skips the model and reports the zero-model baselines only.');
+    console.log('node dist/evaluation/locomo-benchmark.js [--file CORPUS.json] [--out REPORT.json] [--top-k 10] [--min-recall 70] [--max-questions N] [--lexical] [--no-rerank] [--rerank-top-n 50]\n'
+      + 'Defaults to benchmarks/data/locomo10.json, or $MNEMOSYNE_LOCOMO_PATH. --lexical skips both models and reports the zero-model baselines only.\n'
+      + '--no-rerank measures the fused ranking without the cross-encoder, which is the T1.1 configuration.');
     return;
   }
   const file = resolve(values.file ?? process.env.MNEMOSYNE_LOCOMO_PATH ?? DEFAULT_CORPUS);
@@ -51,6 +54,18 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
       console.error(`${error instanceof Error ? error.message : 'Local embedder unavailable'}\nReporting the zero-model baselines only.`);
     }
   }
+  // The reranker applies to the hybrid condition only. Without it this run
+  // measures exactly the pre-reranker configuration, which is what makes the two
+  // numbers comparable.
+  let reranker: SyncMemoryReranker | undefined;
+  if (model && !values['no-rerank']) {
+    try { reranker = createBundledReranker({ batchSize: 32 }); }
+    catch (error) {
+      console.error(`${error instanceof Error ? error.message : 'Local reranker unavailable'}\nReporting the fused ranking without reranking.`);
+    }
+  }
+  const rerankTopN = Number(values['rerank-top-n'] ?? 50);
+  if (!Number.isSafeInteger(rerankTopN) || rerankTopN < 1 || rerankTopN > 1000) throw new Error('--rerank-top-n must be between 1 and 1000');
   const started = Date.now();
   const report = await runCorpusBenchmark(dataset, {
     topK, includeBm25: true, hybridLexicalScoring: 'bm25',
@@ -58,9 +73,11 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
     // bge-v1.5 is trained with an asymmetric query convention, so queries and
     // passages are embedded differently into the same vector space.
     ...(model ? { embedder: model.forPassages(), queryEmbedder: model.forQueries() } : {}),
+    ...(reranker ? { reranker: asMemoryReranker(reranker), rerankTopN } : {}),
     maxEmbeddingCalls: 1_000_000, timeoutMs: 3_600_000,
   });
   model?.close();
+  reranker?.close();
 
   const percent = (value: number | null): string => value === null ? 'n/a' : (value * 100).toFixed(2);
   const line = (name: CorpusCondition, label: string): string => {
@@ -74,9 +91,10 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   console.log(`corpus sha256 ${report.dataset.sourceSha256}  normalized ${report.dataset.normalizedSha256}`);
   console.log(`runtime ${report.runtime.node} ${report.runtime.platform}  elapsed ${((Date.now() - started) / 1000).toFixed(1)}s  complete=${report.complete}`);
   if (report.embedding) console.log(`embedder ${report.embedding.model} (${report.embedding.dimensions}d, asymmetric=${report.embedding.asymmetric})`);
+  console.log(`reranker ${reranker ? `${reranker.model} (top-${rerankTopN})` : 'disabled'}`);
   console.log(line('lexical', 'zero-model overlap'));
   console.log(line('bm25', 'zero-model BM25'));
-  console.log(line('hybrid', 'hybrid dense + BM25 (RRF)'));
+  console.log(line('hybrid', reranker ? 'hybrid dense + BM25 + rerank' : 'hybrid dense + BM25 (RRF)'));
   for (const notice of report.notices) console.log(`note: ${notice}`);
   if (values.out) { writeFileSync(resolve(values.out), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600, flag: 'wx' }); console.log(`report written to ${resolve(values.out)}`); }
 
