@@ -145,21 +145,38 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
  * at any later time, and the flag has to outlive the record — erasing it does
  * not un-stale a cache entry built while it was there.
  *
- * The lower bound is `validFrom ?? createdAt`, not `validFrom` alone, because
- * that is literally what `#bm25Recall`'s scope test compares against. A record
- * with no `validFrom` at all but a `createdAt` in the reader's future — again
- * only reachable through `import()`, since every local write path takes
- * `createdAt` from this same clock — is out of scope now and enters scope on
- * clock advance with no write, which is the identical hazard with the
- * identical negative-IDF consequence. Mirroring the SQL keeps the two in step
- * instead of leaving a gap that depends on which field happens to carry the
- * boundary.
+ * **Four fields, not two.** `#bm25Recall`'s live scope and `#at()` between them
+ * compare *four* record instants against the clock, and a crossing in any of
+ * them changes corpus membership with no write:
+ *
+ *  1. `m.created_at <= knownAt` — applies **on its own**, independently of
+ *     `validFrom`. Testing `validFrom ?? createdAt` is therefore NOT a mirror
+ *     of the SQL: it discards `createdAt` exactly when `validFrom` is present,
+ *     leaving a backdated record ("true since 2020") written by a fast clock
+ *     unflagged and still gated by this clause.
+ *  2. `coalesce(validFrom, created_at) <= asOf`.
+ *  3. `validUntil IS NULL OR validUntil > asOf`.
+ *  4. `updatedAt <= knownAt`, which gates the `superseded` and `invalidated`
+ *     branches of `#at()`. Here the stale `documents` runs *high* rather than
+ *     low, so scores inflate instead of rows vanishing — it corrupts RRF
+ *     ordering and score thresholds rather than emptying the result.
+ *
+ * All four are only reachable through `import()`: every local write path takes
+ * `createdAt`/`updatedAt` from this same clock, so `> now` is false for them
+ * and those paths are unaffected.
  *
  * Call on every insert; a no-op unless the record carries a boundary still in
  * the reader's future at insert time.
  */
-export function markTemporalBoundsIfNeeded(db: DatabaseSync, record: { workspaceId: string; createdAt: string; validFrom?: string; validUntil?: string }, now: string): void {
-  const lowerBound = record.validFrom ?? record.createdAt; // exactly `#bm25Recall`'s `(validFrom ?? createdAt)`
-  if (!(lowerBound > now || (record.validUntil !== undefined && record.validUntil > now))) return;
+export function markTemporalBoundsIfNeeded(db: DatabaseSync, record: { workspaceId: string; createdAt: string; updatedAt: string; validFrom?: string; validUntil?: string }, now: string): void {
+  // Every instant on the record that a live scope test compares against the
+  // clock, not just the declared validity bounds. See the four conjuncts listed
+  // above: `createdAt` gates scope on its own via `m.created_at<=knownAt`
+  // *independently* of `validFrom`, and `updatedAt` gates the superseded and
+  // invalidated branches in `#at()`. Any one of them still in the future is a
+  // crossing that can happen with no write.
+  if (!(record.createdAt > now || record.updatedAt > now
+    || (record.validFrom !== undefined && record.validFrom > now)
+    || (record.validUntil !== undefined && record.validUntil > now))) return;
   db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run(`bm25-temporal-bounds:${record.workspaceId}`, '1');
 }

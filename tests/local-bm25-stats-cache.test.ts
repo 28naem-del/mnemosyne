@@ -294,6 +294,72 @@ describe('BM25 corpus statistics cache', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('gives up the live cache for a backdated import: past validFrom, but a createdAt still future for the importer', () => {
+    // `m.created_at<=knownAt` is its OWN conjunct in #bm25Recall's scope,
+    // independent of validFrom. So `validFrom ?? createdAt` is not a mirror of
+    // the SQL — it drops createdAt exactly when validFrom is present, which is
+    // the backdated case: "true since 2020", recorded on a clock running fast.
+    const producer = memory('alice', 'producer-clock-ahead', () => new Date(day(10)));
+    producer.store(fact('widget gamma imported', { validFrom: day(2) })); // validFrom PAST, createdAt day(10) future for the importer
+    const snapshot = { ...producer.export(), workspaceId: 'test' };
+    snapshot.memories = snapshot.memories.map(record => ({ ...record, workspaceId: 'test' }));
+
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-backdated-'));
+    const path = join(root, 'memory.sqlite');
+    let current = 1;
+    const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+    opened.push(db);
+    const anchor = db.store(fact('widget alpha'));
+    db.import(snapshot);
+    const probe = countCorpusStatsCalls();
+    expect(db.recall({ query: 'widget', lexicalScoring: 'bm25' }).map(r => r.memory.id)).toEqual([anchor.id]);
+
+    current = 11; // createdAt day(10) crossed by clock advance alone
+    const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    const live = probe.calls();
+    const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(11)) });
+    opened.push(cold);
+    const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(truth).toHaveLength(2);
+    expect(after.map(r => [r.memory.id, r.score])).toEqual(truth.map(r => [r.memory.id, r.score]));
+    expect(after.map(r => r.memory.id)).toContain(anchor.id);
+    expect(live).toBe(2);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('gives up the live cache for an imported superseded record whose updatedAt is still future for the importer', () => {
+    // #at() only filters `superseded`/`invalidated` once `updatedAt <= knownAt`,
+    // so updatedAt is a fourth clock-dependent field. Here `documents` goes
+    // stale-HIGH rather than low, so scores inflate instead of rows vanishing.
+    const producer = memory('alice', 'producer-clock-ahead', () => new Date(day(10)));
+    const original = producer.store(fact('widget original text here'));
+    producer.correct(original.id, { text: 'widget corrected text here', reason: 'revised', source: { uri: 'test:bm25-cache' } });
+    const snapshot = { ...producer.export(), workspaceId: 'test' };
+    snapshot.memories = snapshot.memories.map(record => ({ ...record, workspaceId: 'test' }));
+    expect(snapshot.memories.some(r => r.status === 'superseded' && r.updatedAt > day(1))).toBe(true);
+
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-updated-'));
+    const path = join(root, 'memory.sqlite');
+    let current = 1;
+    const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+    opened.push(db);
+    db.store(fact('widget survivor local row'));
+    db.import(snapshot);
+    const probe = countCorpusStatsCalls();
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+
+    current = 11; // updatedAt crossed by clock advance alone, with no write
+    const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    const live = probe.calls();
+    const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(11)) });
+    opened.push(cold);
+    const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    // Scores, not just ids: this hazard inflates scores rather than dropping rows.
+    expect(after.map(r => [r.memory.id, r.score])).toEqual(truth.map(r => [r.memory.id, r.score]));
+    expect(live).toBe(2);
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('scopes the temporal-bounds flag per workspace: a validFrom record in one workspace does not disable the live cache in another', () => {
     // node:sqlite's `:memory:` is a distinct database per connection, so use a
     // real temp file to actually share one database across two workspaces.
