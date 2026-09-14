@@ -13,6 +13,7 @@ import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, t
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
+import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
 
 export type * from './types.js';
@@ -123,6 +124,9 @@ export class LocalMemory {
   /** Bumped by every mutation that can put a record back in the pending set. */
   #writeSeq = 0;
   #vectorsDrained?: { model: string; writeSeq: number; dataVersion: number };
+  /** See `./bm25-corpus-stats.js`. */
+  #bm25StatsCache: CorpusStatsCache = new Map();
+  #bm25TemporalBounds = { present: false };
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
@@ -437,6 +441,7 @@ export class LocalMemory {
       record.id, record.workspaceId, record.agentId, record.visibility, record.trust, record.status,
       record.kind, record.text, record.key ?? null, record.supersedes ?? null, record.createdAt, JSON.stringify(record),
     );
+    markTemporalBoundsIfNeeded(this.#db, record.workspaceId, record.validFrom !== undefined || record.validUntil !== undefined);
     this.#indexText(record);
     this.#links(record);
     this.#audit(record.id, 'stored');
@@ -1359,12 +1364,16 @@ export class LocalMemory {
     return ranked;
   }
 
-  /** BM25 k1=1.2, b=0.75 over this query's visible corpus. Two streaming passes
-   * avoid a process-global document cache and score before top-k. Statistics
+  /** BM25 k1=1.2, b=0.75 over this query's visible corpus. Statistics
    * include visible conflicts, matching raw recall's diagnostic contract; the
    * context compiler separately gates unsafe provenance before retention.
-   * Cost is proportional to scoped documents and matching postings, unlike the
-   * faster optional overlap scorer whose work is driven only by query postings. */
+   *
+   * `documents`/`totalLength` are corpus-wide constants, cached by
+   * `corpusStats()` in `./bm25-corpus-stats.js` (see there for the
+   * invalidation argument) so this no longer scans the whole scoped corpus
+   * per query. Per-term document frequency stays uncached, read straight off
+   * the term-indexed `candidates` query below — already O(matching
+   * postings), not O(corpus), before this change. */
   #bm25Recall(input: { terms: string[]; count: number; budget: number; kinds: string[]; includeUntrusted: boolean; time: TemporalView }, eligible?: (memory: MemoryRecord) => boolean): RecallResult[] {
     this.#repairTermFrequencies();
     const { terms, kinds, time } = input;
@@ -1380,36 +1389,47 @@ export class LocalMemory {
       AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0 AND s.token_count>0
       ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}`;
     const parameters = [this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds];
-    const statistics = this.#db.prepare(`${matches}
-      SELECT CASE WHEN m.status='active' THEN NULL ELSE m.data END AS temporal_data,s.token_count,t.frequencies
-      FROM memories m JOIN local_search s ON s.memory_id=m.id LEFT JOIN matches t ON t.memory_id=m.id WHERE ${scope}`);
-    let documents = 0, totalLength = 0;
-    const frequency = new Map<string, number>();
-    for (const value of statistics.iterate(...terms, ...parameters)) {
-      const row = value as { temporal_data: string | null; token_count: number; frequencies: string | null };
-      if (row.temporal_data !== null && !this.#at(this.#decode({ data: row.temporal_data })!, time)) continue;
-      documents++; totalLength += row.token_count;
-      if (row.frequencies !== null) for (const [term] of JSON.parse(row.frequencies) as [string, number][]) frequency.set(term, (frequency.get(term) ?? 0) + 1);
-    }
-    if (!documents || !frequency.size) return [];
+    const { documents, totalLength } = corpusStats({
+      db: this.#db, cache: this.#bm25StatsCache, scope, parameters,
+      key: corpusStatsCacheKey(input.includeUntrusted, kinds, time),
+      cacheable: time.historical || !hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds),
+      writeSeq: this.#writeSeq, dataVersion: this.#dataVersion(),
+      isVisible: (temporalData) => !!this.#at(this.#decode({ data: temporalData })!, time),
+    });
+    if (!documents) return [];
     const averageLength = totalLength / documents, heap: ScoredId[] = [];
+    // Term-indexed: `matches` only ever contains rows carrying at least one of
+    // `terms`, so this touches the matching postings, never the whole corpus.
+    // Document frequency is tallied from exactly this same row set — it is the
+    // same quantity `statistics` used to compute before this change, just read
+    // off the cheaper query instead of a corpus-wide scan, and still counted
+    // ahead of #eligible so an ineligible-but-visible conflict still weighs on
+    // IDF the same way raw recall's diagnostic contract always counted it.
     const candidates = this.#db.prepare(`${matches}
       SELECT m.data,s.token_count,t.frequencies FROM matches t CROSS JOIN memories m ON m.id=t.memory_id
       CROSS JOIN local_search s ON s.memory_id=m.id WHERE ${scope}`);
+    const frequency = new Map<string, number>();
+    const scored: { memory: MemoryRecord; tokenCount: number; frequencies: [string, number][] }[] = [];
     for (const value of candidates.iterate(...terms, ...parameters)) {
       const row = value as DataRow & { token_count: number; frequencies: string };
       const memory = this.#at(this.#decode(row)!, time);
-      if (!memory || (eligible && !eligible(memory))) continue;
+      if (!memory) continue;
+      const parsed = JSON.parse(row.frequencies) as [string, number][];
+      for (const [term] of parsed) frequency.set(term, (frequency.get(term) ?? 0) + 1);
+      if (!eligible || eligible(memory)) scored.push({ memory, tokenCount: row.token_count, frequencies: parsed });
+    }
+    if (!frequency.size) return [];
+    for (const row of scored) {
       let score = 0;
-      for (const [term, occurrences] of JSON.parse(row.frequencies) as [string, number][]) {
+      for (const [term, occurrences] of row.frequencies) {
         const df = frequency.get(term);
         if (df === undefined) continue;
         const idf = Math.log1p((documents - df + 0.5) / (df + 0.5));
-        score += idf * (occurrences * 2.2) / (occurrences + 1.2 * (0.25 + 0.75 * row.token_count / averageLength));
+        score += idf * (occurrences * 2.2) / (occurrences + 1.2 * (0.25 + 0.75 * row.tokenCount / averageLength));
       }
-      const outcomes = this.#outcomes(memory.id, time.historical ? time.knownAt : undefined);
+      const outcomes = this.#outcomes(row.memory.id, time.historical ? time.knownAt : undefined);
       score = score * (1 + Math.min(outcomes.successes, 3) * 0.05) / (1 + outcomes.failures * 10);
-      if (score > 0) this.#retainBest(heap, { id: memory.id, score }, Math.min(input.count, input.budget));
+      if (score > 0) this.#retainBest(heap, { id: row.memory.id, score }, Math.min(input.count, input.budget));
     }
     return heap.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).flatMap(entry => {
       const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
