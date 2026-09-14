@@ -43,7 +43,10 @@ function memory(options: Partial<LocalMemoryOptions> = {}): LocalMemory {
   opened.push(db); return db;
 }
 
-const month = (index: number): string => `2023-${String(index).padStart(2, '0')}-05T00:00:00.000Z`;
+// Mid-month on purpose: prioritisation widens a window by a week, so a seed on
+// the 5th would let a June query reach into July and the promotion assertions
+// below would stop distinguishing the named month from its neighbour.
+const month = (index: number): string => `2023-${String(index).padStart(2, '0')}-15T00:00:00.000Z`;
 /** One competing record per month of 2023, all sharing a vocabulary so that
  * nothing but the date can separate them. */
 function seed(db: LocalMemory): string[] {
@@ -109,6 +112,22 @@ describe('a scoping window prioritises and never narrows', () => {
     expect(auto[0]!.memory.validFrom).toBe(month(6));
   });
 
+  it('reaches a record written a few days after the window, but not a month after', () => {
+    const db = memory();
+    const seeded = seed(db);
+    // A memory is dated when something was said, not when it happened, so the
+    // report filed on 3 July still answers a question about June. The record a
+    // month later does not, and must stay where the retriever put it.
+    const justAfter = db.store(fact('Atlas quota review session wrap-up', { validFrom: '2023-07-03T00:00:00.000Z' })).id;
+    const query = 'Atlas quota review session in June 2023';
+    const auto = db.recall({ query, limit: 14, temporalRouting: 'auto' });
+    expect(ids(auto).slice(0, 2)).toEqual(expect.arrayContaining([seeded[5], justAfter]));
+    // 13 of the 14 are outside the window; none of them was dropped.
+    expect(ids(auto)).toHaveLength(13);
+    expect(new Set(ids(auto))).toEqual(new Set(ids(db.recall({ query, limit: 14 }))));
+    expect(ids(auto).indexOf(seeded[6]!)).toBeGreaterThan(1);
+  });
+
   it('keeps the returned scores descending after a promotion', () => {
     const db = memory();
     seed(db);
@@ -129,17 +148,23 @@ describe('a scoping window prioritises and never narrows', () => {
   it('routes a relative expression against the engine clock, not the wall clock', () => {
     const db = memory({ now: () => new Date('2023-07-06T00:00:00.000Z') });
     seed(db);
-    // That Thursday's previous whole ISO week is 26 June to 2 July 2023.
-    db.store(fact('Atlas quota review session last-week edition', { validFrom: '2023-06-28T00:00:00.000Z' }));
+    const lastWeek = db.store(fact('Atlas quota review session edition', { validFrom: '2023-06-28T00:00:00.000Z' })).id;
     const query = 'Atlas quota review session last week';
     const off = db.recall({ query, limit: 13 });
     const auto = db.recall({ query, limit: 13, temporalRouting: 'auto' });
-    expect(auto[0]!.memory.validFrom).toBe('2023-06-28T00:00:00.000Z');
-    // Only the seven months up to the clock are valid yet, plus the new record;
+    // That Thursday's previous whole ISO week is 26 June to 2 July 2023, read off
+    // the engine clock, which is three years from the wall clock this test runs at.
+    expect(retrievalOf(db).temporalRouting?.window).toEqual({ from: '2023-06-26T00:00:00.000Z', to: '2023-07-03T00:00:00.000Z' });
+    expect(auto[0]!.memory.id).toBe(lastWeek);
+    // Only the six months up to the clock are valid yet, plus the new record;
     // routing reorders exactly that set and adds nothing to it.
     expect(new Set(ids(auto))).toEqual(new Set(ids(off)));
-    expect(ids(auto)).toHaveLength(8);
-    expect(ids(auto)).not.toEqual(ids(off));
+    expect(ids(auto)).toHaveLength(7);
+    // The identical query against a clock a month on names a different week.
+    const later = memory({ now: () => new Date('2023-08-10T00:00:00.000Z') });
+    seed(later);
+    later.recall({ query, limit: 13, temporalRouting: 'auto' });
+    expect(retrievalOf(later).temporalRouting?.window).toEqual({ from: '2023-07-31T00:00:00.000Z', to: '2023-08-07T00:00:00.000Z' });
   });
 });
 

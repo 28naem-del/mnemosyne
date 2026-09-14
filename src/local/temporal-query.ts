@@ -34,7 +34,7 @@ export interface TemporalWindow {
 export type TemporalRelation = 'none' | 'at' | 'before' | 'after' | 'between';
 
 /** The calendar precision the phrase actually pinned down. */
-export type TemporalGrain = 'none' | 'day' | 'month' | 'year';
+export type TemporalGrain = 'none' | 'day' | 'week' | 'month' | 'year';
 
 /** The literal span that produced the constraint, so a routing decision can be audited. */
 export interface TemporalMatch {
@@ -89,6 +89,11 @@ export interface TemporalQueryOptions {
  */
 export const TEMPORAL_ROUTING_MIN_CONFIDENCE = 0.6;
 
+/** The two open ends a parsed window can carry, as epoch milliseconds: everything
+ * before, and everything after. A caller that widens a window has to clamp to
+ * these, because a date past year 9999 no longer sorts as an ISO string. */
+export const TEMPORAL_WINDOW_BOUNDS = Object.freeze({ floor: 0, ceiling: Date.UTC(9999, 11, 31) });
+
 /** Furthest instant the parser will name, standing in for "no upper bound". */
 const FAR_FUTURE = Date.UTC(9999, 11, 31);
 const DAY_MS = 86_400_000;
@@ -113,6 +118,8 @@ const WORD_NUMBERS: Readonly<Record<string, number>> = Object.freeze({
   eleven: 11, twelve: 12, a: 1, an: 1,
 });
 const COUNTS = 'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve';
+const ORDINALS: Readonly<Record<string, number>> = Object.freeze({ first: 1, '1st': 1, second: 2, '2nd': 2, third: 3, '3rd': 3, fourth: 4, '4th': 4 });
+const ORDINAL_NAMES = [...Object.keys(ORDINALS), 'last', 'final'].join('|');
 
 const iso = (at: number): string => new Date(at).toISOString();
 const utc = (year: number, month: number, day: number): number => Date.UTC(year, month - 1, day);
@@ -160,6 +167,26 @@ function recentDay(month: number, day: number, now: number): Anchor | null {
   return dayAnchor(utc(year, month, day) > now ? year - 1 : year, month, day, CONFIDENCE.unqualified);
 }
 
+/**
+ * A counted slice of a named month: "the last week of August 2023", "the first
+ * half of September 2022". A month is often too coarse to answer the question
+ * that named it, and these phrases say exactly how much of it is meant. Vaguer
+ * ones — "the beginning of", "mid-August" — are deliberately not read, because
+ * they have no boundary anyone could defend.
+ */
+function partOfMonth(ordinal: string, count: string | undefined, unit: string, month: Anchor | null): Anchor | null {
+  if (!month) return null;
+  const many = count === undefined ? 1 : amount(count);
+  if (many === null || many > 4) return null;
+  const span = unit.toLowerCase().startsWith('week') ? many * 7 * DAY_MS : Math.ceil((month.to - month.from) / (2 * DAY_MS)) * DAY_MS;
+  const word = ordinal.toLowerCase();
+  if (word === 'last' || word === 'final') return { from: Math.max(month.from, month.to - span), to: month.to, grain: 'week', confidence: month.confidence };
+  const index = ORDINALS[word];
+  if (index === undefined) return null;
+  const from = month.from + (index - 1) * span;
+  return from >= month.to ? null : { from, to: Math.min(month.to, from + span), grain: 'week', confidence: month.confidence };
+}
+
 function amount(token: string): number | null {
   const value = WORD_NUMBERS[token.toLowerCase()] ?? Number(token);
   return Number.isSafeInteger(value) && value >= 1 && value <= MAX_UNITS ? value : null;
@@ -202,6 +229,10 @@ function ago(count: string, unitToken: string, now: number): Anchor | null {
 interface Form { expression: RegExp; read: (match: RegExpExecArray, now: number) => Anchor | null; day?: boolean }
 
 const FORMS: readonly Form[] = [
+  // the last week of August 2023, the first half of September — a slice of a
+  // named month, and more specific than the month forms below, so it goes first.
+  { expression: new RegExp(`(?:the\\s+)?(${ORDINAL_NAMES})\\s+(?:(\\d{1,2}|${COUNTS})\\s+)?(weeks?|half)\\s+(?:of|in)\\s+(${MONTH_NAMES})\\.?\\s*,?\\s*(\\d{4})?`, 'gi'),
+    read: (m, now) => partOfMonth(m[1], m[2], m[3], m[5] ? monthAnchor(+m[5], MONTHS[m[4].toLowerCase()]) : recentMonth(MONTHS[m[4].toLowerCase()], now)) },
   // 2026-03-05, 2026/03/05
   { day: true, expression: /(\d{4})[-/](\d{1,2})[-/](\d{1,2})/gi, read: m => dayAnchor(+m[1], +m[2], +m[3]) },
   // 3 March 2026, 3rd of March, 2026
@@ -225,7 +256,9 @@ const FORMS: readonly Form[] = [
   { expression: /yesterday|last night/gi, read: (_m, now) => ({ from: startOfDay(now) - DAY_MS, to: startOfDay(now), grain: 'day', confidence: CONFIDENCE.relative }) },
   { expression: /today/gi, read: (_m, now) => ({ from: startOfDay(now), to: startOfDay(now) + DAY_MS, grain: 'day', confidence: CONFIDENCE.relative }) },
   { expression: /tomorrow/gi, read: (_m, now) => ({ from: startOfDay(now) + DAY_MS, to: startOfDay(now) + 2 * DAY_MS, grain: 'day', confidence: CONFIDENCE.relative }) },
-  { expression: new RegExp(`(?:in|over|during|within|for)?\\s*the\\s+(?:last|past|previous|preceding|trailing)\\s+(\\d{1,4}|${COUNTS})\\s+(days|weeks|months|years)`, 'gi'), read: (m, now) => trailing(m[1], m[2], now) },
+  // Not "the last two weeks OF August": that is a slice of a named month, read
+  // by the first form, and this one would otherwise claim it from further left.
+  { expression: new RegExp(`(?:in|over|during|within|for)?\\s*the\\s+(?:last|past|previous|preceding|trailing)\\s+(\\d{1,4}|${COUNTS})\\s+(days|weeks|months|years)(?!\\s+(?:of|in)\\s+(?:${MONTH_NAMES})\\b)`, 'gi'), read: (m, now) => trailing(m[1], m[2], now) },
   { expression: new RegExp(`(\\d{1,4}|${COUNTS}|an?)\\s+(days?|weeks?|months?|years?)\\s+ago`, 'gi'), read: (m, now) => ago(m[1], m[2], now) },
   { expression: /(?:last|previous|past)\s+week/gi, read: (_m, now) => ({ from: startOfWeek(now) - 7 * DAY_MS, to: startOfWeek(now), grain: 'day', confidence: CONFIDENCE.relative }) },
   { expression: /(?:last|previous|past)\s+month/gi, read: (_m, now) => ({ from: addMonths(startOfMonth(now), -1), to: startOfMonth(now), grain: 'month', confidence: CONFIDENCE.relative }) },

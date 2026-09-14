@@ -51,6 +51,34 @@ describe('temporal query parsing — absolute dates', () => {
     expect(span('dec 2024 vs jan 2025')).toEqual(['2024-12-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z']);
   });
 
+  it('reads a counted slice of a named month', () => {
+    expect(span('notes from the first week of March 2026')).toEqual(['2026-03-01T00:00:00.000Z', '2026-03-08T00:00:00.000Z']);
+    expect(span('notes from the second week of March 2026')).toEqual(['2026-03-08T00:00:00.000Z', '2026-03-15T00:00:00.000Z']);
+    // A last week ends with the month, so it is the seven days up to the 1st and
+    // not a fourth seven-day block that would stop short of a 31-day month.
+    expect(span('notes from the last week of March 2026')).toEqual(['2026-03-25T00:00:00.000Z', '2026-04-01T00:00:00.000Z']);
+    expect(span('notes from the last two weeks of August 2023')).toEqual(['2023-08-18T00:00:00.000Z', '2023-09-01T00:00:00.000Z']);
+    expect(span('notes from the first half of September 2022')).toEqual(['2022-09-01T00:00:00.000Z', '2022-09-16T00:00:00.000Z']);
+    expect(span('notes from the second half of September 2022')).toEqual(['2022-09-16T00:00:00.000Z', '2022-10-01T00:00:00.000Z']);
+  });
+
+  it('does not let a trailing span steal a slice of a named month', () => {
+    // "the last two weeks" is a rolling span ending today; "the last two weeks of
+    // August" is part of August. The first reading starts further left in the
+    // sentence, so without the guard it would win on position alone.
+    expect(span('where was Dave in the last two weeks')).toEqual(['2026-03-02T00:00:00.000Z', '2026-03-16T00:00:00.000Z']);
+    expect(span('where was Dave in the last two weeks of August 2023')).toEqual(['2023-08-18T00:00:00.000Z', '2023-09-01T00:00:00.000Z']);
+    expect(at('where was Dave in the last two weeks of August 2023').cleanedQuery).toBe('where was Dave');
+  });
+
+  it('inherits the confidence of the month a slice was cut from', () => {
+    // The slice is only as certain as the month it names: a year makes it a
+    // month-grade reading, a bare month leaves it a guess about which year.
+    expect(at('notes from the first week of March 2026').confidence).toBe(0.9);
+    expect(at('notes from the first week of March').confidence).toBe(TEMPORAL_ROUTING_MIN_CONFIDENCE);
+    expect(at('notes from the first week of March 2026').grain).toBe('week');
+  });
+
   it('reports the grain it actually pinned down', () => {
     expect(at('on 2026-03-05').grain).toBe('day');
     expect(at('in March 2026').grain).toBe('month');

@@ -13,7 +13,7 @@ import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, t
 // Imported on its own line rather than added to the shared type import above,
 // which two other branches are editing in parallel.
 import type { LedgerTemporalRouting } from './types.js';
-import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, type TemporalWindow } from './temporal-query.js';
+import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 
@@ -22,7 +22,10 @@ export type * from './types.js';
 type DataRow = { data: string };
 type TemporalView = { asOf: string; knownAt: string; historical: boolean };
 type ScoredId = { id: string; score: number };
-/** A query's own time expression, resolved into retrieval parameters. */
+/** A query's own time expression, resolved into retrieval parameters. `window`
+ * is the prioritisation window — the parsed one widened by
+ * `TEMPORAL_PRIORITY_SLACK_MS` — while `entry.window` keeps the window the query
+ * named, so the ledger reports the parse and not the policy. */
 type TemporalRoute = { query: string; asOf?: string; knownAt?: string; window: TemporalWindow; entry: LedgerTemporalRouting };
 /** Collects each ranking stage's candidate list on the way through one recall, so
  * the ledger can record what was considered and not only what was returned. The
@@ -31,7 +34,23 @@ type RetrievalTrace = { stage: RetrievalStage; candidates: ScoredId[] }[];
 /** How deep a parsed window reorders the candidate pool. A candidate ranked
  * below this was not going to reach a caller's top results on the strength of
  * its date alone, and the bound keeps routing's cost off the latency budget. */
-const TEMPORAL_PRIORITY_DEPTH = 100;
+const TEMPORAL_PRIORITY_DEPTH = 1000;
+/**
+ * How far outside the window a record may be dated and still rank as part of it.
+ * A memory is stamped with when something was SAID, not when it happened:
+ * LoCoMo's own evidence for an event on 7 May 2023 sits in the session dated
+ * 8 May. Measured on that corpus, a week of slack lifts the share of temporal
+ * questions whose evidence falls inside its own window from 51% to 73%; six
+ * weeks reaches 82% but ranks no better, because a window that wide stops
+ * discriminating. Slack applies to ranking alone — an `asOf` bound stays exact,
+ * and the ledger records the window the query actually named.
+ */
+const TEMPORAL_PRIORITY_SLACK_MS = 7 * 86_400_000;
+/** How many leading results the FINAL ordering leaves exactly where it found
+ * them. See `#prioritize`: the candidate stage reorders everything, the ordering
+ * stage protects the podium, so a window read from a query cannot evict the
+ * matches the retriever was most sure of. */
+const TEMPORAL_PRIORITY_KEEP = 3;
 const SCOPE = "workspace_id = ? AND (agent_id = ? OR visibility = 'workspace')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const LOCAL_SNAPSHOT_LIMITS = Object.freeze({ maxRecords: 100000, maxBytes: 32 * 1024 * 1024 });
@@ -658,8 +677,12 @@ export class LocalMemory {
     if (!parse.window || parse.relation === 'none' || parse.grain === 'none' || parse.confidence < TEMPORAL_ROUTING_MIN_CONFIDENCE) return null;
     const asOf = input.asOf === undefined ? parse.asOf : undefined;
     const knownAt = input.knownAt === undefined ? parse.knownAt : undefined;
+    const slack = (at: string, direction: number, by: number): string =>
+      new Date(Math.min(Math.max(Date.parse(at) + direction * by, TEMPORAL_WINDOW_BOUNDS.floor), TEMPORAL_WINDOW_BOUNDS.ceiling)).toISOString();
+    const window = parse.window;
     return {
-      query: parse.cleanedQuery, window: parse.window,
+      query: parse.cleanedQuery,
+      window: { from: slack(window.from, -1, TEMPORAL_PRIORITY_SLACK_MS), to: slack(window.to, 1, TEMPORAL_PRIORITY_SLACK_MS) },
       ...(asOf === undefined ? {} : { asOf }), ...(knownAt === undefined ? {} : { knownAt }),
       entry: {
         matched: parse.matched[0]?.text ?? '', relation: parse.relation, grain: parse.grain,
@@ -684,32 +707,37 @@ export class LocalMemory {
   }
 
   /**
-   * Stable partition of a ranked list: candidates dated inside the parsed window
-   * move ahead of those that are not, and nothing is removed.
+   * Stable reordering of a ranked list: a candidate dated inside the parsed
+   * window moves up by `bonus` places, and nothing is removed.
    *
-   * Reordering never narrows, so a window read out of a query cannot hide the
-   * evidence the caller was asking for; at worst it ranks it lower. Scores are
-   * reassigned onto the descending sequence the ranking already produced,
-   * because `RecallResult.score` is documented to decrease down the list and a
-   * promotion is a change of rank, not a claim of higher relevance.
+   * `keep` is how many leading candidates the window is not allowed to touch.
+   * Zero is what the candidate stage wants — a cross-encoder cannot judge a
+   * candidate it never sees, so everything in the window should reach it. The
+   * final ordering wants the opposite: measured on LoCoMo, reordering from rank
+   * one evicted correct evidence from three temporal questions outright,
+   * because a window read from a query is a guess and a top match is not.
+   *
+   * Reordering never narrows, so a misread window can only rank evidence lower,
+   * never hide it. Scores are reassigned onto the descending sequence the
+   * ranking already produced, because `RecallResult.score` is documented to
+   * decrease down the list and a promotion is a change of rank, not a claim of
+   * higher relevance.
    */
-  #prioritize<T extends { score: number }>(items: T[], window: TemporalWindow, when: (item: T) => string | undefined): T[] {
+  #prioritize<T extends { score: number }>(items: T[], window: TemporalWindow, when: (item: T) => string | undefined, keep: number): T[] {
     const depth = Math.min(items.length, TEMPORAL_PRIORITY_DEPTH);
+    const held = Math.min(keep, depth);
+    const head = items.slice(held, depth);
     const inside: T[] = [], outside: T[] = [];
-    for (let index = 0; index < depth; index++) {
-      const item = items[index];
-      const at = when(item);
-      (at !== undefined && at >= window.from && at < window.to ? inside : outside).push(item);
-    }
+    for (const item of head) { const at = when(item); (at !== undefined && at >= window.from && at < window.to ? inside : outside).push(item); }
     // All inside or all outside is not a reordering, so leave the list alone.
     if (!inside.length || !outside.length) return items;
-    const scores = items.slice(0, depth).map((item) => item.score);
-    return [...[...inside, ...outside].map((item, index) => ({ ...item, score: scores[index] }) as T), ...items.slice(depth)];
+    const scores = head.map((item) => item.score);
+    return [...items.slice(0, held), ...[...inside, ...outside].map((item, index) => ({ ...item, score: scores[index] }) as T), ...items.slice(depth)];
   }
 
   /** `#prioritize` over already-hydrated results, which carry their own dates. */
   #prioritized(results: RecallResult[], route: TemporalRoute | null): RecallResult[] {
-    return route ? this.#prioritize(results, route.window, (result) => result.memory.validFrom ?? result.memory.createdAt) : results;
+    return route ? this.#prioritize(results, route.window, (result) => result.memory.validFrom ?? result.memory.createdAt, TEMPORAL_PRIORITY_KEEP) : results;
   }
 
   #at(record: MemoryRecord, time: TemporalView, restoreInvalidated = true): MemoryRecord | null {
@@ -1044,9 +1072,13 @@ export class LocalMemory {
     trace?.push({ stage: 'lexical', candidates: lexicalScored },
       { stage: 'dense', candidates: [...semantic].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) },
       { stage: 'fused', candidates: ranked });
+    // Before the reranker takes its slice, not only after: a cross-encoder that
+    // never sees the in-window candidate cannot rank it, and the slice is where
+    // that candidate would otherwise be lost.
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
     const reranked = this.#rerankSync(input, ranked, time);
     if (reranked) { ranked = reranked; trace?.push({ stage: 'reranked', candidates: ranked }); }
-    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id));
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
@@ -1405,6 +1437,7 @@ export class LocalMemory {
     const semantic = await this.#scanVectors(input, options, { model, dimensions, query, maxCandidates, time });
     const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], v.limit(options.rrfK, this.#rrfK, 1000));
     let ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
     if (options.reranker && ranked.length) {
       let candidates: (ScoredId & { memory: MemoryRecord })[] = [];
       const scores = await this.#boundedCall((signal) => {
@@ -1431,7 +1464,7 @@ export class LocalMemory {
     // Every await is an invalidation boundary. Rehydrate and recheck all safety
     // gates after provider work so corrections/failures cannot revive stale text.
     time = this.#temporal(input);
-    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id));
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const current = this.get(entry.id);

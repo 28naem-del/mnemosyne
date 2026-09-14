@@ -79,7 +79,7 @@ export interface LedgerTemporalRouting {
   matched: string;
   /** `before`/`after` narrow visibility; `at`/`between` only prioritise. */
   relation: 'at' | 'before' | 'after' | 'between';
-  grain: 'day' | 'month' | 'year';
+  grain: 'day' | 'week' | 'month' | 'year';
   /** How far the parse was trusted, 0-1. Routing runs only above its threshold. */
   confidence: number;
   /** The query the ranking channels actually saw, with the time expression removed. */

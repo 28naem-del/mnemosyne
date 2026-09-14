@@ -35,7 +35,7 @@ export interface CorpusDataset {
   notices: string[];
 }
 export type CorpusProvenance = Omit<CorpusDataset['provenance'], 'verification'>;
-export type CorpusCondition = 'no-memory' | 'full-context' | 'lexical' | 'bm25' | 'hybrid' | 'hybrid-norerank';
+export type CorpusCondition = 'no-memory' | 'full-context' | 'lexical' | 'bm25' | 'hybrid' | 'hybrid-norerank' | 'hybrid-temporal';
 /** A competitor system's condition key, kept in a separate namespace from ours. */
 export type MatchedConditionId = `system:${string}`;
 /** Every key that can appear in `summaries` and on an attempt. */
@@ -72,6 +72,16 @@ export interface CorpusBenchmarkOptions {
    * within-run delta rather than a comparison across two separate runs.
    */
   includeHybridWithoutRerank?: boolean;
+  /**
+   * Stamps each record with the original turn date as `validFrom`, moves the
+   * engine clock past the corpus so those records stay visible, and scores a
+   * `hybrid-temporal` condition — identical to `hybrid` but with the engine's
+   * `temporalRouting: 'auto'` — beside it, from one ingestion and one embedding
+   * pass. Off by default, so an existing run's conditions, ingestion timestamps
+   * and numbers are unchanged. On, the routing delta is a within-run comparison
+   * of two conditions over the same index rather than a diff across two runs.
+   */
+  temporalRouting?: boolean;
   hybridLexicalScoring?: 'overlap' | 'bm25';
   /**
    * Competitor systems scored in the same loop, on the same chunks, with the same
@@ -144,5 +154,9 @@ export interface CorpusBenchmarkReport {
   answerQuality: 'not-evaluated'; complete: boolean;
   ingestion: { corpusId: string; turns: number; chunks: number; bytes: number; milliseconds: number; embeddingMilliseconds: number }[];
   attempts: CorpusAttempt[]; summaries: Partial<Record<BenchmarkConditionId, CorpusSummary>>;
+  /** The same summary computed over each question category separately, keyed
+   * condition then category. Present only when a run asks for a per-category
+   * breakdown, so an existing report keeps its exact shape. */
+  categorySummaries?: Partial<Record<BenchmarkConditionId, Record<string, CorpusSummary>>>;
   notices: string[]; limitations: string[]; durationMs: number;
 }
