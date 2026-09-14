@@ -136,6 +136,87 @@ describe('BM25 corpus statistics cache', () => {
     expect(after[0].score).not.toBeCloseTo(before[0].score, 6);
   });
 
+  /**
+   * The flag only has to answer one question: can this record's scope
+   * membership still change from clock advance alone? A bound that is already
+   * in the past cannot — `validFrom <= now` with no `validUntil` is in scope
+   * now and stays in scope, and `validUntil <= now` is out and stays out. The
+   * four tests below pin both halves of that: the past-bound cases keep the
+   * live cache, the future-bound cases give it up.
+   */
+  it('keeps the live cache after correct(): a correction inherits a past validFrom, which can never move by clock advance', () => {
+    const db = memory();
+    const first = db.store(fact('widget alpha'));
+    db.store(fact('gadget beta'));
+    // correct() always writes a validFrom (`previous.validFrom ?? previous.createdAt`),
+    // so a presence-only flag would permanently disable this workspace's live cache.
+    const corrected = db.correct(first.id, { text: 'widget alpha revised', source: { uri: 'test:bm25-cache' }, reason: 'clarify' });
+    expect(corrected.validFrom).toBeDefined();
+    const probe = countCorpusStatsCalls();
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(1); // first call: cache miss
+    db.recall({ query: 'gadget', lexicalScoring: 'bm25' });
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(1); // the correction must not have disabled live caching
+  });
+
+  it('keeps the live cache for a validFrom already in the past at insert: in scope now, and no later instant removes it', () => {
+    let current = 10;
+    const db = memory('alice', 'test', () => new Date(day(current)));
+    db.store(fact('widget alpha', { validFrom: day(2) }));
+    db.store(fact('gadget beta'));
+    const probe = countCorpusStatsCalls();
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(1);
+    current = 11; // clock advance with no write cannot change this record's membership
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    db.recall({ query: 'gadget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(1);
+  });
+
+  it('keeps the live cache for a validUntil already expired at insert: out of scope now, and it stays out', () => {
+    let current = 10;
+    const db = memory('alice', 'test', () => new Date(day(current)));
+    db.store(fact('widget alpha'));
+    db.store(fact('gizmo filler unrelated words entirely', { validFrom: day(2), validUntil: day(5) }));
+    const probe = countCorpusStatsCalls();
+    const before = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(1);
+    current = 11;
+    const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(1); // expired before it was ever stored: nothing left to cross
+    // ...and the cached statistics are the right ones: the expired record is excluded.
+    const expected = Math.log1p((1 - 1 + 0.5) / (1 + 0.5)) * (1 * 2.2) / (1 + 1.2 * (0.25 + 0.75 * 2 / (2 / 1)));
+    expect(before[0].score).toBeCloseTo(expected, 12);
+    expect(after[0].score).toBeCloseTo(expected, 12);
+  });
+
+  it('gives up the live cache for a future-dated validFrom: the record enters scope later by clock advance alone', () => {
+    let current = 1;
+    const db = memory('alice', 'test', () => new Date(day(current)));
+    db.store(fact('widget alpha'));
+    db.store(fact('gizmo filler unrelated words entirely', { validFrom: day(5) }));
+    const probe = countCorpusStatsCalls();
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(3); // no live entry is cached at all while a crossing is pending
+  });
+
+  it('gives up the live cache for a validUntil still in the future: the record leaves scope later by clock advance alone', () => {
+    let current = 1;
+    const db = memory('alice', 'test', () => new Date(day(current)));
+    db.store(fact('widget alpha'));
+    db.store(fact('gizmo filler unrelated words entirely', { validUntil: day(5) }));
+    const probe = countCorpusStatsCalls();
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(2);
+    current = 6; // the boundary is crossed with no write in between
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(3);
+  });
+
   it('scopes the temporal-bounds flag per workspace: a validFrom record in one workspace does not disable the live cache in another', () => {
     // node:sqlite's `:memory:` is a distinct database per connection, so use a
     // real temp file to actually share one database across two workspaces.
@@ -144,7 +225,10 @@ describe('BM25 corpus statistics cache', () => {
     const withBounds = createLocalMemory({ path, agentId: 'alice', workspaceId: 'bounded', retrieval: 'lexical' });
     const plain = createLocalMemory({ path, agentId: 'alice', workspaceId: 'plain', retrieval: 'lexical' });
     opened.push(withBounds, plain);
-    withBounds.store(fact('widget alpha', { validFrom: day(1) }));
+    // Far-future so the bound is genuinely uncrossed under the real clock this
+    // pair of connections uses; a validFrom already in the past would (rightly)
+    // not set the flag at all and leave this test asserting nothing.
+    withBounds.store(fact('widget alpha', { validFrom: '2099-01-01T00:00:00.000Z' }));
     plain.store(fact('widget one'));
     plain.store(fact('widget two'));
     const probe = countCorpusStatsCalls();

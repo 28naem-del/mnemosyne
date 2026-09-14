@@ -452,7 +452,7 @@ export class LocalMemory {
       record.id, record.workspaceId, record.agentId, record.visibility, record.trust, record.status,
       record.kind, record.text, record.key ?? null, record.supersedes ?? null, record.createdAt, JSON.stringify(record),
     );
-    markTemporalBoundsIfNeeded(this.#db, record.workspaceId, record.validFrom !== undefined || record.validUntil !== undefined);
+    markTemporalBoundsIfNeeded(this.#db, record);
     this.#indexText(record);
     this.#links(record);
     this.#audit(record.id, 'stored');

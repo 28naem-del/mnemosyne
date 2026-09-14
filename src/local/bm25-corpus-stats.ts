@@ -21,15 +21,18 @@ import type { DatabaseSync } from 'node:sqlite';
  * instants never collide.
  *
  * For a *live* view (asOf=knownAt=now, both advancing every call) it is
- * exactly correct UNLESS some record in the workspace has ever set
- * `validFrom` or `validUntil`. Every other predicate in `#bm25Recall`'s scope
- * — created_at, status, trust, advisory, kind — only changes value through a
- * write (store/correct/invalidate/supersede), already covered by
+ * exactly correct UNLESS some record in the workspace has ever been stored
+ * with a `validFrom` or `validUntil` that was still in the future at the time
+ * it was stored. Every other predicate in `#bm25Recall`'s scope — created_at,
+ * status, trust, advisory, kind — only changes value through a write
+ * (store/correct/invalidate/supersede), already covered by
  * `writeSeq`/`dataVersion`. `validFrom`/`validUntil` are the one pair that can
  * flip a document in or out of scope by clock advance alone, with no
- * intervening write to invalidate against. {@link hasTemporalBounds} answers
- * whether that is even possible for a workspace; until the first record sets
- * either field, live-view stats are cached exactly like a historical one.
+ * intervening write to invalidate against — and only while the boundary is
+ * still ahead of the clock. {@link hasTemporalBounds} answers whether that is
+ * even possible for a workspace and {@link markTemporalBoundsIfNeeded} states
+ * the exact predicate; until some record schedules a crossing, live-view stats
+ * are cached exactly like a historical one.
  */
 export type CorpusStatsEntry = { documents: number; totalLength: number; writeSeq: number; dataVersion: number };
 export type CorpusStatsCache = Map<string, CorpusStatsEntry>;
@@ -96,13 +99,48 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
   return state.present;
 }
 
-/** Marks a workspace as carrying a `validFrom`/`validUntil` record, ever —
- * see {@link hasTemporalBounds}. Sticky (`INSERT OR IGNORE`, never cleared):
- * it only needs to answer "could a live BM25 stats cache go stale from clock
- * advance alone", and a record that once existed with a bound still could
- * have, even if since erased. Call on every insert; a no-op when
- * `hasBound` is false. */
-export function markTemporalBoundsIfNeeded(db: DatabaseSync, workspaceId: string, hasBound: boolean): void {
-  if (!hasBound) return;
-  db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run(`bm25-temporal-bounds:${workspaceId}`, '1');
+/**
+ * Marks a workspace as carrying a record whose scope membership can still
+ * change from clock advance alone — see {@link hasTemporalBounds}.
+ *
+ * The predicate is deliberately narrower than "the record has a `validFrom`
+ * or a `validUntil`". What matters is not that a boundary exists but that one
+ * is still *ahead* of the insert, because only an uncrossed boundary can be
+ * crossed later with no write to invalidate against. `#bm25Recall`'s scope
+ * test is `(validFrom ?? createdAt) <= asOf AND (validUntil IS NULL OR
+ * validUntil > asOf)`, which for a live view is monotone in the clock:
+ *
+ *  - `validFrom <= now`, no `validUntil` — in scope now, and no later `asOf`
+ *    can push it out. **Safe to cache.**
+ *  - `validUntil <= now` — already expired, and a larger `asOf` keeps it
+ *    expired. **Safe to cache.**
+ *  - `validFrom > now` — future-dated: it *enters* scope at that instant.
+ *    **Unsafe.**
+ *  - `validUntil > now` — it *leaves* scope at that instant. **Unsafe.**
+ *
+ * The past-`validFrom` case is not an edge case: `correct()` always writes a
+ * `validFrom` (`previous.validFrom ?? previous.createdAt`, never `undefined`)
+ * and it is always already in the past, so flagging on presence alone made a
+ * single correction permanently disable live-view caching for that whole
+ * workspace and put its live queries back on the O(corpus) scan.
+ *
+ * `now` is the record's own `createdAt`: the value the caller already took
+ * from the engine's injected clock for this insert, so this never reads a
+ * clock of its own (which would both break the engine's determinism under a
+ * test clock and tick a monotonic one an extra time per insert). On the
+ * `import()` path `createdAt` comes from the snapshot instead; for a snapshot
+ * written in the past that only makes this *more* conservative, since bounds
+ * that have since expired still read as future relative to `createdAt`.
+ *
+ * Sticky (`INSERT OR IGNORE`, never cleared): the pending crossing may happen
+ * at any later time, and the flag has to outlive the record — erasing it does
+ * not un-stale a cache entry built while it was there.
+ *
+ * Call on every insert; a no-op unless the record carries a bound that is
+ * still in the future at insert time.
+ */
+export function markTemporalBoundsIfNeeded(db: DatabaseSync, record: { workspaceId: string; createdAt: string; validFrom?: string; validUntil?: string }): void {
+  const now = record.createdAt;
+  if (!((record.validFrom !== undefined && record.validFrom > now) || (record.validUntil !== undefined && record.validUntil > now))) return;
+  db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run(`bm25-temporal-bounds:${record.workspaceId}`, '1');
 }
