@@ -161,7 +161,7 @@ describe('matched corpus retrieval and context budgets', () => {
   });
   it('retains embedding failures and cancellations rather than shrinking the denominator', async () => {
     const report = await runCorpusBenchmark(dataset(), { embedder: { model: 'broken', dimensions: 2, async embed() { throw new Error('PRIVATE_ERROR'); } } });
-    expect(report.complete).toBe(false); expect(report.summaries.hybrid).toMatchObject({ questions: 1, errors: 1, meanRecall: 0 });
+    expect(report.complete).toBe(false); expect(report.summaries.hybrid).toMatchObject({ questions: 1, errors: 1, meanRecall: null, annotatedQuestions: 1 });
     expect(report.summaries.lexical?.anyHitRate).toBe(1); expect(JSON.stringify(report)).not.toContain('PRIVATE_ERROR');
     const signal = AbortSignal.abort();
     const cancelled = await runCorpusBenchmark(dataset(), { signal });
@@ -174,8 +174,12 @@ describe('matched corpus retrieval and context budgets', () => {
       expect(report.complete).toBe(false);
       expect(report.summaries['no-memory']?.completed).toBe(1);
       expect(report.summaries['full-context']?.packedAllHitRate).toBe(1);
-      expect(report.summaries.lexical).toMatchObject({ questions: 1, errors: 1, meanRecall: 0 });
-      expect(report.summaries.bm25).toMatchObject({ questions: 1, errors: 1, meanRecall: 0 });
+      // Nothing was measured for these conditions, so there is no mean to report.
+      // The denominator is not shrunk — `annotatedQuestions` still counts the
+      // question — but a condition where every attempt failed reports null rather
+      // than 0, so "never ran" can never be read as "ran and scored zero".
+      expect(report.summaries.lexical).toMatchObject({ questions: 1, errors: 1, meanRecall: null, annotatedQuestions: 1 });
+      expect(report.summaries.bm25).toMatchObject({ questions: 1, errors: 1, meanRecall: null, annotatedQuestions: 1 });
       expect(JSON.stringify(report)).not.toContain('PRIVATE_INDEX_FAILURE');
     } finally { failingImport.mockRestore(); }
   });

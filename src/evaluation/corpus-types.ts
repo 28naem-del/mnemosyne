@@ -1,4 +1,5 @@
 import type { MemoryEmbedder, MemoryReranker } from '../local/index.js';
+import type { MatchedSystem } from './matched-types.js';
 
 /** Public history and questions are separate from evaluator-only reference labels. */
 export interface EvaluationTurn {
@@ -34,7 +35,11 @@ export interface CorpusDataset {
   notices: string[];
 }
 export type CorpusProvenance = Omit<CorpusDataset['provenance'], 'verification'>;
-export type CorpusCondition = 'no-memory' | 'full-context' | 'lexical' | 'bm25' | 'hybrid';
+export type CorpusCondition = 'no-memory' | 'full-context' | 'lexical' | 'bm25' | 'hybrid' | 'hybrid-norerank';
+/** A competitor system's condition key, kept in a separate namespace from ours. */
+export type MatchedConditionId = `system:${string}`;
+/** Every key that can appear in `summaries` and on an attempt. */
+export type BenchmarkConditionId = CorpusCondition | MatchedConditionId;
 export interface CorpusBenchmarkOptions {
   topK?: number;
   maxContextUnits?: number;
@@ -59,7 +64,22 @@ export interface CorpusBenchmarkOptions {
   rerankTopN?: number;
   /** Additional named condition, keeping the existing overlap baseline unchanged. */
   includeBm25?: boolean;
+  /**
+   * Scores the fused ranking as its own `hybrid-norerank` condition alongside the
+   * reranked `hybrid` one, from a single ingestion and a single embedding pass.
+   * Off by default, so an existing run's conditions and numbers are unchanged.
+   * With a reranker supplied this is what makes the reranker's contribution a
+   * within-run delta rather than a comparison across two separate runs.
+   */
+  includeHybridWithoutRerank?: boolean;
   hybridLexicalScoring?: 'overlap' | 'bm25';
+  /**
+   * Competitor systems scored in the same loop, on the same chunks, with the same
+   * packing budget and the same scorer. Each becomes a `system:<id>` condition.
+   */
+  systems?: MatchedSystem[];
+  /** Per-system wall-clock bound for loading one corpus. Defaults to the run timeout. */
+  systemIngestTimeoutMs?: number;
   maxEmbeddingCalls?: number;
   maxEmbeddingInputBytes?: number;
   /** All conditions use this same counter over the exact complete envelope. */
@@ -78,9 +98,9 @@ export interface EvidenceScore {
   reciprocalRank: number | null;
 }
 export interface CorpusAttempt {
-  questionId: string; category: string; condition: CorpusCondition;
+  questionId: string; category: string; condition: BenchmarkConditionId;
   answerability: EvaluationLabel['answerability']; answerSchema: EvaluationLabel['answerSchema'];
-  status: 'completed' | 'context-overflow' | 'retrieval-error' | 'embedding-error' | 'budget-exhausted' | 'cancelled';
+  status: 'completed' | 'context-overflow' | 'retrieval-error' | 'embedding-error' | 'budget-exhausted' | 'cancelled' | 'system-error';
   retrieval: EvidenceScore;
   packed: EvidenceScore;
   retrievedChunks: number; packedChunks: number;
@@ -102,8 +122,14 @@ export interface CorpusBenchmarkReport {
   runtime: { node: string; platform: string; implementationSha256: string; fingerprint: string }; settings: Record<string, string | number>;
   calls: { embedding: number; embeddingInputBytes: number; generation: 0; judge: 0 };
   embedding?: { model: string; dimensions: number; asymmetric: boolean };
+  /**
+   * Every competitor that was offered to the run, with its caller-attested mode
+   * label and, when it could not be loaded, the verbatim reason. A system that
+   * failed is reported here with a reason and never with a score.
+   */
+  systems?: { id: string; condition: MatchedConditionId; revision: string; mode: string; status: 'scored' | 'ingest-failed'; reason?: string; ingestMilliseconds: number }[];
   answerQuality: 'not-evaluated'; complete: boolean;
   ingestion: { corpusId: string; turns: number; chunks: number; bytes: number; milliseconds: number; embeddingMilliseconds: number }[];
-  attempts: CorpusAttempt[]; summaries: Partial<Record<CorpusCondition, CorpusSummary>>;
+  attempts: CorpusAttempt[]; summaries: Partial<Record<BenchmarkConditionId, CorpusSummary>>;
   notices: string[]; limitations: string[]; durationMs: number;
 }

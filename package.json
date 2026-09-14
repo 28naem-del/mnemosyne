@@ -156,7 +156,9 @@
     "setup:embedder": "node scripts/fetch-local-model.mjs",
     "benchmark:fetch": "node scripts/fetch-benchmark-corpus.mjs",
     "benchmark:scale": "node dist/evaluation/local-benchmark.js",
-    "setup:reranker": "node scripts/fetch-local-reranker.mjs"
+    "setup:reranker": "node scripts/fetch-local-reranker.mjs",
+    "benchmark:matched": "node dist/evaluation/matched-benchmark.js",
+    "benchmark:matched:install": "npm ci --prefix benchmarks/competitors"
   },
   "keywords": [
     "ai",

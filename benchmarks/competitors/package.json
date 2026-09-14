@@ -1,0 +1,10 @@
+{
+  "name": "mnemosyne-matched-competitors",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pinned competitor SDKs for the matched benchmark run. Deliberately NOT dependencies of mnemosy-ai: installing a memory library must not install its competitors. `npm run benchmark:matched` resolves them from here, and reports 'not run' with a reason when they are absent.",
+  "dependencies": {
+    "mem0ai": "3.1.8"
+  }
+}
