@@ -33,7 +33,7 @@ describe('local persistence and ownership', () => {
     roots.push(runtime);
     writeFileSync(join(runtime, 'package.json'), '{"type":"module"}');
     for (const directory of ['embedding', 'reranking']) mkdirSync(join(runtime, directory), { recursive: true });
-    for (const file of ['index', 'validation', 'types', 'ledger', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece',
+    for (const file of ['index', 'validation', 'types', 'ledger', 'granularity', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece',
       'reranking/shared', 'reranking/onnx-reranker', 'reranking/model-assets']) {
       const code = readFileSync(new URL(`../src/local/${file}.ts`, import.meta.url), 'utf8');
       writeFileSync(join(runtime, `${file}.js`), ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText);
