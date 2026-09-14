@@ -133,6 +133,41 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
 }
 
 /**
+ * Records this engine's high-water clock reading and answers whether `now` is
+ * *below* it — i.e. whether the reader's clock has moved backwards at some
+ * point in this connection's life.
+ *
+ * {@link CorpusStatsEntry.computedAt} keeps a single entry from being served
+ * at an instant before the one it was computed for. That is necessary but not
+ * sufficient, because a backward step also invalidates the guarantee that
+ * {@link markTemporalBoundsIfNeeded} rests on. The flag deliberately records
+ * nothing for a record whose instants were all `<= now` at insert; that is
+ * sound only while the clock never goes below the insert clock again. Once it
+ * does, those instants are in the reader's future once more and will be
+ * re-crossed by ordinary forward advance, with no write and nothing flagged.
+ * So an entry computed *below* the high-water mark must not be cached at all:
+ * it would be served later, at a higher instant, having gone stale in exactly
+ * the way nothing can detect. Entries computed at or above the mark stay
+ * cacheable, so a clock that steps back and then catches up returns to normal
+ * caching rather than giving it up for good.
+ *
+ * Mutating: the caller owns the holder (a `LocalMemory` instance field, same
+ * shape as {@link hasTemporalBounds}'s) so the mark survives across calls
+ * without this module holding per-connection state. Call for **live views
+ * only** — a historical `asOf` is a caller-chosen literal, not a clock
+ * reading, and pinning the mark to it would disable live caching for the rest
+ * of the connection. Historical entries do not need the mark anyway, since
+ * {@link corpusStatsCacheKey} already puts their instants in the key.
+ *
+ * On a monotone clock this returns false every time and nothing changes.
+ */
+export function liveClockSteppedBack(now: string, state: { highWater: string }): boolean {
+  if (now < state.highWater) return true;
+  state.highWater = now;
+  return false;
+}
+
+/**
  * Marks a workspace as carrying a record whose scope membership can still
  * change from clock advance alone — see {@link hasTemporalBounds}.
  *

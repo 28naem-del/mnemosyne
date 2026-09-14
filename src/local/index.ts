@@ -13,7 +13,7 @@ import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, t
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
-import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
+import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
 
 export type * from './types.js';
@@ -128,6 +128,9 @@ export class LocalMemory {
   /** See `./bm25-corpus-stats.js`. */
   #bm25StatsCache: CorpusStatsCache = new Map();
   #bm25TemporalBounds = { present: false };
+  /** Highest clock reading a live BM25 scope has been evaluated at on this
+   * connection; see `liveClockSteppedBack` for why caching below it is unsafe. */
+  #bm25LiveClock = { highWater: '' };
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
@@ -1408,7 +1411,11 @@ export class LocalMemory {
     const { documents, totalLength } = corpusStats({
       db: this.#db, cache: this.#bm25StatsCache, scope, parameters,
       key: corpusStatsCacheKey(input.includeUntrusted, kinds, time),
-      cacheable: time.historical || !hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds),
+      // `||` short-circuits, so the live-only guards below are never reached
+      // for a historical view — `liveClockSteppedBack` must not see a
+      // caller-chosen `asOf`, only a clock reading.
+      cacheable: time.historical || (!hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds)
+        && !liveClockSteppedBack(time.asOf, this.#bm25LiveClock)),
       // The instant this scope is evaluated at. For a live view `#temporal()`
       // sets `asOf === knownAt === #time()`, so this is the reader's own clock
       // read once, with no extra tick of an injected or monotonic one.

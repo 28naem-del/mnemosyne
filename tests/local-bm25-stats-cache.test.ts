@@ -484,4 +484,61 @@ describe('BM25 corpus statistics cache', () => {
     expect(live).toBe(1);
     rmSync(root, { recursive: true, force: true });
   });
+  it('does not re-cache below the high-water clock, so a forward advance after a step-back cannot serve stale statistics', () => {
+    // `computedAt` alone is necessary but NOT sufficient. It makes the
+    // step-back itself a miss, but the entry recomputed at the stepped-back
+    // instant is then served on the way back up — and everything written while
+    // the clock was high is in the reader's future again, unflagged (all of it
+    // was `<= now` at insert), so ordinary forward advance re-crosses it with
+    // no write. Statistics recomputed below the high-water mark must therefore
+    // not be cached at all.
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-recross-'));
+    const path = join(root, 'memory.sqlite');
+    let current = 3;
+    const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+    opened.push(db);
+    db.store(fact('widget alpha report'));
+    db.store(fact('widget beta report'));
+    current = 12; // two more rows land while the clock is high
+    db.store(fact('gadget gamma notice'));
+    db.store(fact('gadget delta notice'));
+    const recall = () => db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    recall();     // warms documents=4 at day(12)
+    current = 3;  // step back: documents=2 is the truth here
+    recall();
+    current = 20; // and now forward again, past everything
+    const after = recall();
+
+    const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(20)) });
+    opened.push(cold);
+    const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(truth).toHaveLength(2); // only the two 'widget' rows match, but over documents=4
+    const pairs = (rows: typeof truth) => rows.map(r => [r.memory.id, r.score] as const).sort((a, b) => a[0].localeCompare(b[0]));
+    expect(pairs(after)).toEqual(pairs(truth));
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('keeps caching live statistics once the clock has climbed back to its high-water mark', () => {
+    // The high-water rule must not become a permanent opt-out: a connection
+    // that sees one backward step should return to normal caching, not spend
+    // the rest of its life rescanning the corpus on every query.
+    let current = 12;
+    const db = memory('alice', 'test', () => new Date(day(current)));
+    db.store(fact('widget alpha'));
+    db.store(fact('gadget beta'));
+    const probe = countCorpusStatsCalls();
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(1);
+    current = 3; // below the mark: recomputed every time, never cached
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(3);
+    current = 12; // back at the mark: the day(12) entry is valid again
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(3);
+    current = 30; // and normal forward advance keeps hitting
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(probe.calls()).toBe(3);
+  });
 });
