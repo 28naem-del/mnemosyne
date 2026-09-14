@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -167,6 +168,41 @@ describe('hnsw dense index', () => {
     const db = memory();
     seed(db); db.recall({ query: 'coffee' });
     expect(db.retrieval.index!.mode).toBe('sqlite-vec');
+  });
+
+  withHnsw('rebuilds deterministically after its index file is lost', () => {
+    const path = location();
+    const build = (): { digest: string; hits: string[][] } => {
+      const db = memory({ path, indexMode: 'hnsw' });
+      const queries = ['coffee', 'vintage car repair', 'payroll last working day', 'signed audit records', 'Frankfurt nodes'];
+      const hits = queries.map(query => db.recall({ query, limit: 5 }).map(hit => hit.memory.id));
+      db.close(); opened.splice(opened.indexOf(db), 1);
+      return { digest: createHash('sha256').update(readFileSync(`${path}-hnsw`)).digest('hex'), hits };
+    };
+    const seeder = memory({ path, indexMode: 'exact' });
+    seed(seeder);
+    seeder.close(); opened.splice(opened.indexOf(seeder), 1);
+
+    const incremental = build();
+    // Lose the index the way a crash or a partial copy would, leaving the
+    // database untouched, and rebuild from `local_embeddings` twice.
+    const rebuild = (): { digest: string; hits: string[][] } => {
+      rmSync(`${path}-hnsw`); rmSync(`${path}-hnsw.meta.json`);
+      return build();
+    };
+    const first = rebuild(), second = rebuild();
+
+    // A rebuild is reproducible to the byte: same labels, same insertion order
+    // (`ORDER BY memory_id`), same seed and construction parameters.
+    expect(second.digest).toBe(first.digest);
+    expect(second.hits).toEqual(first.hits);
+    // It still answers what the incremental index answered. The two graphs are
+    // NOT required to be the same object — the index is built incrementally in
+    // creation order and rebuilt in identifier order, so their topologies can
+    // differ — and they do not have to be, because correctness comes from the
+    // authorization gate and the exact rescore below the index, never from which
+    // graph proposed a candidate.
+    expect(first.hits).toEqual(incremental.hits);
   });
 
   withHnsw('persists its index beside the database and reloads it', () => {
