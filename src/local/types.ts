@@ -1,3 +1,105 @@
+/**
+ * Provenance and outcome ledger.
+ *
+ * Every belief change and every retrieval that informed one is appended here, so
+ * a later consolidation pass can replay what the agent knew, what it was shown,
+ * and whether acting on it worked. Entries carry identities, digests and
+ * provenance, never the source text of a record: erasing a memory erases its
+ * ledger entries and its appearances in past retrievals through foreign keys,
+ * so the ledger cannot become a back door around forget().
+ */
+export type LedgerEvent = 'store' | 'correction' | 'recall' | 'outcome' | 'erasure';
+
+/** Where a record came from and what it claimed at the moment it was written. */
+export interface LedgerProvenance {
+  origin: 'store' | 'correction' | 'checkpoint' | 'import';
+  sourceUri: string;
+  author?: string;
+  observedAt?: string;
+  revision?: string;
+  kind: MemoryKind;
+  trust: MemoryTrust;
+  visibility: MemoryVisibility;
+  key?: string;
+  /** Digest of the stored text, so a later replay can prove it is unchanged. */
+  textSha256: string;
+  textBytes: number;
+  dependencies: string[];
+  supersedes?: string;
+  validFrom?: string;
+  validUntil?: string;
+}
+
+/** What a retrieval was asked for and what it returned. `results` is rebuilt from
+ * the reference table, so an erased record leaves no identity behind. */
+export interface LedgerRetrieval {
+  /** Present only when the ledger was configured with `queries: 'text'`. */
+  query?: string;
+  querySha256: string;
+  mode: RetrievalMode;
+  lexicalScoring: 'overlap' | 'bm25';
+  limit: number;
+  returned: number;
+  embeddingModel?: string;
+  degraded?: string;
+  asOf?: string;
+  knownAt?: string;
+  latencyMs: number;
+  results: { memoryId: string; rank: number; score: number }[];
+}
+
+export interface LedgerCorrection {
+  supersededId: string;
+  correctionId: string;
+  reason?: string;
+  /** Records the cascade invalidated, so the change can be replayed or undone. */
+  invalidatedIds: string[];
+  invalidatedCount: number;
+}
+
+export interface LedgerOutcome {
+  taskId: string;
+  success: boolean;
+  verifier: string;
+  evidenceSha256: string;
+}
+
+export interface LedgerEntry {
+  id: string;
+  /** Monotonic within one database; also the pagination cursor. */
+  sequence: number;
+  event: LedgerEvent;
+  recordedAt: string;
+  workspaceId: string;
+  agentId: string;
+  memoryId?: string;
+  provenance?: LedgerProvenance;
+  retrieval?: LedgerRetrieval;
+  correction?: LedgerCorrection;
+  outcome?: LedgerOutcome;
+  erasure?: { deletedCount: number };
+}
+
+export interface LedgerQuery {
+  limit?: number;
+  /** Exclusive lower bound; pass the previous page's nextCursor. */
+  after?: number;
+  events?: LedgerEvent[];
+  memoryId?: string;
+}
+export interface LedgerPage { entries: LedgerEntry[]; nextCursor?: number }
+
+export interface LedgerOptions {
+  /** Defaults to true. */
+  enabled?: boolean;
+  /** `digest` keeps only a SHA-256 of each recall query, and is the default,
+   * because a query is user text that no foreign key can erase: storing it
+   * verbatim would let a query about a record outlive forget() of that record.
+   * `text` keeps queries verbatim for trajectory replay, and is an explicit
+   * decision to accept that they survive erasure. */
+  queries?: 'text' | 'digest';
+}
+
 /** Portable JSON values only; metadata is validated at runtime. */
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type MemoryKind = 'fact' | 'preference' | 'decision' | 'procedure' | 'observation' | 'checkpoint';
@@ -80,6 +182,8 @@ export interface LocalMemoryOptions {
   requireEmbedder?: boolean;
   /** Default dense similarity floor for every recall, 0-1. Defaults to 0. */
   minSimilarity?: number;
+  /** Provenance and outcome ledger settings. `false` disables it entirely. */
+  ledger?: LedgerOptions | false;
 }
 
 /** What retrieval actually does, as opposed to what was asked for. A hybrid

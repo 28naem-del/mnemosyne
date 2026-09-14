@@ -6,8 +6,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import * as v from './validation.js';
 import type {
   CheckpointInput, CompileInput, ContextPacket, EmbeddingIndexOptions, EmbeddingIndexResult, HybridRecallOptions, ImportResult, ListMemoryInput, LocalMemoryOptions, MemoryEmbedder, MemoryPage, MemoryRecord,
+  LedgerEntry, LedgerEvent, LedgerOptions, LedgerPage, LedgerProvenance, LedgerQuery, LedgerRetrieval,
   MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, RetrievalMode, RetrievalStatus, RollbackUnchangedRecordsInput, SnapshotIdempotencyEntry, StoreMemoryInput, SyncMemoryEmbedder,
 } from './types.js';
+import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, type LedgerRow } from './ledger.js';
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
 
 export type * from './types.js';
@@ -60,6 +62,8 @@ export class LocalMemory {
   readonly #modelCacheDir?: string;
   readonly #requireEmbedder: boolean;
   readonly #minSimilarity: number;
+  readonly #ledgerEnabled: boolean;
+  readonly #ledgerQueries: 'text' | 'digest';
   /** `undefined` means not resolved yet; `null` means resolved to no embedder. */
   #embedder?: SyncMemoryEmbedder | null;
   #embedderShared = false;
@@ -69,7 +73,7 @@ export class LocalMemory {
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'ledger'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -89,6 +93,10 @@ export class LocalMemory {
     if (options.modelCacheDir !== undefined) this.#modelCacheDir = v.string(options.modelCacheDir, 'modelCacheDir', 4096);
     this.#requireEmbedder = v.boolean(options.requireEmbedder);
     this.#minSimilarity = this.#similarity(options.minSimilarity, 0);
+    const ledger = options.ledger === undefined ? {} : options.ledger;
+    if (ledger !== false) v.keys(v.object(ledger, 'ledger'), ['enabled', 'queries'], 'ledger');
+    this.#ledgerEnabled = ledger !== false && v.boolean((ledger as LedgerOptions).enabled ?? true);
+    this.#ledgerQueries = ledger === false ? 'digest' : v.enumeration((ledger as LedgerOptions).queries ?? 'digest', ['text', 'digest'] as const, 'ledger.queries');
     this.#path = path === ':memory:' ? path : resolve(path);
     if (this.#path !== ':memory:') {
       mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
@@ -288,7 +296,7 @@ export class LocalMemory {
         CREATE INDEX IF NOT EXISTS idempotency_memory ON idempotency(memory_id);
         CREATE INDEX IF NOT EXISTS dependencies_target ON dependencies(to_id);
         CREATE INDEX IF NOT EXISTS memories_runtime_jobs ON memories(workspace_id) WHERE json_extract(data,'$.metadata.runtimeType')='job';
-      `);
+      ${LEDGER_SCHEMA}`);
       if (!this.#db.prepare('PRAGMA table_info(local_search)').all().some(column => column.name === 'token_count')) this.#db.exec('ALTER TABLE local_search ADD COLUMN token_count INTEGER');
       if (!this.#db.prepare('PRAGMA table_info(local_terms)').all().some(column => column.name === 'frequency')) {
         this.#db.exec('ALTER TABLE local_terms ADD COLUMN frequency INTEGER NOT NULL DEFAULT 1; UPDATE local_search SET token_count=NULL;');
@@ -332,7 +340,7 @@ export class LocalMemory {
     }
   }
 
-  #insert(record: MemoryRecord): void {
+  #insert(record: MemoryRecord, origin: LedgerProvenance['origin'] = 'store'): void {
     this.#db.prepare(`INSERT INTO memories(id,workspace_id,agent_id,visibility,trust,status,kind,text,fact_key,supersedes,created_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       record.id, record.workspaceId, record.agentId, record.visibility, record.trust, record.status,
       record.kind, record.text, record.key ?? null, record.supersedes ?? null, record.createdAt, JSON.stringify(record),
@@ -340,6 +348,75 @@ export class LocalMemory {
     this.#indexText(record);
     this.#links(record);
     this.#audit(record.id, 'stored');
+    this.#appendLedger('store', record.id, { provenance: {
+      origin, sourceUri: record.source.uri,
+      ...(record.source.author === undefined ? {} : { author: record.source.author }),
+      ...(record.source.observedAt === undefined ? {} : { observedAt: record.source.observedAt }),
+      ...(record.source.revision === undefined ? {} : { revision: record.source.revision }),
+      kind: record.kind, trust: record.trust, visibility: record.visibility,
+      ...(record.key === undefined ? {} : { key: record.key }),
+      textSha256: this.#textHash(record.text), textBytes: Buffer.byteLength(record.text),
+      dependencies: [...record.dependencies],
+      ...(record.supersedes === undefined ? {} : { supersedes: record.supersedes }),
+      ...(record.validFrom === undefined ? {} : { validFrom: record.validFrom }),
+      ...(record.validUntil === undefined ? {} : { validUntil: record.validUntil }),
+    } });
+  }
+
+  /**
+   * Appends one ledger entry. Writes are part of the caller's transaction, so a
+   * rolled-back belief change leaves no ledger entry claiming it happened.
+   */
+  #appendLedger(event: LedgerEvent, memoryId: string | null, payload: Partial<Pick<LedgerEntry, 'provenance' | 'retrieval' | 'correction' | 'outcome' | 'erasure'>>, results?: { memoryId: string; rank: number; score: number }[]): void {
+    if (!this.#ledgerEnabled) return;
+    const id = randomUUID();
+    // Retrieval results live in their own table so erasure removes them with the
+    // record; the JSON payload deliberately holds no record identity for them.
+    const stored = payload.retrieval ? { ...payload, retrieval: { ...payload.retrieval, results: [] as LedgerRetrieval['results'] } } : payload;
+    this.#db.prepare('INSERT INTO local_ledger(id,workspace_id,agent_id,event,recorded_at,memory_id,data) VALUES(?,?,?,?,?,?,?)')
+      .run(id, this.#workspaceId, this.#agentId, event, this.#time(), memoryId, JSON.stringify(stored));
+    if (!results?.length) return;
+    const reference = this.#db.prepare('INSERT OR IGNORE INTO local_ledger_results(ledger_id,memory_id,rank,score) VALUES(?,?,?,?)');
+    for (const result of results) reference.run(id, result.memoryId, result.rank, result.score);
+  }
+
+  #recordRecall(input: RecallInput, results: RecallResult[], mode: RetrievalMode, embedder: SyncMemoryEmbedder | null, latencyMs: number): void {
+    if (!this.#ledgerEnabled) return;
+    const query = typeof input.query === 'string' ? input.query : '';
+    const retrieval: LedgerRetrieval = {
+      ...(this.#ledgerQueries === 'text' ? { query } : {}),
+      querySha256: this.#textHash(query), mode,
+      lexicalScoring: (input.lexicalScoring ?? 'bm25') as 'overlap' | 'bm25',
+      limit: v.limit(input.limit, 10), returned: results.length,
+      ...(embedder ? { embeddingModel: embedder.model } : {}),
+      ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
+      ...(input.asOf === undefined ? {} : { asOf: input.asOf }),
+      ...(input.knownAt === undefined ? {} : { knownAt: input.knownAt }),
+      latencyMs, results: [],
+    };
+    const references = results.map((result, rank) => ({ memoryId: result.memory.id, rank, score: result.score }));
+    this.#transaction(() => this.#appendLedger('recall', null, { retrieval }, references));
+  }
+
+  /**
+   * Reads the provenance and outcome ledger back, oldest first. This is the
+   * replay surface the outcome-verified consolidation work builds on.
+   */
+  ledger(query: LedgerQuery = {}): LedgerPage {
+    this.#assertOpen();
+    v.keys(v.object(query, 'ledger query'), ['limit', 'after', 'events', 'memoryId'], 'ledger query');
+    const limit = v.limit(query.limit, 100, 1000);
+    if (query.after !== undefined && (typeof query.after !== 'number' || !Number.isSafeInteger(query.after) || query.after < 0)) throw new TypeError('after must be a nonnegative integer cursor');
+    const events = query.events === undefined ? [] : [...new Set(v.strings(query.events, 'events', LEDGER_EVENTS.length).map(event => v.enumeration(event, LEDGER_EVENTS, 'ledger event')))];
+    const memoryId = query.memoryId === undefined ? undefined : v.string(query.memoryId, 'memoryId', 160);
+    const rows = this.#db.prepare(`SELECT sequence,id,workspace_id,agent_id,event,recorded_at,memory_id,data FROM local_ledger
+      WHERE workspace_id=? AND agent_id=? AND sequence>?
+      ${events.length ? `AND event IN (${events.map(() => '?').join(',')})` : ''}
+      ${memoryId === undefined ? '' : 'AND (memory_id=? OR id IN (SELECT ledger_id FROM local_ledger_results WHERE memory_id=?))'}
+      ORDER BY sequence LIMIT ?`).all(this.#workspaceId, this.#agentId, query.after ?? 0, ...events, ...(memoryId === undefined ? [] : [memoryId, memoryId]), limit) as unknown as LedgerRow[];
+    const references = this.#db.prepare('SELECT memory_id AS memoryId,rank,score FROM local_ledger_results WHERE ledger_id=?');
+    const entries = rows.map(row => decodeLedgerRow(row, references.all(row.id) as unknown as { memoryId: string; rank: number; score: number }[]));
+    return { entries, ...(entries.length === limit ? { nextCursor: entries[entries.length - 1].sequence } : {}) };
   }
 
   #links(record: MemoryRecord): void {
@@ -616,7 +693,10 @@ export class LocalMemory {
    */
   recall(input: RecallInput): RecallResult[] {
     const embedder = this.#resolveEmbedder();
-    return embedder ? this.#hybridRecall(input, embedder) : this.#rankedRecall(input);
+    const started = performance.now();
+    const results = embedder ? this.#hybridRecall(input, embedder) : this.#rankedRecall(input);
+    this.#recordRecall(input, results, embedder ? 'hybrid' : 'lexical', embedder, performance.now() - started);
+    return results;
   }
 
   /** What retrieval actually does here, including a degradation reason if the
@@ -1176,8 +1256,12 @@ export class LocalMemory {
       const now = this.#time();
       const correctionId = randomUUID();
       if (affected.some(record => record.createdAt > now)) throw new TypeError('Correction time precedes existing evidence');
-      for (const record of affected) if (record.status === 'active') this.#updateStatus(record, record.id === id ? 'superseded' : 'invalidated', now,
-        record.id === id ? undefined : { sourceId: id, correctionId, recordedAt: now });
+      const invalidatedIds: string[] = [];
+      for (const record of affected) if (record.status === 'active') {
+        if (record.id !== id) invalidatedIds.push(record.id);
+        this.#updateStatus(record, record.id === id ? 'superseded' : 'invalidated', now,
+          record.id === id ? undefined : { sourceId: id, correctionId, recordedAt: now });
+      }
       const { evidence: _evidence, ...old } = previous;
       const validFrom = input.validFrom === undefined ? previous.validFrom ?? previous.createdAt : v.timestamp(input.validFrom, 'validFrom');
       const validUntil = input.validUntil === undefined ? previous.validUntil : v.timestamp(input.validUntil, 'validUntil');
@@ -1189,7 +1273,8 @@ export class LocalMemory {
       const record: MemoryRecord = { ...old, validFrom, ...(validUntil === undefined ? {} : { validUntil }), id: correctionId, text, source, trust: previous.trust === 'untrusted' ? 'untrusted' : 'observed', status: 'active', supersedes: id, createdAt: now, updatedAt: now, metadata };
       if (record.dependencies.some((dependency) => this.get(dependency)?.trust === 'untrusted')) record.trust = 'untrusted';
       this.#validateDependencies(record);
-      this.#insert(record);
+      this.#insert(record, 'correction');
+      this.#appendLedger('correction', record.id, { correction: { supersededId: id, correctionId, reason, invalidatedIds, invalidatedCount: invalidatedIds.length } });
       return record;
     });
   }
@@ -1201,6 +1286,9 @@ export class LocalMemory {
       const records = this.#descendants([id], true);
       const visible = records.filter((record) => record.agentId === this.#agentId || record.visibility === 'workspace').map((record) => record.id);
       for (const record of records) this.#db.prepare('DELETE FROM memories WHERE id=? AND workspace_id=?').run(record.id, this.#workspaceId);
+      // Counts only. Naming the erased records here would defeat the erasure the
+      // caller just asked for; their ledger entries cascaded away with them.
+      this.#appendLedger('erasure', null, { erasure: { deletedCount: records.length } });
       return visible;
     });
     // Secure deletion covers live SQLite/FTS content. OS snapshots, SSD remapping,
@@ -1469,6 +1557,7 @@ export class LocalMemory {
       const record: OutcomeRecord = { ...normalized, id: randomUUID(), workspaceId: this.#workspaceId, agentId: this.#agentId, createdAt: this.#time() };
       this.#insertOutcome(record);
       this.#audit(record.memoryId, record.success ? 'outcome-success' : 'outcome-failure');
+      this.#appendLedger('outcome', record.memoryId, { outcome: { taskId: record.taskId, success: record.success, verifier: record.verifier, evidenceSha256: this.#textHash(record.evidence) } });
       return record;
     });
   }
@@ -1605,7 +1694,7 @@ export class LocalMemory {
         if (existing) {
           if (existing.workspaceId !== this.#workspaceId || existing.agentId !== this.#agentId || v.canonical(existing) !== v.canonical(record)) throw new Error('Snapshot id conflicts with existing memory');
           result.skipped++;
-        } else { this.#insert(record); result.imported++; }
+        } else { this.#insert(record, 'import'); result.imported++; }
       }
       for (const outcome of outcomes) {
         const existing = this.#db.prepare('SELECT data FROM outcomes WHERE id=?').get(outcome.id) as DataRow | undefined;

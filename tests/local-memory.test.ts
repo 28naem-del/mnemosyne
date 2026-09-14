@@ -33,7 +33,7 @@ describe('local persistence and ownership', () => {
     roots.push(runtime);
     writeFileSync(join(runtime, 'package.json'), '{"type":"module"}');
     mkdirSync(join(runtime, 'embedding'), { recursive: true });
-    for (const file of ['index', 'validation', 'types', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece']) {
+    for (const file of ['index', 'validation', 'types', 'ledger', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece']) {
       const code = readFileSync(new URL(`../src/local/${file}.ts`, import.meta.url), 'utf8');
       writeFileSync(join(runtime, `${file}.js`), ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText);
     }
@@ -226,7 +226,9 @@ describe('provenance and deletion', () => {
     expect(reopened.export().outcomes).toEqual([]);
     expect(reopened.get(original.id)).toBeNull();
     const sql = new DatabaseSync(path);
-    for (const table of ['memories', 'dependencies', 'outcomes', 'idempotency', 'audit']) expect(sql.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n).toBe(0);
+    for (const table of ['memories', 'dependencies', 'outcomes', 'idempotency', 'audit', 'local_ledger_results']) expect(sql.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n).toBe(0);
+    // Only the erasure entry itself survives, and it carries a count, not an identity.
+    expect(sql.prepare("SELECT count(*) AS n FROM local_ledger WHERE event!='erasure' AND event!='recall'").get()?.n).toBe(0);
     sql.close();
     reopened.close();
     expect(readFileSync(path).includes(Buffer.from(canary))).toBe(false);
