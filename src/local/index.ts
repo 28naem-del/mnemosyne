@@ -1240,13 +1240,23 @@ export class LocalMemory {
     return accepted.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   }
 
-  /** Open the configured index on first dense use, and bring it up to date. */
+  /**
+   * Open the configured index on first dense use, and bring it up to date.
+   *
+   * `#denseResolved` only latches on a successful resolution — set after
+   * `createDenseIndex` returns, not before. An explicit `sqlite-vec`/`hnsw`
+   * request with no backend available throws (see `createDenseIndex`), and
+   * latching first would have cached that failure as "resolved to null":
+   * every later recall in the session would have gone on to silently answer
+   * from the exact scan instead of throwing again, which is exactly the
+   * quiet substitution naming a backend explicitly is supposed to refuse.
+   */
   #resolveDenseIndex(model: string, dimensions: number): DenseIndex | null {
     if (this.#denseResolved) return this.#denseIndex;
-    this.#denseResolved = true;
     const selection = this.#transaction(() => createDenseIndex(this.#db, {
       mode: this.#indexMode, model, dimensions, databasePath: this.#path, vecLoaded: this.#vecLoaded, ...(this.#vecError ? { vecError: this.#vecError } : {}),
     }));
+    this.#denseResolved = true;
     this.#denseIndex = selection.index;
     this.#denseStatus = selection.status;
     if (selection.index && selection.rebuild) this.#syncDenseIndex(selection.index, model, dimensions);

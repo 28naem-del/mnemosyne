@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type StoreMemoryInput } from '../src/local/index.js';
 import type { SyncMemoryEmbedder } from '../src/local/types.js';
 import { hnswAvailable, HnswIndex, sqliteVecPath, tryLoadSqliteVec } from '../src/local/vector/index.js';
+import * as hnswModule from '../src/local/vector/hnsw.js';
 
 /**
  * The dense index, held against the exact scan it replaces.
@@ -473,5 +474,52 @@ describe('vector storage format version guard', () => {
     const reopened = new DatabaseSync(path);
     try { expect((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(99); }
     finally { reopened.close(); }
+  });
+});
+
+/**
+ * Naming a backend is a promise this must keep or refuse, never quietly break.
+ * `auto` carries no such promise, so the same unavailability must not affect it.
+ */
+describe('explicit backend availability', () => {
+  const BOGUS = '/definitely/not/a/real/sqlite-vec-path';
+
+  it('an explicit hnsw request throws an actionable message when hnswlib-node is unavailable', () => {
+    const spy = vi.spyOn(hnswModule, 'hnswAvailable').mockReturnValue(false);
+    try {
+      const db = memory({ indexMode: 'hnsw' });
+      seed(db);
+      expect(() => db.recall({ query: 'vintage car repair' })).toThrow(/hnswlib-node is not installed/);
+      // Not a one-shot: a failed resolution must not be cached as "resolved to
+      // null", or every later recall in the session would go on to silently
+      // answer from the exact scan instead of refusing again.
+      expect(() => db.recall({ query: 'vintage car repair' })).toThrow(/hnswlib-node is not installed/);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('auto never selects hnsw, so it is unaffected by hnsw being unavailable', () => {
+    const spy = vi.spyOn(hnswModule, 'hnswAvailable').mockReturnValue(false);
+    try {
+      const db = memory({ indexMode: 'auto' });
+      seed(db);
+      expect(() => db.recall({ query: 'vintage car repair' })).not.toThrow();
+      // sqlite-vec is genuinely available in this environment, so auto lands on
+      // it — proving hnsw's unavailability was never even consulted.
+      expect(db.retrieval.index).toMatchObject({ requested: 'auto', mode: 'sqlite-vec' });
+    } finally { spy.mockRestore(); }
+  });
+
+  it('an explicit sqlite-vec request throws when the extension cannot be loaded', () => {
+    const db = memory({ indexMode: 'sqlite-vec', sqliteVecPath: BOGUS });
+    seed(db);
+    expect(() => db.recall({ query: 'vintage car repair' })).toThrow(new RegExp(BOGUS.replace(/\//g, '\\/')));
+  });
+
+  it('auto degrades silently to the exact scan under the identical sqlite-vec failure', () => {
+    const db = memory({ indexMode: 'auto', sqliteVecPath: BOGUS });
+    seed(db);
+    expect(() => db.recall({ query: 'vintage car repair' })).not.toThrow();
+    expect(db.retrieval.index).toMatchObject({ requested: 'auto', mode: 'exact' });
+    expect(db.retrieval.index!.unavailable).toContain(BOGUS);
   });
 });

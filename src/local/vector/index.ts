@@ -81,7 +81,16 @@ export interface DenseIndexSelection {
  *
  * Returns `index: null` for the exact scan, which is always a correct answer —
  * every caller of this function must work when it gets one, because that is what
- * a machine without the optional binaries gets.
+ * `auto` degrading, or `exact` itself, hands back.
+ *
+ * `sqlite-vec` and `hnsw` are a different promise: naming one is asking this
+ * exact index to run, so if its optional dependency is not available this
+ * throws instead of quietly substituting the exact scan. A caller that asked
+ * for an approximate index and silently got an exhaustive one would not know
+ * to expect the latency (or, worse, would tune for hnsw's approximate recall
+ * and unknowingly get exact's exhaustive one instead) — either way, wrong
+ * without a symptom. `auto` carries no such promise, so it is the only mode
+ * that ever degrades silently.
  */
 export function createDenseIndex(db: DatabaseSync, options: {
   mode: DenseIndexMode; model: string; dimensions: number; databasePath: string; vecLoaded: boolean; vecError?: string;
@@ -96,13 +105,16 @@ export function createDenseIndex(db: DatabaseSync, options: {
 
   if (wanted.kind === 'hnsw') {
     if (!hnswAvailable()) {
-      // An explicit request for hnsw must not quietly become something else.
-      return exact('hnswlib-node is not installed; install it to enable the hnsw index');
+      // `wanted.kind` is only ever 'hnsw' when `mode === 'hnsw'` — auto never
+      // selects it (see DenseIndexMode's doc) — so every path here is an
+      // explicit request. It must not quietly become something else.
+      throw new Error('hnswlib-node is not installed; install it to enable the hnsw index');
     }
   } else if (!vecLoaded) {
     const reason = options.vecError ?? 'sqlite-vec is not installed';
     // `auto` is allowed to degrade; naming sqlite-vec explicitly is not.
-    return exact(mode === 'auto' ? `${reason}; using the exact scan` : reason);
+    if (mode === 'sqlite-vec') throw new Error(reason);
+    return exact(`${reason}; using the exact scan`);
   }
 
   const moved = !recorded || recorded.kind !== wanted.kind || recorded.model !== wanted.model || recorded.dimensions !== wanted.dimensions;
