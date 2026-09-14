@@ -924,10 +924,14 @@ export class LocalMemory {
    * cross-encoder's ordering and the ledger's training signal, and it keeps
    * `RecallResult.score` monotonically decreasing down the returned list.
    */
-  #rerankSync(input: RecallInput, ranked: ScoredId[], time: TemporalView): ScoredId[] | null {
+  #rerankSync(input: RecallInput, ranked: ScoredId[], time: TemporalView, reserved = 0): ScoredId[] | null {
     const reranker = this.#resolveReranker();
     if (!reranker || !ranked.length) return null;
-    const head = ranked.slice(0, this.#rerankTopN), tail = ranked.slice(this.#rerankTopN);
+    // The rescoring budget grows by exactly the number of records the derived
+    // indexes added, so expansion widens what is rescored instead of displacing
+    // what would have been.
+    const depth = this.#rerankTopN + reserved;
+    const head = ranked.slice(0, depth), tail = ranked.slice(depth);
     const passages: string[] = [], scored: ScoredId[] = [];
     const carried: ScoredId[] = [];
     for (const entry of head) {
@@ -973,12 +977,12 @@ export class LocalMemory {
     const lexicalScored = lexical.map(entry => ({ id: entry.memory.id, score: entry.score }));
     const fused = this.#fuse([lexicalScored, semantic], this.#rrfK);
     const multi = this.#multiGranularity(input, fused, { model, dimensions, query }, time, this.#rrfK, this.#rerankTopN);
-    let ranked = multi ?? [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    let ranked = multi?.ranked ?? [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     trace?.push({ stage: 'lexical', candidates: lexicalScored },
       { stage: 'dense', candidates: [...semantic].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) },
       { stage: 'fused', candidates: ranked });
-    const reranked = this.#rerankSync(input, ranked, time);
-    if (reranked) { ranked = reranked; trace?.push({ stage: 'reranked', candidates: ranked }); }
+    const reranked = this.#rerankSync(input, ranked, time, multi?.reserved ?? 0);
+    if (reranked) { ranked = multi ? this.#withReranker(ranked, reranked) : reranked; trace?.push({ stage: 'reranked', candidates: ranked }); }
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
@@ -1187,12 +1191,13 @@ export class LocalMemory {
    * already allowed to surface.
    *
    * Expansion never evicts. The turn-only top `poolSize` crosses into the pool the
-   * reranker sees wholesale, and derived evidence may add at most
-   * `granularity.reserve` records beside it. A window hit is weak evidence about
-   * each of its members: enough to earn a member a rescoring slot, never enough to
-   * take one away from a record the turn indexes nominated directly.
+   * reranker sees wholesale, derived evidence may add at most `granularity.reserve`
+   * records beside it, and the caller widens the rescoring budget by exactly how
+   * many it added. A window hit is weak evidence about each of its members: enough
+   * to earn a member a rescoring slot, never enough to take one away from a record
+   * the turn indexes nominated directly.
    */
-  #multiGranularity(input: RecallInput, fused: Map<string, ScoredId>, dense: { model: string; dimensions: number; query: number[] }, time: TemporalView, rrfK: number, poolSize: number, check?: () => void): ScoredId[] | null {
+  #multiGranularity(input: RecallInput, fused: Map<string, ScoredId>, dense: { model: string; dimensions: number; query: number[] }, time: TemporalView, rrfK: number, poolSize: number, check?: () => void): { ranked: ScoredId[]; reserved: number } | null {
     if ((input.granularity ?? 'turn') !== 'multi') return null;
     const terms = [...new Set(this.#tokens(v.string(input.query, 'query', 4096)))].slice(0, 64);
     const scan: DerivedScan = { workspaceId: this.#workspaceId, agentId: this.#agentId, asOf: time.asOf, knownAt: time.knownAt };
@@ -1233,7 +1238,39 @@ export class LocalMemory {
     for (const id of scores.keys()) origins.set(id, [...(fused.has(id) ? ['turn'] : []), ...GRANULARITY_LEVELS.filter(level => levels.get(level)?.has(id))].join('+'));
     this.#granularityTrace = { ledger: { mode: 'multi', channels, reserved: extras.length }, origins };
     const order = (a: string, b: string): number => scores.get(b)! - scores.get(a)! || a.localeCompare(b);
-    return [...[...pool].sort(order), ...[...scores.keys()].filter(id => !pool.has(id)).sort(order)].map(id => ({ id, score: scores.get(id)! }));
+    const ranked = [...[...pool].sort(order), ...[...scores.keys()].filter(id => !pool.has(id)).sort(order)].map(id => ({ id, score: scores.get(id)! }));
+    return { ranked, reserved: extras.length };
+  }
+
+  /**
+   * Composes the cross-encoder's ordering with the one it was handed, as two RRF
+   * channels rather than as a verdict and the list it overwrites.
+   *
+   * On the turn-only path the cross-encoder still replaces the ranking outright,
+   * exactly as it always has. It is only on the multi-granularity path that this
+   * runs, and the reason is specific: a cross-encoder scores each turn against the
+   * query in isolation, which is precisely the judgement a session index exists to
+   * correct. "Yeah, I did that too" is evidence because of the turns above it, and
+   * a model that never sees those turns will rank it at the floor however it got
+   * into the pool. Measured on LoCoMo, letting the cross-encoder overwrite the
+   * fused ranking destroyed most of what the derived indexes contributed: the
+   * all-evidence-hit gain was +7.58 with the reranker withheld and +1.11 with it
+   * replacing the ranking.
+   *
+   * A third channel endorsing every member of a window by the best rank any one
+   * member achieved was tried and REJECTED on measurement: it raised MRR (0.5714 ->
+   * 0.6060) and lowered both coverage metrics (allHit 72.48 -> 71.81, recall@10
+   * 78.64 -> 77.29) on the first conversation, because packing a strong session's
+   * siblings into the top-10 displaces relevant turns from other sessions. Sharing
+   * an endorsement across a window is not the same as completing an evidence group.
+   *
+   * No new constant: this reuses the fusion the engine already does, at the `rrfK`
+   * it already uses. A candidate the cross-encoder never saw keeps its fused rank
+   * and contributes from that channel only, so withholding judgement is not the
+   * same as judging it badly.
+   */
+  #withReranker(fused: ScoredId[], reranked: ScoredId[]): ScoredId[] {
+    return [...this.#fuse([fused, reranked], this.#rrfK).values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   }
 
   #retainBest(heap: ScoredId[], entry: ScoredId, limit: number): void {
@@ -1466,8 +1503,9 @@ export class LocalMemory {
     const semantic = await this.#scanVectors(input, options, { model, dimensions, query, maxCandidates, time });
     const rrfK = v.limit(options.rrfK, this.#rrfK, 1000);
     const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], rrfK);
-    const multi = this.#multiGranularity(input, fused, { model, dimensions, query }, time, rrfK, v.limit(options.rerankTopN, 100, 1000), () => { this.#assertOpen(); this.#abort(options.signal); });
-    let ranked = multi ?? [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    const rerankTopN = v.limit(options.rerankTopN, 100, 1000);
+    const multi = this.#multiGranularity(input, fused, { model, dimensions, query }, time, rrfK, rerankTopN, () => { this.#assertOpen(); this.#abort(options.signal); });
+    let ranked = multi?.ranked ?? [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     if (options.reranker && ranked.length) {
       let candidates: (ScoredId & { memory: MemoryRecord })[] = [];
       const scores = await this.#boundedCall((signal) => {
@@ -1475,7 +1513,9 @@ export class LocalMemory {
         candidates = ranked.flatMap(entry => {
           const current = this.get(entry.id), memory = current && this.#at(current, time);
           return memory && eligible(memory) ? [{ ...entry, memory }] : [];
-        }).slice(0, v.limit(options.rerankTopN, 100, 1000));
+        // Widened by exactly what expansion added, so a derived candidate joins the
+        // rescored set rather than pushing a turn-level candidate out of it.
+        }).slice(0, rerankTopN + (multi?.reserved ?? 0));
         // Rehydrate immediately before dispatch, then isolate adapter mutation.
         const supplied = candidates.map(entry => JSON.parse(JSON.stringify(entry.memory)) as MemoryRecord);
         return supplied.length ? options.reranker!.rerank(input.query, supplied, { signal }) : Promise.resolve([]);
@@ -1488,7 +1528,8 @@ export class LocalMemory {
         if (!entry || !known.has(entry.id) || seen.has(entry.id) || typeof entry.score !== 'number' || !Number.isFinite(entry.score) || entry.score < 0 || entry.score > 1) throw new TypeError('Reranker returned an unknown, duplicate or invalid score; scores must be between 0 and 1');
         seen.add(entry.id); byId.set(entry.id, entry.score);
       }
-      ranked = candidates.map((entry) => ({ id: entry.id, score: byId.get(entry.id)! })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+      const rescored = candidates.map((entry) => ({ id: entry.id, score: byId.get(entry.id)! })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+      ranked = multi ? this.#withReranker(ranked, rescored) : rescored;
     }
     this.#assertOpen(); this.#abort(options.signal);
     // Every await is an invalidation boundary. Rehydrate and recheck all safety
