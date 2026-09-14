@@ -387,6 +387,17 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
     copyFileSync(`${path}-stale.meta.json`, `${path}-hnsw.meta.json`);
     fixture.erased = doomed;
 
+    // The restored file really is ahead of the database — otherwise the rollback
+    // put back nothing and this test would be asserting against an empty attack.
+    // Checked here, before the index is ever reopened: reconciliation (below)
+    // self-heals this exact staleness the moment something opens the index, so
+    // checking it after would no longer be checking the restored file at all.
+    const poisoned = JSON.parse(readFileSync(`${path}-hnsw.meta.json`, 'utf8')) as { count: number };
+    const preCounter = new DatabaseSync(path);
+    const preLabels = (preCounter.prepare('SELECT count(*) AS count FROM local_vec_labels').get() as { count: number }).count;
+    preCounter.close();
+    expect(poisoned.count, 'the restored index holds more entries than the database, or this is not testing a real attack').toBeGreaterThan(preLabels);
+
     const aimed = texts.map(text => ({ query: text, limit: 10, maxCandidates: 10 }));
     const observed = observe(path, 'hnsw', 'alice', [...aimed, ...states(20, 9191)]);
     expect(observed.mode).toBe('hnsw');
@@ -394,13 +405,17 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
       expect(observation.dense.filter(id => doomed.includes(id)), 'erased record resurrected by a restored index file').toEqual([]);
       expect(observation.results.filter(id => doomed.includes(id)), 'erased record returned after an index rollback').toEqual([]);
     }
-    // The restored file really is ahead of the database — otherwise the rollback
-    // put back nothing and this test would be asserting against an empty attack.
-    const sidecar = JSON.parse(readFileSync(`${path}-hnsw.meta.json`, 'utf8')) as { count: number };
-    const counter = new DatabaseSync(path);
-    const labels = (counter.prepare('SELECT count(*) AS count FROM local_vec_labels').get() as { count: number }).count;
-    counter.close();
-    expect(sidecar.count, 'the restored index holds no more entries than the database, so nothing was resurrectable').toBeGreaterThan(labels);
+    // Opening the index (inside observe()) reconciles it against local_vec_labels
+    // as a side effect of the mismatched count it started with, and observe()
+    // closes its session, so the poisoned sidecar this test restored is expected
+    // to have self-healed to the database's own live count — the other half of
+    // this branch's fix: a stale HNSW file does not just fail to leak, it stops
+    // being stale the next time anything opens it.
+    const healed = JSON.parse(readFileSync(`${path}-hnsw.meta.json`, 'utf8')) as { count: number };
+    const postCounter = new DatabaseSync(path);
+    const postLabels = (postCounter.prepare('SELECT count(*) AS count FROM local_vec_labels').get() as { count: number }).count;
+    postCounter.close();
+    expect(healed.count, 'reopening the index reconciled it back down to the live label count').toBe(postLabels);
   }, 120_000);
 
   it('withholds the private records of another agent through every index', () => {

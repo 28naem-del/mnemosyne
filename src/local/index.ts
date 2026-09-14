@@ -1263,6 +1263,11 @@ export class LocalMemory {
    * it; sqlite-vec lives in the database file and simply re-upserts, which is
    * idempotent. Rows are walked in `memory_id` order so labels — and therefore
    * the graph an HNSW rebuild produces — are the same every time.
+   *
+   * This only ever adds. An HNSW index resolved for the first time after an
+   * erasure that happened while it was closed — including one made by a
+   * different process — needs the other direction too, which is why this is
+   * always followed by a label reconciliation for `hnsw`; see `HnswIndex.reconcile`.
    */
   #syncDenseIndex(index: DenseIndex, model: string, dimensions: number): void {
     const after = index.kind === 'hnsw' ? (index as HnswIndex).watermark : 0;
@@ -1278,6 +1283,11 @@ export class LocalMemory {
       }
       if (batch.length) index.upsert(batch);
     });
+    if (index.kind === 'hnsw') {
+      const live = new Set((this.#db.prepare('SELECT label FROM local_vec_labels WHERE model=?').all(model) as { label: number | bigint }[])
+        .map((row) => Number(row.label)));
+      (index as HnswIndex).reconcile(live);
+    }
   }
 
   #labelsFor(memoryIds: readonly string[]): number[] {
@@ -1836,7 +1846,8 @@ export class LocalMemory {
       if (expected.has(id)) throw new TypeError('Duplicate rollback record');
       expected.set(id, fingerprint);
     }
-    return this.#transaction(() => {
+    let erased: number[] = [];
+    const result = this.#transaction(() => {
       let conflicts = 0;
       const children = this.#db.prepare('SELECT from_id AS id FROM dependencies WHERE workspace_id=? AND to_id=?');
       const successors = this.#db.prepare('SELECT id FROM memories WHERE workspace_id=? AND supersedes=?');
@@ -1860,11 +1871,18 @@ export class LocalMemory {
         if (external) conflicts++;
       }
       if (conflicts) throw new RollbackConflictError(conflicts);
+      // Read the labels before the delete, same as forget(): the cascade takes
+      // the local_vec_labels rows with it, so this is the last point they exist.
+      erased = this.#labelsFor([...expected.keys()]);
       this.#writeSeq++;
       const remove = this.#db.prepare('DELETE FROM memories WHERE id=? AND workspace_id=? AND agent_id=?');
       for (const id of expected.keys()) remove.run(id, this.#workspaceId, this.#agentId);
       return { deletedIds: [...expected.keys()] };
     });
+    // Same reasoning as forget(): the vec0 rows went with the cascade inside the
+    // transaction; an HNSW index lives outside it, so its vectors are struck here.
+    if (erased.length) this.#denseIndex?.remove(erased);
+    return result;
   }
 
   #count(text: string): number {

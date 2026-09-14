@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type StoreMemoryInput } from '../src/local/index.js';
 import type { SyncMemoryEmbedder } from '../src/local/types.js';
-import { hnswAvailable, sqliteVecPath, tryLoadSqliteVec } from '../src/local/vector/index.js';
+import { hnswAvailable, HnswIndex, sqliteVecPath, tryLoadSqliteVec } from '../src/local/vector/index.js';
 
 /**
  * The dense index, held against the exact scan it replaces.
@@ -316,6 +316,95 @@ describe('hnsw dense index', () => {
     const reopened = memory({ path, indexMode: 'hnsw' });
     expect(reopened.recall({ query: 'oat milk coffee', limit: 8 }).length).toBeGreaterThan(0);
     expect(reopened.retrieval.index).toMatchObject({ mode: 'hnsw', size: CORPUS.length });
+  });
+});
+
+/**
+ * `size()` must count live elements, not upsert calls or physical graph slots —
+ * `hnswlib`'s own `getCurrentCount()` does neither (see `HnswIndex`'s `#labels`
+ * doc comment). Every case here is a reviewer-reported scenario, reproduced
+ * directly before it is reproduced through `LocalMemory`.
+ */
+describe('hnsw size and count accounting', () => {
+  const withHnsw = hnswAvailable() ? it : it.skip;
+  const point = (n: number): Float32Array => new Float32Array([n, n + 1, n + 2, n + 3]);
+
+  withHnsw('size() counts distinct labels, not upsert() calls', () => {
+    const index = new HnswIndex(4, null);
+    index.upsert([1, 2, 3, 4, 5].map(label => ({ label, vector: point(label) })));
+    expect(index.size()).toBe(5);
+    index.upsert([{ label: 3, vector: point(99) }]); // re-upsert an existing, live label
+    expect(index.size()).toBe(5); // not 6
+    index.upsert([{ label: 1, vector: point(1) }, { label: 2, vector: point(2) }]); // two more re-upserts
+    expect(index.size()).toBe(5); // not 8
+  });
+
+  withHnsw('remove() is idempotent and size() falls with it', () => {
+    const index = new HnswIndex(4, null);
+    index.upsert([1, 2, 3, 4, 5].map(label => ({ label, vector: point(label) })));
+    index.remove([1, 2]);
+    expect(index.size()).toBe(3);
+    index.remove([1, 2]); // already gone
+    expect(index.size()).toBe(3);
+    index.remove([999]); // never existed
+    expect(index.size()).toBe(3);
+  });
+
+  withHnsw('reconcile() drops whatever the database no longer authorizes', () => {
+    const index = new HnswIndex(4, null);
+    index.upsert([1, 2, 3, 4, 5].map(label => ({ label, vector: point(label) })));
+    index.reconcile(new Set([1, 2, 3])); // 4 and 5 are stale
+    expect(index.size()).toBe(3);
+    index.reconcile(new Set([1, 2, 3])); // idempotent: nothing newly stale
+    expect(index.size()).toBe(3);
+  });
+
+  withHnsw('erasing 10 of 30 records reports index.size as 20, in-session and after reopen', () => {
+    const path = location();
+    const db = memory({ path, indexMode: 'hnsw' });
+    const ids = Array.from({ length: 30 }, (_, i) => db.store(fact(`${CORPUS[i % CORPUS.length]} (record ${i})`)).id);
+    db.recall({ query: 'record' }); // resolves the dense index
+    expect(db.retrieval.index).toMatchObject({ mode: 'hnsw', size: 30 });
+
+    for (const id of ids.slice(0, 10)) db.forget(id);
+    // Same session, index already open: forget() reaches it directly.
+    expect(db.retrieval.index!.size).toBe(20);
+    db.close(); opened.splice(opened.indexOf(db), 1);
+
+    const reopened = memory({ path, indexMode: 'hnsw' });
+    reopened.recall({ query: 'record' }); // resolves, sees the DB/sidecar mismatch, reconciles
+    expect(reopened.retrieval.index).toMatchObject({ mode: 'hnsw', size: 20 });
+  });
+
+  withHnsw('erasing before the dense index is ever resolved still reconciles on the next open', () => {
+    const path = location();
+    const writer = memory({ path, indexMode: 'hnsw' });
+    const ids = Array.from({ length: 30 }, (_, i) => writer.store(fact(`${CORPUS[i % CORPUS.length]} (record ${i})`)).id);
+    writer.recall({ query: 'record' }); // build the index once, then leave it behind
+    writer.close(); opened.splice(opened.indexOf(writer), 1);
+
+    // forget() here has no #denseIndex to reach: this session never calls
+    // recall(), which is exactly what a process that only ever writes and
+    // erases (no read path) looks like.
+    const eraser = memory({ path, indexMode: 'hnsw' });
+    for (const id of ids.slice(0, 10)) eraser.forget(id);
+    eraser.close(); opened.splice(opened.indexOf(eraser), 1);
+
+    const reopened = memory({ path, indexMode: 'hnsw' });
+    reopened.recall({ query: 'record' });
+    expect(reopened.retrieval.index).toMatchObject({ mode: 'hnsw', size: 20 });
+  });
+
+  withHnsw("rollbackUnchangedRecords removes the rolled-back records' labels from the dense index too", () => {
+    const path = location();
+    const db = memory({ path, indexMode: 'hnsw' });
+    const stored = CORPUS.map(text => db.store(fact(text)));
+    db.recall({ query: 'vintage car repair' }); // resolves the dense index
+    expect(db.retrieval.index).toMatchObject({ mode: 'hnsw', size: CORPUS.length });
+
+    const doomed = stored.slice(0, 2).map(record => ({ id: record.id, fingerprint: db.getRecordFingerprint(record.id)! }));
+    expect(db.rollbackUnchangedRecords({ records: doomed }).deletedIds).toEqual(doomed.map(record => record.id));
+    expect(db.retrieval.index!.size).toBe(CORPUS.length - 2);
   });
 });
 
