@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -289,6 +289,118 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
         expect([...candidate.observations[index].results].sort()).toEqual([...baseline.observations[index].results].sort());
       }
     }
+  }, 120_000);
+
+  /**
+   * The safety claim, attacked directly.
+   *
+   * Everything above holds an index that is telling the truth against a scan that
+   * is telling the truth. But the reason an index is allowed near this engine at
+   * all is the stronger claim: that it *authorizes nothing*, so a stale, restored
+   * or outright hostile index cannot surface what the scan would withhold. An
+   * argument is not a test. These two poison the index itself — by hand, after
+   * the erasure, in the two ways a real deployment can — and require the records
+   * to stay gone.
+   */
+  it('withholds erased records when the vec0 table itself has been poisoned into proposing them', () => {
+    const path = location();
+    const fixture = buildCorpus(path);
+    const writer = createLocalMemory({ path, workspaceId: 'project', agentId: 'alice', embedder: embedder(), rerank: false, indexMode: 'sqlite-vec', ledger: { maxCandidates: 1000 } });
+    opened.push(writer);
+    writer.recall({ query: 'ledger audit archive' });
+
+    // Taken from the index itself, not from the fixture list: untrusted, advisory
+    // and superseded records are never embedded, so they carry no label and would
+    // make this test pass for the wrong reason.
+    const probe = new DatabaseSync(path);
+    const saved = probe.prepare(`SELECT l.memory_id AS id, l.label AS label, e.data AS vector FROM local_vec_labels l
+      JOIN local_embeddings e ON e.memory_id=l.memory_id AND e.model=l.model JOIN memories m ON m.id=l.memory_id
+      WHERE m.agent_id='alice' ORDER BY l.label LIMIT 3`).all() as { id: string; label: number; vector: Uint8Array }[];
+    probe.close();
+    expect(saved.length).toBe(3);
+    expect(saved.every(row => row.vector instanceof Uint8Array)).toBe(true);
+    const doomed = saved.map(row => row.id);
+    // The exact text whose embedding is each erased record's nearest neighbour.
+    const texts = doomed.map(id => writer.get(id)!.text);
+
+    for (const id of doomed) writer.forget(id);
+    writer.close(); opened.splice(opened.indexOf(writer), 1);
+    fixture.erased = doomed;
+
+    // Put the vectors back by hand, which is what a restored file, a botched
+    // backup or an attacker with write access to the database amounts to.
+    const poison = new DatabaseSync(path, { allowExtension: true });
+    loadSqliteVec(poison);
+    const insert = poison.prepare('INSERT INTO local_vec_index(rowid,embedding) VALUES(?,?)');
+    for (const row of saved) insert.run(BigInt(row.label), row.vector);
+    // The test is worthless unless the poisoned index really does propose them.
+    const proposes = (poison.prepare('SELECT rowid AS label FROM local_vec_index WHERE embedding MATCH ? AND k=?')
+      .all(saved[0].vector, 5n) as { label: number | bigint }[]).map(row => Number(row.label));
+    expect(proposes, 'the poisoned index does not propose the erased label, so this proves nothing').toContain(saved[0].label);
+    poison.close();
+
+    // Aimed straight at them: each query is the erased record's own text, so the
+    // poisoned entry is the nearest neighbour there is.
+    const aimed = texts.map(text => ({ query: text, limit: 10, maxCandidates: 10 }));
+    const observed = observe(path, 'sqlite-vec', 'alice', [...aimed, ...states(20, 8181)]);
+    expect(observed.mode).toBe('sqlite-vec');
+    for (const observation of observed.observations) {
+      expect(observation.dense.filter(id => doomed.includes(id)), 'erased record proposed AND authorized through a poisoned index').toEqual([]);
+      expect(observation.results.filter(id => doomed.includes(id)), 'erased record returned through a poisoned index').toEqual([]);
+    }
+    // And the poison is still there afterwards: the records were withheld by the
+    // authorization gate, not by the engine happening to clean the table.
+    const after = new DatabaseSync(path, { allowExtension: true });
+    loadSqliteVec(after);
+    const survived = saved.filter(row => (after.prepare('SELECT count(*) AS count FROM local_vec_index WHERE rowid=?').get(BigInt(row.label)) as { count: number }).count === 1);
+    after.close();
+    expect(survived.length, 'the poisoned rows were removed, so the post-filter was never the thing under test').toBe(saved.length);
+  }, 120_000);
+
+  const withHnsw = hnswAvailable() ? it : it.skip;
+  withHnsw('withholds erased records when a pre-erasure hnsw index file is restored underneath it', () => {
+    const path = location();
+    const fixture = buildCorpus(path);
+    const writer = createLocalMemory({ path, workspaceId: 'project', agentId: 'alice', embedder: embedder(), rerank: false, indexMode: 'hnsw', ledger: { maxCandidates: 1000 } });
+    opened.push(writer);
+    writer.recall({ query: 'ledger audit archive' });
+    const probe = new DatabaseSync(path);
+    const labelled = probe.prepare(`SELECT l.memory_id AS id FROM local_vec_labels l JOIN memories m ON m.id=l.memory_id
+      WHERE m.agent_id='alice' ORDER BY l.label LIMIT 3`).all() as { id: string }[];
+    probe.close();
+    expect(labelled.length).toBe(3);
+    const doomed = labelled.map(row => row.id);
+    const texts = doomed.map(id => writer.get(id)!.text);
+    writer.close(); opened.splice(opened.indexOf(writer), 1);   // flushes the sidecar
+
+    // A copy taken before the erasure — the backup someone restores next week.
+    copyFileSync(`${path}-hnsw`, `${path}-stale`);
+    copyFileSync(`${path}-hnsw.meta.json`, `${path}-stale.meta.json`);
+
+    const eraser = createLocalMemory({ path, workspaceId: 'project', agentId: 'alice', embedder: embedder(), rerank: false, indexMode: 'hnsw', ledger: { maxCandidates: 1000 } });
+    opened.push(eraser);
+    for (const id of doomed) eraser.forget(id);
+    eraser.close(); opened.splice(opened.indexOf(eraser), 1);
+
+    // Roll the index back over the top of a database that has moved on.
+    copyFileSync(`${path}-stale`, `${path}-hnsw`);
+    copyFileSync(`${path}-stale.meta.json`, `${path}-hnsw.meta.json`);
+    fixture.erased = doomed;
+
+    const aimed = texts.map(text => ({ query: text, limit: 10, maxCandidates: 10 }));
+    const observed = observe(path, 'hnsw', 'alice', [...aimed, ...states(20, 9191)]);
+    expect(observed.mode).toBe('hnsw');
+    for (const observation of observed.observations) {
+      expect(observation.dense.filter(id => doomed.includes(id)), 'erased record resurrected by a restored index file').toEqual([]);
+      expect(observation.results.filter(id => doomed.includes(id)), 'erased record returned after an index rollback').toEqual([]);
+    }
+    // The restored file really is ahead of the database — otherwise the rollback
+    // put back nothing and this test would be asserting against an empty attack.
+    const sidecar = JSON.parse(readFileSync(`${path}-hnsw.meta.json`, 'utf8')) as { count: number };
+    const counter = new DatabaseSync(path);
+    const labels = (counter.prepare('SELECT count(*) AS count FROM local_vec_labels').get() as { count: number }).count;
+    counter.close();
+    expect(sidecar.count, 'the restored index holds no more entries than the database, so nothing was resurrectable').toBeGreaterThan(labels);
   }, 120_000);
 
   it('withholds the private records of another agent through every index', () => {
