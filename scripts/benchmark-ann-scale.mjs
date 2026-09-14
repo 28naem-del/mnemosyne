@@ -79,8 +79,11 @@ const VOCABULARY = Array.from({ length: 5000 }, (_, i) => `tok${i.toString(36)}`
 function textFor(index) {
   const cluster = index % CLUSTERS;
   const pick = rng(cluster + 1);
-  // Eight tokens from a per-cluster slice, so same-topic records share wording.
-  const words = Array.from({ length: 8 }, () => VOCABULARY[(cluster * 7 + Math.floor(pick() * 400)) % VOCABULARY.length]);
+  // Four tokens from a per-cluster slice, so same-topic records share wording.
+  // Deliberately short: at a million records the BM25 posting tables are the
+  // single largest thing on disk after the vectors themselves, and this fixture
+  // exists to measure dense latency, not to be a realistic document corpus.
+  const words = Array.from({ length: 4 }, () => VOCABULARY[(cluster * 7 + Math.floor(pick() * 400)) % VOCABULARY.length]);
   return `t${cluster} ${words.join(' ')} r${index}`;
 }
 
