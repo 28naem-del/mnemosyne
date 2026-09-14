@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type StoreMemoryInput } from '../src/local/index.js';
 import type { SyncMemoryEmbedder } from '../src/local/types.js';
-import { hnswAvailable } from '../src/local/vector/index.js';
+import { hnswAvailable, sqliteVecPath, tryLoadSqliteVec } from '../src/local/vector/index.js';
 
 /**
  * The dense index, held against the exact scan it replaces.
@@ -185,6 +185,78 @@ describe('sqlite-vec dense index', () => {
     try { expect(db.recall({ query: 'staging cluster Frankfurt' }).length).toBeGreaterThan(0); }
     finally { globalThis.fetch = fetchRef; }
     expect(calls).toBe(0);
+  });
+});
+
+/**
+ * An env-controlled extension path would make every `LocalMemory` on a machine
+ * `dlopen` whatever that variable points at, undetectably and by default — the
+ * one behavior this engine refuses. The only override is an explicit
+ * constructor option, which a caller has to name on purpose.
+ */
+describe('sqlite-vec extension path resolution', () => {
+  const BOGUS = '/definitely/not/a/real/sqlite-vec-path';
+  const withEnv = (value: string, run: () => void): void => {
+    const prior = process.env.MNEMOSYNE_SQLITE_VEC_PATH;
+    process.env.MNEMOSYNE_SQLITE_VEC_PATH = value;
+    try { run(); }
+    finally {
+      if (prior === undefined) delete process.env.MNEMOSYNE_SQLITE_VEC_PATH;
+      else process.env.MNEMOSYNE_SQLITE_VEC_PATH = prior;
+    }
+  };
+
+  it('sqliteVecPath() resolves the bundled package regardless of the environment variable', () => {
+    const unset = sqliteVecPath();
+    withEnv(BOGUS, () => { expect(sqliteVecPath()).toBe(unset); });
+  });
+
+  it('tryLoadSqliteVec() with no path loads the real extension even while the env var points at a bogus path', () => {
+    withEnv(BOGUS, () => {
+      const db = new DatabaseSync(':memory:', { allowExtension: true });
+      try {
+        const result = tryLoadSqliteVec(db);
+        expect(result.loaded).toBe(true);
+        expect(result.error).toBeUndefined();
+      } finally { db.close(); }
+    });
+  });
+
+  it('tryLoadSqliteVec() with an explicit path attempts to load exactly that path', () => {
+    const db = new DatabaseSync(':memory:', { allowExtension: true });
+    try {
+      const result = tryLoadSqliteVec(db, BOGUS);
+      expect(result.loaded).toBe(false);
+      expect(result.error).toContain(BOGUS);
+    } finally { db.close(); }
+  });
+
+  it('LocalMemory in auto mode ignores MNEMOSYNE_SQLITE_VEC_PATH: no throw, no failed load, falls through to sqlite-vec as usual', () => {
+    withEnv(BOGUS, () => {
+      const db = memory(); // indexMode defaults to auto
+      seed(db);
+      expect(() => db.recall({ query: 'vintage car repair' })).not.toThrow();
+      // Had the bogus env path been honoured, the extension load would fail and
+      // this would report `mode: 'exact'` with `unavailable` naming that path.
+      expect(db.retrieval.index).toMatchObject({ requested: 'auto', mode: 'sqlite-vec' });
+      expect(db.retrieval.index!.unavailable).toBeUndefined();
+    });
+  });
+
+  it('LocalMemory loads sqlite-vec from an explicit sqliteVecPath option', () => {
+    const real = sqliteVecPath();
+    const db = memory({ sqliteVecPath: real });
+    seed(db);
+    db.recall({ query: 'vintage car repair' });
+    expect(db.retrieval.index).toMatchObject({ requested: 'auto', mode: 'sqlite-vec' });
+  });
+
+  it('LocalMemory with an explicit sqliteVecPath option calls loadExtension with exactly that path', () => {
+    const db = memory({ sqliteVecPath: BOGUS });
+    seed(db);
+    db.recall({ query: 'vintage car repair' });
+    expect(db.retrieval.index).toMatchObject({ requested: 'auto', mode: 'exact' });
+    expect(db.retrieval.index!.unavailable).toContain(BOGUS);
   });
 });
 

@@ -114,6 +114,7 @@ export class LocalMemory {
   readonly #atomicContext = new AsyncLocalStorage<{ done: boolean }>();
   #cursorSecret = "";
   readonly #indexMode: DenseIndexMode;
+  readonly #sqliteVecPath?: string;
   #vecLoaded = false;
   #vecError?: string;
   #denseIndex: DenseIndex | null = null;
@@ -125,7 +126,7 @@ export class LocalMemory {
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode', 'sqliteVecPath'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -159,6 +160,7 @@ export class LocalMemory {
     this.#ledgerCandidates = ledger === false ? 'off' : v.enumeration((ledger as LedgerOptions).candidates ?? 'full', ['full', 'off'] as const, 'ledger.candidates');
     this.#ledgerMaxCandidates = ledger === false ? 100 : v.limit((ledger as LedgerOptions).maxCandidates, 100, 1000);
     this.#indexMode = resolveDenseIndexMode(options.indexMode);
+    if (options.sqliteVecPath !== undefined) this.#sqliteVecPath = v.string(options.sqliteVecPath, 'sqliteVecPath', 4096);
     this.#path = path === ':memory:' ? path : resolve(path);
     if (this.#path !== ':memory:') {
       mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
@@ -178,7 +180,7 @@ export class LocalMemory {
     const wantsVec = this.#indexMode === 'auto' || this.#indexMode === 'sqlite-vec';
     this.#db = new DatabaseSync(this.#path, wantsVec ? { allowExtension: true } : {});
     try {
-      if (wantsVec) { const loaded = tryLoadSqliteVec(this.#db); this.#vecLoaded = loaded.loaded; this.#vecError = loaded.error; }
+      if (wantsVec) { const loaded = tryLoadSqliteVec(this.#db, this.#sqliteVecPath); this.#vecLoaded = loaded.loaded; this.#vecError = loaded.error; }
       this.#db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;');
       const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
       if (version > SCHEMA_VERSION) throw new Error(`Unsupported memory schema version ${version}`);

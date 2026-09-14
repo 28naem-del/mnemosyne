@@ -16,10 +16,18 @@ import type { DenseIndex, DenseIndexEntry } from './types.js';
 
 const require = createRequire(import.meta.url);
 
-/** Resolution order: explicit override, then the optional `sqlite-vec` package. */
+/**
+ * Resolve the extension file via the optional `sqlite-vec` package.
+ *
+ * Deliberately reads no environment variable: `auto` (the default `indexMode`)
+ * runs this on every open, and an env-controlled path would make every
+ * `LocalMemory` on a machine `dlopen` whatever that variable points at,
+ * undetectably and by default. The only supported override is the explicit
+ * `sqliteVecPath` constructor option (`LocalMemory`'s caller must ask for it
+ * by name), which bypasses this resolver entirely by passing a path straight
+ * to `loadSqliteVec`.
+ */
 export function sqliteVecPath(): string {
-  const override = process.env.MNEMOSYNE_SQLITE_VEC_PATH;
-  if (override) return override;
   return (require('sqlite-vec') as { getLoadablePath(): string }).getLoadablePath();
 }
 

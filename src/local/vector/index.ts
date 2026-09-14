@@ -143,8 +143,14 @@ export function writeIdentity(db: DatabaseSync, identity: DenseIndexIdentity): v
   db.prepare("INSERT INTO local_settings(key,value) VALUES('vec-index',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(identity));
 }
 
-/** Attempt the extension load, reporting why rather than throwing. */
-export function tryLoadSqliteVec(db: DatabaseSync): { loaded: boolean; version?: string; error?: string } {
-  try { return { loaded: true, version: loadSqliteVec(db) }; }
+/**
+ * Attempt the extension load, reporting why rather than throwing.
+ *
+ * `path`, when given, is the caller's explicit `sqliteVecPath` option — the
+ * only supported override. Left undefined, `loadSqliteVec` resolves the
+ * bundled `sqlite-vec` package itself; no environment variable is consulted.
+ */
+export function tryLoadSqliteVec(db: DatabaseSync, path?: string): { loaded: boolean; version?: string; error?: string } {
+  try { return { loaded: true, version: path === undefined ? loadSqliteVec(db) : loadSqliteVec(db, path) }; }
   catch (error) { return { loaded: false, error: (error as Error).message }; }
 }

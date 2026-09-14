@@ -291,6 +291,14 @@ export interface LocalMemoryOptions {
    * candidate an index proposes is re-authorized and rescored against the stored
    * vector before it reaches a caller. */
   indexMode?: DenseIndexMode;
+  /** Explicit filesystem path to a `sqlite-vec` loadable extension, overriding
+   * the bundled `sqlite-vec` package's own resolution. Only consulted when
+   * `indexMode` is `auto` or `sqlite-vec`. There is no environment-variable
+   * equivalent: an env-controlled path would make every `LocalMemory` opened
+   * on a machine `dlopen` whatever that variable points at, by default and
+   * without the caller asking for it. This option requires the caller to name
+   * the path explicitly. */
+  sqliteVecPath?: string;
 }
 
 /** What retrieval actually does, as opposed to what was asked for. A hybrid
