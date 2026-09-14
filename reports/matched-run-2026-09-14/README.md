@@ -26,3 +26,15 @@ whose settings, corpus digest, embedding identity, system roster or implementati
 digest differ, so the merge cannot silently blend different experiments.
 
 **Uncompressed size is 145 MB**, which is why these are stored gzipped (23x).
+
+## Regenerating the published report
+
+Both steps run from the repository root and are the exact scripts used to produce what is
+published, so the claim that the report is generated rather than hand-written is checkable:
+
+```bash
+node reports/matched-run-2026-09-14/make-summary.mjs   # merged raw reports -> summary.json
+node reports/matched-run-2026-09-14/make-report.mjs    # summary.json      -> ../matched-run-2026-09-14.md
+```
+
+`make-summary.mjs` reads the uncompressed merged reports, so `gunzip -k *.json.gz` first.
