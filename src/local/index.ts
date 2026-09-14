@@ -6,17 +6,22 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import * as v from './validation.js';
 import type {
   CheckpointInput, CompileInput, ContextPacket, EmbeddingIndexOptions, EmbeddingIndexResult, HybridRecallOptions, ImportResult, ListMemoryInput, LocalMemoryOptions, MemoryEmbedder, MemoryPage, MemoryRecord,
-  LedgerEntry, LedgerEvent, LedgerOptions, LedgerPage, LedgerProvenance, LedgerQuery, LedgerRetrieval,
-  MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, RetrievalMode, RetrievalStatus, RollbackUnchangedRecordsInput, SnapshotIdempotencyEntry, StoreMemoryInput, SyncMemoryEmbedder,
+  LedgerCandidate, LedgerEntry, LedgerEvent, LedgerOptions, LedgerPage, LedgerProvenance, LedgerQuery, LedgerRetrieval, LedgerRetrievalConfig,
+  MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, RetrievalMode, RetrievalOutcomeInput, RetrievalStage, RetrievalStatus, RollbackUnchangedRecordsInput, SnapshotIdempotencyEntry, StoreMemoryInput, SyncMemoryEmbedder, SyncMemoryReranker,
 } from './types.js';
-import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, type LedgerRow } from './ledger.js';
+import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, type LedgerRow } from './ledger.js';
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
+import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 
 export type * from './types.js';
 
 type DataRow = { data: string };
 type TemporalView = { asOf: string; knownAt: string; historical: boolean };
 type ScoredId = { id: string; score: number };
+/** Collects each ranking stage's candidate list on the way through one recall, so
+ * the ledger can record what was considered and not only what was returned. The
+ * engine fills it only when the ledger asks for it; retrieval itself never reads it. */
+type RetrievalTrace = { stage: RetrievalStage; candidates: ScoredId[] }[];
 const SCOPE = "workspace_id = ? AND (agent_id = ? OR visibility = 'workspace')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const LOCAL_SNAPSHOT_LIMITS = Object.freeze({ maxRecords: 100000, maxBytes: 32 * 1024 * 1024 });
@@ -65,16 +70,26 @@ export class LocalMemory {
   readonly #rrfK: number;
   readonly #ledgerEnabled: boolean;
   readonly #ledgerQueries: 'text' | 'digest';
+  readonly #ledgerCandidates: 'full' | 'off';
+  readonly #ledgerMaxCandidates: number;
+  #lastRetrievalId?: string;
+  readonly #rerankRequested: boolean;
+  readonly #rerankerOption?: SyncMemoryReranker | null;
+  readonly #rerankTopN: number;
   /** `undefined` means not resolved yet; `null` means resolved to no embedder. */
   #embedder?: SyncMemoryEmbedder | null;
   #embedderShared = false;
   #embedderDegraded?: string;
+  /** Same convention as #embedder: undefined = unresolved, null = none. */
+  #reranker?: SyncMemoryReranker | null;
+  #rerankerShared = false;
+  #rerankerDegraded?: string;
   readonly #atomicContext = new AsyncLocalStorage<{ done: boolean }>();
   #cursorSecret = "";
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -93,12 +108,20 @@ export class LocalMemory {
     }
     if (options.modelCacheDir !== undefined) this.#modelCacheDir = v.string(options.modelCacheDir, 'modelCacheDir', 4096);
     this.#requireEmbedder = v.boolean(options.requireEmbedder);
+    this.#rerankRequested = v.boolean(options.rerank ?? true);
+    if (options.reranker !== undefined) {
+      if (options.reranker !== null && typeof (options.reranker as SyncMemoryReranker).rerankSync !== 'function') throw new TypeError('reranker must expose rerankSync, or be null');
+      this.#rerankerOption = options.reranker;
+    }
+    this.#rerankTopN = v.limit(options.rerankTopN, 50, 200);
     this.#minSimilarity = this.#similarity(options.minSimilarity, 0);
     this.#rrfK = v.limit(options.rrfK, 10, 1000);
     const ledger = options.ledger === undefined ? {} : options.ledger;
-    if (ledger !== false) v.keys(v.object(ledger, 'ledger'), ['enabled', 'queries'], 'ledger');
+    if (ledger !== false) v.keys(v.object(ledger, 'ledger'), ['enabled', 'queries', 'candidates', 'maxCandidates'], 'ledger');
     this.#ledgerEnabled = ledger !== false && v.boolean((ledger as LedgerOptions).enabled ?? true);
     this.#ledgerQueries = ledger === false ? 'digest' : v.enumeration((ledger as LedgerOptions).queries ?? 'digest', ['text', 'digest'] as const, 'ledger.queries');
+    this.#ledgerCandidates = ledger === false ? 'off' : v.enumeration((ledger as LedgerOptions).candidates ?? 'full', ['full', 'off'] as const, 'ledger.candidates');
+    this.#ledgerMaxCandidates = ledger === false ? 100 : v.limit((ledger as LedgerOptions).maxCandidates, 100, 1000);
     this.#path = path === ':memory:' ? path : resolve(path);
     if (this.#path !== ':memory:') {
       mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
@@ -369,35 +392,115 @@ export class LocalMemory {
    * Appends one ledger entry. Writes are part of the caller's transaction, so a
    * rolled-back belief change leaves no ledger entry claiming it happened.
    */
-  #appendLedger(event: LedgerEvent, memoryId: string | null, payload: Partial<Pick<LedgerEntry, 'provenance' | 'retrieval' | 'correction' | 'outcome' | 'erasure'>>, results?: { memoryId: string; rank: number; score: number }[]): void {
-    if (!this.#ledgerEnabled) return;
+  #appendLedger(event: LedgerEvent, memoryId: string | null, payload: Partial<Pick<LedgerEntry, 'provenance' | 'retrieval' | 'correction' | 'outcome' | 'erasure'>>, results?: { memoryId: string; rank: number; score: number }[], candidates?: LedgerCandidate[]): string {
+    if (!this.#ledgerEnabled) return '';
     const id = randomUUID();
-    // Retrieval results live in their own table so erasure removes them with the
-    // record; the JSON payload deliberately holds no record identity for them.
-    const stored = payload.retrieval ? { ...payload, retrieval: { ...payload.retrieval, results: [] as LedgerRetrieval['results'] } } : payload;
+    // Retrieval results and candidates live in their own tables so erasure removes
+    // them with the record; the JSON payload deliberately holds no record identity
+    // for either.
+    const stored = payload.retrieval
+      ? { ...payload, retrieval: { ...payload.retrieval, results: [] as LedgerRetrieval['results'], candidates: [] as LedgerCandidate[] } }
+      : payload;
     this.#db.prepare('INSERT INTO local_ledger(id,workspace_id,agent_id,event,recorded_at,memory_id,data) VALUES(?,?,?,?,?,?,?)')
       .run(id, this.#workspaceId, this.#agentId, event, this.#time(), memoryId, JSON.stringify(stored));
-    if (!results?.length) return;
-    const reference = this.#db.prepare('INSERT OR IGNORE INTO local_ledger_results(ledger_id,memory_id,rank,score) VALUES(?,?,?,?)');
-    for (const result of results) reference.run(id, result.memoryId, result.rank, result.score);
+    if (results?.length) {
+      const reference = this.#db.prepare('INSERT OR IGNORE INTO local_ledger_results(ledger_id,memory_id,rank,score) VALUES(?,?,?,?)');
+      for (const result of results) reference.run(id, result.memoryId, result.rank, result.score);
+    }
+    if (candidates?.length) {
+      const reference = this.#db.prepare('INSERT OR IGNORE INTO local_ledger_candidates(ledger_id,memory_id,stage,rank,score) VALUES(?,?,?,?,?)');
+      for (const candidate of candidates) reference.run(id, candidate.memoryId, candidate.stage, candidate.rank, candidate.score);
+    }
+    return id;
   }
 
-  #recordRecall(input: RecallInput, results: RecallResult[], mode: RetrievalMode, embedder: SyncMemoryEmbedder | null, latencyMs: number): void {
+  #recordRecall(input: RecallInput, results: RecallResult[], mode: RetrievalMode, embedder: SyncMemoryEmbedder | null, latencyMs: number, trace: RetrievalTrace): void {
     if (!this.#ledgerEnabled) return;
     const query = typeof input.query === 'string' ? input.query : '';
+    const reranked = trace.find(entry => entry.stage === 'reranked');
+    const config: LedgerRetrievalConfig = {
+      mode, lexicalScoring: (input.lexicalScoring ?? 'bm25') as 'overlap' | 'bm25',
+      embeddingModel: embedder ? embedder.model : null,
+      rerankerModel: reranked ? this.#rerankerModel() : null,
+      rrfK: this.#rrfK, limit: v.limit(input.limit, 10),
+      maxCandidates: v.limit(input.maxCandidates, 1000, 10000),
+      rerankTopN: reranked ? this.#rerankTopN : null,
+      minSimilarity: this.#similarity(input.minSimilarity, this.#minSimilarity),
+    };
+    // Each stage is truncated to the configured bound, and the bound is disclosed:
+    // `total` is the depth the stage actually produced, `recorded` what survived it.
+    const candidates: LedgerCandidate[] = [];
+    const candidateCounts: LedgerRetrieval['candidateCounts'] = [];
+    for (const entry of trace) {
+      const kept = this.#ledgerCandidates === 'off' ? [] : entry.candidates.slice(0, this.#ledgerMaxCandidates);
+      candidateCounts.push({ stage: entry.stage, total: entry.candidates.length, recorded: kept.length });
+      kept.forEach((candidate, rank) => candidates.push({ memoryId: candidate.id, stage: entry.stage, rank, score: candidate.score }));
+    }
     const retrieval: LedgerRetrieval = {
       ...(this.#ledgerQueries === 'text' ? { query } : {}),
       querySha256: this.#textHash(query), mode,
-      lexicalScoring: (input.lexicalScoring ?? 'bm25') as 'overlap' | 'bm25',
-      limit: v.limit(input.limit, 10), returned: results.length,
+      lexicalScoring: config.lexicalScoring,
+      limit: config.limit, returned: results.length,
       ...(embedder ? { embeddingModel: embedder.model } : {}),
       ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
       ...(input.asOf === undefined ? {} : { asOf: input.asOf }),
       ...(input.knownAt === undefined ? {} : { knownAt: input.knownAt }),
       latencyMs, results: [],
+      schema: 2, config, configSha256: retrievalConfigSha256(config),
+      candidates: [], candidateCounts, verifier: null,
     };
     const references = results.map((result, rank) => ({ memoryId: result.memory.id, rank, score: result.score }));
-    this.#transaction(() => this.#appendLedger('recall', null, { retrieval }, references));
+    this.#transaction(() => { this.#lastRetrievalId = this.#appendLedger('recall', null, { retrieval }, references, candidates) || undefined; });
+  }
+
+  /** The ledger id of the most recent retrieval recorded by THIS instance, or
+   * undefined if none has been recorded. It is the handle a caller passes to
+   * `recordRetrievalOutcome` after acting on what it recalled. */
+  get lastRetrievalId(): string | undefined { return this.#lastRetrievalId; }
+
+  /**
+   * Fills the verifier-outcome slot on a recorded retrieval.
+   *
+   * This is the only field of a ledger entry that is ever written after the fact,
+   * because a verdict on a retrieval necessarily arrives after the retrieval. It
+   * fills a slot that was reserved and null from the moment the entry was written,
+   * and it refuses to overwrite a verdict that is already there — a second opinion
+   * is a new outcome event, never a quiet edit of the first one.
+   */
+  recordRetrievalOutcome(input: RetrievalOutcomeInput): LedgerEntry {
+    this.#assertOpen();
+    const value = v.object(input, 'retrieval outcome');
+    v.keys(value, ['retrievalId', 'taskId', 'success', 'verifier', 'evidence'], 'retrieval outcome');
+    if (!this.#ledgerEnabled) throw new Error('The ledger is disabled, so there is no retrieval to attach an outcome to');
+    const retrievalId = input.retrievalId === undefined ? this.#lastRetrievalId : v.string(input.retrievalId, 'retrievalId', 160);
+    if (retrievalId === undefined) throw new Error('No retrieval has been recorded by this memory; pass an explicit retrievalId');
+    if (typeof input.success !== 'boolean') throw new TypeError('success must be a boolean');
+    const outcome = {
+      taskId: v.string(input.taskId, 'taskId', 160), success: input.success,
+      verifier: v.string(input.verifier, 'verifier', 160), evidenceSha256: this.#textHash(v.string(input.evidence, 'evidence', 65_536)),
+      recordedAt: this.#time(),
+    };
+    return this.#transaction(() => {
+      const row = this.#db.prepare('SELECT sequence,id,workspace_id,agent_id,event,recorded_at,memory_id,data FROM local_ledger WHERE id=? AND workspace_id=? AND agent_id=?')
+        .get(retrievalId, this.#workspaceId, this.#agentId) as unknown as LedgerRow | undefined;
+      if (!row || row.event !== 'recall') throw new Error('No retrieval is recorded under that identifier');
+      const payload = JSON.parse(row.data) as { retrieval?: LedgerRetrieval };
+      if (!payload.retrieval) throw new Error('That ledger entry carries no retrieval to judge');
+      if (payload.retrieval.verifier) throw new Error('That retrieval already carries a verifier outcome; record a new outcome instead of replacing it');
+      payload.retrieval.verifier = outcome;
+      this.#db.prepare('UPDATE local_ledger SET data=? WHERE id=?').run(JSON.stringify(payload), retrievalId);
+      return this.#readLedgerEntry(retrievalId)!;
+    });
+  }
+
+  /** Rehydrates one entry with its results and candidate set. */
+  #readLedgerEntry(id: string): LedgerEntry | undefined {
+    const row = this.#db.prepare('SELECT sequence,id,workspace_id,agent_id,event,recorded_at,memory_id,data FROM local_ledger WHERE id=? AND workspace_id=? AND agent_id=?')
+      .get(id, this.#workspaceId, this.#agentId) as unknown as LedgerRow | undefined;
+    if (!row) return undefined;
+    const results = this.#db.prepare('SELECT memory_id AS memoryId,rank,score FROM local_ledger_results WHERE ledger_id=?').all(id) as unknown as { memoryId: string; rank: number; score: number }[];
+    const candidates = this.#db.prepare('SELECT memory_id AS memoryId,stage,rank,score FROM local_ledger_candidates WHERE ledger_id=?').all(id) as unknown as LedgerCandidate[];
+    return decodeLedgerRow(row, results, candidates);
   }
 
   /**
@@ -417,7 +520,10 @@ export class LocalMemory {
       ${memoryId === undefined ? '' : 'AND (memory_id=? OR id IN (SELECT ledger_id FROM local_ledger_results WHERE memory_id=?))'}
       ORDER BY sequence LIMIT ?`).all(this.#workspaceId, this.#agentId, query.after ?? 0, ...events, ...(memoryId === undefined ? [] : [memoryId, memoryId]), limit) as unknown as LedgerRow[];
     const references = this.#db.prepare('SELECT memory_id AS memoryId,rank,score FROM local_ledger_results WHERE ledger_id=?');
-    const entries = rows.map(row => decodeLedgerRow(row, references.all(row.id) as unknown as { memoryId: string; rank: number; score: number }[]));
+    const considered = this.#db.prepare('SELECT memory_id AS memoryId,stage,rank,score FROM local_ledger_candidates WHERE ledger_id=?');
+    const entries = rows.map(row => decodeLedgerRow(row,
+      references.all(row.id) as unknown as { memoryId: string; rank: number; score: number }[],
+      considered.all(row.id) as unknown as LedgerCandidate[]));
     return { entries, ...(entries.length === limit ? { nextCursor: entries[entries.length - 1].sequence } : {}) };
   }
 
@@ -696,8 +802,19 @@ export class LocalMemory {
   recall(input: RecallInput): RecallResult[] {
     const embedder = this.#resolveEmbedder();
     const started = performance.now();
-    const results = embedder ? this.#hybridRecall(input, embedder) : this.#rankedRecall(input);
-    this.#recordRecall(input, results, embedder ? 'hybrid' : 'lexical', embedder, performance.now() - started);
+    // The trace is collected only when the ledger will record it; a disabled
+    // ledger leaves retrieval allocating nothing extra.
+    const trace: RetrievalTrace = [];
+    const collect = this.#ledgerEnabled ? trace : undefined;
+    let results: RecallResult[];
+    if (embedder) results = this.#hybridRecall(input, embedder, collect);
+    else {
+      results = this.#rankedRecall(input);
+      // With no dense channel the lexical ranking IS the candidate set, so the
+      // trace records exactly what the stage produced at the requested depth.
+      collect?.push({ stage: 'lexical', candidates: results.map(entry => ({ id: entry.memory.id, score: entry.score })) });
+    }
+    this.#recordRecall(input, results, embedder ? 'hybrid' : 'lexical', embedder, performance.now() - started, trace);
     return results;
   }
 
@@ -705,11 +822,16 @@ export class LocalMemory {
    * requested hybrid mode could not load a model. Resolves the model on first call. */
   get retrieval(): RetrievalStatus {
     const embedder = this.#resolveEmbedder();
+    // Only ask for a reranker on a path that can use one, so reading this getter
+    // on the zero-model path never loads a model.
+    const reranker = embedder ? this.#resolveReranker() : null;
     return {
       requested: this.#retrievalRequested,
       mode: embedder ? 'hybrid' : 'lexical',
       ...(embedder ? { embeddingModel: embedder.model, dimensions: embedder.dimensions } : {}),
       ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
+      ...(reranker ? { rerankerModel: reranker.model, rerankTopN: this.#rerankTopN } : {}),
+      ...(this.#rerankerDegraded ? { rerankDegraded: this.#rerankerDegraded } : {}),
     };
   }
 
@@ -738,8 +860,74 @@ export class LocalMemory {
     return this.#embedder;
   }
 
+  /** The reranker identity for the ledger, or null when none is resolved. */
+  #rerankerModel(): string | null {
+    const reranker = this.#resolveReranker();
+    return reranker ? reranker.model : null;
+  }
+
+  #resolveReranker(): SyncMemoryReranker | null {
+    if (this.#reranker !== undefined) return this.#reranker;
+    // Reranking is a refinement of a dense ranking. Without an embedder there is
+    // nothing to refine, and the zero-model path must load no model at all.
+    if (!this.#rerankRequested || this.#retrievalRequested === 'lexical') return (this.#reranker = null);
+    if (this.#rerankerOption !== undefined) return (this.#reranker = this.#rerankerOption);
+    try {
+      this.#reranker = acquireSharedReranker(this.#modelCacheDir === undefined ? {} : { cacheDir: this.#modelCacheDir });
+      this.#rerankerShared = true;
+    } catch (error) {
+      // A missing reranker degrades to the fused RRF ranking, which is exactly the
+      // pre-T1.5 behaviour, and says so through `retrieval`. It is never silent.
+      this.#rerankerDegraded = error instanceof Error ? error.message : 'Local reranker unavailable';
+      this.#reranker = null;
+    }
+    return this.#reranker;
+  }
+
+  /**
+   * Rescores the fused top-N with the cross-encoder, returning null when no
+   * reranker is active so the caller keeps the fused ranking untouched.
+   *
+   * Only the head is rescored: the tail keeps its fused order and stays BELOW
+   * every rescored candidate. That is what makes reranking strictly a reordering
+   * of the top of the list — the candidate set is never narrowed, so recall at
+   * depths beyond the result limit is unchanged.
+   *
+   * Scores are put on one comparable scale rather than concatenating two: a
+   * rescored candidate lands in (0.5, 1) through a logistic of the cross-encoder
+   * score, and a candidate the reranker never saw lands in [0, 0.5] as a fraction
+   * of the best fused score. The transform is monotonic, so it preserves both the
+   * cross-encoder's ordering and the ledger's training signal, and it keeps
+   * `RecallResult.score` monotonically decreasing down the returned list.
+   */
+  #rerankSync(input: RecallInput, ranked: ScoredId[], time: TemporalView): ScoredId[] | null {
+    const reranker = this.#resolveReranker();
+    if (!reranker || !ranked.length) return null;
+    const head = ranked.slice(0, this.#rerankTopN), tail = ranked.slice(this.#rerankTopN);
+    const passages: string[] = [], scored: ScoredId[] = [];
+    const carried: ScoredId[] = [];
+    for (const entry of head) {
+      const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
+      // A candidate whose text is not visible at this instant cannot be scored by
+      // a cross-encoder; it keeps its fused position rather than being dropped.
+      if (!memory) { carried.push(entry); continue; }
+      passages.push(memory.text); scored.push(entry);
+    }
+    if (!passages.length) return null;
+    const scores = reranker.rerankSync(v.string(input.query, 'query', 4096), passages);
+    if (!Array.isArray(scores) || scores.length !== passages.length) throw new TypeError('Reranker must return one score per passage');
+    const rescored = scored.map((entry, index) => {
+      const score = scores[index];
+      if (typeof score !== 'number' || !Number.isFinite(score)) throw new TypeError('Reranker returned a non-finite score');
+      return { id: entry.id, score: 0.5 + 0.5 / (1 + Math.exp(-score)) };
+    }).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    const best = ranked[0].score;
+    const demote = (entry: ScoredId): ScoredId => ({ id: entry.id, score: best > 0 ? 0.5 * (entry.score / best) : 0 });
+    return [...rescored, ...carried.map(demote), ...tail.map(demote)];
+  }
+
   /** RRF over the lexical channel and an exact cosine scan, on one synchronous call path. */
-  #hybridRecall(input: RecallInput, embedder: SyncMemoryEmbedder): RecallResult[] {
+  #hybridRecall(input: RecallInput, embedder: SyncMemoryEmbedder, trace?: RetrievalTrace): RecallResult[] {
     this.#assertOpen();
     const count = v.limit(input.limit, 10);
     const maxCandidates = v.limit(input.maxCandidates, 1000, 10000);
@@ -758,8 +946,14 @@ export class LocalMemory {
     if (!Array.isArray(embedded) || embedded.length !== 1) throw new TypeError('Embedder must return one query vector');
     const query = this.#vector(embedded[0], dimensions);
     const semantic = this.#scanVectorsSync({ model, dimensions, query, maxCandidates, time, includeUntrusted, kinds: input.kinds ?? [], minSimilarity: this.#similarity(input.minSimilarity, this.#minSimilarity) });
-    const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], this.#rrfK);
-    const ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    const lexicalScored = lexical.map(entry => ({ id: entry.memory.id, score: entry.score }));
+    const fused = this.#fuse([lexicalScored, semantic], this.#rrfK);
+    let ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    trace?.push({ stage: 'lexical', candidates: lexicalScored },
+      { stage: 'dense', candidates: [...semantic].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) },
+      { stage: 'fused', candidates: ranked });
+    const reranked = this.#rerankSync(input, ranked, time);
+    if (reranked) { ranked = reranked; trace?.push({ stage: 'reranked', candidates: ranked }); }
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
@@ -1721,6 +1915,8 @@ export class LocalMemory {
     if (this.#closed) return;
     if (this.#embedderShared && this.#embedder) releaseSharedEmbedder(this.#embedder);
     this.#embedderShared = false;
+    if (this.#rerankerShared && this.#reranker) releaseSharedReranker(this.#reranker);
+    this.#rerankerShared = false;
     this.#db.close();
     this.#closed = true;
   }

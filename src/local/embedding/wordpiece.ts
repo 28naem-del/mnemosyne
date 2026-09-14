@@ -115,3 +115,32 @@ export function encodeWordPiece(text: string, vocabulary: WordPieceVocabulary, m
   ids.push(vocabulary.sep);
   return { ids, truncated };
 }
+
+/** Subword identifiers for one text, with no special tokens and no truncation. */
+function pieces(text: string, vocabulary: WordPieceVocabulary): number[] {
+  const ids: number[] = [];
+  for (const word of basicTokenize(text)) for (const id of wordPiece(word, vocabulary)) ids.push(id);
+  return ids;
+}
+
+/**
+ * Encodes a sequence PAIR as `[CLS] a [SEP] b [SEP]`, the input format a BERT
+ * cross-encoder is trained on, with `typeIds` marking which segment each position
+ * belongs to. Unlike two independent embeddings, the model attends across the
+ * boundary, which is the whole reason a cross-encoder can rerank.
+ *
+ * Over-long pairs are truncated longest-first, matching the reference tokenizer:
+ * tokens come off whichever sequence is currently longer, so a short query is
+ * never cut to make room for a long passage.
+ */
+export function encodeWordPiecePair(a: string, b: string, vocabulary: WordPieceVocabulary, maxTokens: number): { ids: number[]; typeIds: number[]; truncated: boolean } {
+  if (!Number.isSafeInteger(maxTokens) || maxTokens < 3 || maxTokens > 8192) throw new TypeError('maxTokens must be between 3 and 8192');
+  const first = pieces(a, vocabulary), second = pieces(b, vocabulary);
+  const body = maxTokens - 3;
+  let lengthA = first.length, lengthB = second.length;
+  const truncated = lengthA + lengthB > body;
+  while (lengthA + lengthB > body) { if (lengthA > lengthB) lengthA--; else lengthB--; }
+  const ids = [vocabulary.cls, ...first.slice(0, lengthA), vocabulary.sep, ...second.slice(0, lengthB), vocabulary.sep];
+  const typeIds = ids.map((_, index) => index > lengthA + 1 ? 1 : 0);
+  return { ids, typeIds, truncated };
+}
