@@ -333,7 +333,11 @@ export class LocalMemory {
         CREATE INDEX IF NOT EXISTS idempotency_memory ON idempotency(memory_id);
         CREATE INDEX IF NOT EXISTS dependencies_target ON dependencies(to_id);
         CREATE INDEX IF NOT EXISTS memories_runtime_jobs ON memories(workspace_id) WHERE json_extract(data,'$.metadata.runtimeType')='job';
-      ${LEDGER_SCHEMA}${GRANULARITY_SCHEMA}`);
+      ${LEDGER_SCHEMA}`);
+      // Executed separately rather than appended to the statement above: the other
+      // tier-1 branches append their own schema to that same template literal, and a
+      // shared line is a conflict for whichever of us merges second.
+      this.#db.exec(GRANULARITY_SCHEMA);
       if (!this.#db.prepare('PRAGMA table_info(local_ledger_candidates)').all().some(column => column.name === 'granularity')) this.#db.exec('ALTER TABLE local_ledger_candidates ADD COLUMN granularity TEXT');
       if (!this.#db.prepare('PRAGMA table_info(local_search)').all().some(column => column.name === 'token_count')) this.#db.exec('ALTER TABLE local_search ADD COLUMN token_count INTEGER');
       if (!this.#db.prepare('PRAGMA table_info(local_terms)').all().some(column => column.name === 'frequency')) {
@@ -850,12 +854,14 @@ export class LocalMemory {
     const reranker = embedder ? this.#resolveReranker() : null;
     return {
       requested: this.#retrievalRequested,
+      // Placed here rather than beside rerankDegraded because that is the line the
+      // t1.2 branch inserts its index block after.
+      ...(this.#granularityDegraded ? { granularityDegraded: this.#granularityDegraded } : {}),
       mode: embedder ? 'hybrid' : 'lexical',
       ...(embedder ? { embeddingModel: embedder.model, dimensions: embedder.dimensions } : {}),
       ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
       ...(reranker ? { rerankerModel: reranker.model, rerankTopN: this.#rerankTopN } : {}),
       ...(this.#rerankerDegraded ? { rerankDegraded: this.#rerankerDegraded } : {}),
-      ...(this.#granularityDegraded ? { granularityDegraded: this.#granularityDegraded } : {}),
     };
   }
 
