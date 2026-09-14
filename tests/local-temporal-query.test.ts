@@ -106,17 +106,29 @@ describe('temporal query parsing — relative expressions', () => {
 });
 
 describe('temporal query parsing — direction', () => {
-  it('turns an exclusionary phrase into real asOf and knownAt bounds', () => {
+  it('turns an exclusionary phrase into a real asOf bound', () => {
     const parse = at('what was the quota before March 2026');
     expect(parse.relation).toBe('before');
-    // The window is half-open, so the last visible instant is a millisecond
-    // before the boundary the caller named.
-    expect(parse.asOf).toBe('2026-03-31T23:59:59.999Z');
-    expect(parse.knownAt).toBe(parse.asOf);
+    // "Before March" excludes March: the boundary is the first instant of the
+    // named period, and the last visible instant is a millisecond earlier.
+    expect(parse.asOf).toBe('2026-02-28T23:59:59.999Z');
+    expect(at('until yesterday what was true').asOf).toBe('2026-03-13T23:59:59.999Z');
+    // ...while "as of March" includes it. One period of difference, so the two
+    // readings are kept apart rather than approximated.
+    expect(at('the quota as of March 2026').asOf).toBe('2026-03-31T23:59:59.999Z');
     expect(at('the plan as of 2025-06-01').asOf).toBe('2025-06-01T23:59:59.999Z');
-    expect(at('until yesterday what was true').asOf).toBe('2026-03-14T23:59:59.999Z');
+    expect(at('the plan no later than March 2026').asOf).toBe('2026-03-31T23:59:59.999Z');
     for (const lead of ['before', 'prior to', 'up to', 'up until', 'until', 'till', 'as of', 'no later than', 'earlier than']) {
       expect(at(`quota ${lead} 2025-06-01`).relation).toBe('before');
+    }
+  });
+
+  it('never sets knownAt, because a date in a question is about the world', () => {
+    // Setting transaction time here would hide every memory written after the
+    // named date, including one written this morning about last year.
+    for (const query of ['what was the quota before March 2026', 'the plan as of 2025-06-01',
+      'changes since June 2025', 'what happened in June 2023', 'last week']) {
+      expect(at(query).knownAt).toBeUndefined();
     }
   });
 
@@ -128,10 +140,13 @@ describe('temporal query parsing — direction', () => {
     expect(parse.window).toBeDefined();
   });
 
-  it('opens the window forward for an inclusive lower bound', () => {
+  it('opens the window forward, including or excluding the date it names', () => {
     const parse = at('changes since June 2025');
     expect(parse.relation).toBe('after');
+    // "Since June" includes June; "after June" starts in July.
     expect(parse.window?.from).toBe('2025-06-01T00:00:00.000Z');
+    expect(at('changes after June 2025').window?.from).toBe('2025-07-01T00:00:00.000Z');
+    expect(at('changes no earlier than June 2025').window?.from).toBe('2025-06-01T00:00:00.000Z');
     expect(new Date(parse.window!.to).getUTCFullYear()).toBe(9999);
     expect(parse.asOf).toBeUndefined();
     for (const lead of ['after', 'since', 'later than', 'no earlier than', 'onwards from']) {

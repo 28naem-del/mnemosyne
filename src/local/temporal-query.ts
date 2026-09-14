@@ -51,7 +51,18 @@ export interface TemporalQueryParse {
    * most relevant, not that later evidence must become invisible.
    */
   asOf?: string;
-  /** Transaction-time upper bound, set alongside `asOf` for the same phrases. */
+  /**
+   * Transaction-time upper bound — when the system LEARNED something, as opposed
+   * to when it was true. Never set by this parser, deliberately.
+   *
+   * A date in a question is almost always about the world: "what was the quota
+   * before March 2026" asks what was true then, not what had been recorded by
+   * then. Answering it with a transaction-time bound would hide every memory
+   * written after March 2026, which is nearly all of them, including the ones
+   * written this morning about last year. The field stays in the shape because a
+   * caller may set it, and because an explicitly epistemic phrase ("as far as we
+   * knew on Tuesday") could one day fill it; no phrase read here makes that claim.
+   */
   knownAt?: string;
   /** The slice the phrase points at. Present whenever anything was parsed. */
   window?: TemporalWindow;
@@ -235,20 +246,32 @@ const FORMS: readonly Form[] = [
 
 /** `2/3/2026` is 2 March to half the world and 3 February to the other half. */
 const AMBIGUOUS_NUMERIC = /\b\d{1,2}[/.]\d{1,2}[/.]\d{2,4}\b/;
-// "no earlier than" ends in "earlier than" and "no later than" ends in "later
-// than", so each negated form has to out-match the phrase it contains.
-const BEFORE = '(?:before|prior to|(?<!\\bno\\s)earlier than|up to|up until|until|till|as of|no later than)';
-const AFTER = '(?:after|since|(?<!\\bno\\s)later than|no earlier than|onwards? from)';
+/**
+ * The words that put a date in a direction, and whether they include the date
+ * they name.
+ *
+ * "Before March" excludes March; "as of March" includes it. Getting that
+ * boundary wrong silently shifts every answer by one whole period, so the two
+ * readings are separate entries rather than one approximate rule. "No earlier
+ * than" ends in "earlier than" and "no later than" ends in "later than", so each
+ * negated form carries a lookbehind to out-match the phrase it contains.
+ */
+const DIRECTIONS: readonly { relation: 'before' | 'after'; inclusive: boolean; pattern: string }[] = [
+  { relation: 'before', inclusive: true, pattern: '(?:as of|up to|no later than|through)' },
+  { relation: 'before', inclusive: false, pattern: '(?:before|prior to|(?<!\\bno\\s)earlier than|up until|until|till)' },
+  { relation: 'after', inclusive: true, pattern: '(?:since|no earlier than|onwards? from|starting(?: from)?)' },
+  { relation: 'after', inclusive: false, pattern: '(?:after|(?<!\\bno\\s)later than)' },
+];
 const AT = '(?:in|on|at|during|throughout|within|back in|over)';
+const DIRECTED = DIRECTIONS.map(direction => ({ ...direction, expression: new RegExp(`\\b${direction.pattern}\\s*$`, 'i') }));
+const ANY_DIRECTION = DIRECTIONS.map(direction => direction.pattern).join('|');
 const LEADS = Object.freeze({
-  before: new RegExp(`\\b${BEFORE}\\s*$`, 'i'),
-  after: new RegExp(`\\b${AFTER}\\s*$`, 'i'),
   at: new RegExp(`\\b${AT}\\s*$`, 'i'),
-  exclusionary: new RegExp(`\\b(?:${BEFORE}|${AFTER})\\s*$`, 'i'),
+  directed: new RegExp(`\\b(?:${ANY_DIRECTION})\\s*$`, 'i'),
   // Removing a trailing date can strand the preposition that introduced it
   // ("notes from yesterday" -> "notes from"); only a trailing one is stripped, so
   // "notes from Atlas" keeps its words.
-  dangling: new RegExp(`\\b(?:${BEFORE}|${AFTER}|${AT}|from|for|of|around|near)\\s*$`, 'i'),
+  dangling: new RegExp(`\\b(?:${ANY_DIRECTION}|${AT}|from|for|of|around|near)\\s*$`, 'i'),
 });
 const BETWEEN = /\bbetween\b/i;
 const JOINER = /\b(?:and|to|through|until)\b/i;
@@ -308,10 +331,10 @@ const nothing = (query: string): TemporalQueryParse =>
  * phrase names an impossible date (31 February). A caller should narrow only at
  * or above `TEMPORAL_ROUTING_MIN_CONFIDENCE`.
  *
- * `asOf` and `knownAt` are set only for exclusionary phrases, where the caller is
- * saying later evidence must not be visible. A scoping phrase reports its
- * `window` and leaves those bounds alone, because "in June" asks which slice is
- * most relevant, not that July must be hidden.
+ * `asOf` is set only for exclusionary phrases, where the caller is saying later
+ * evidence must not be visible. A scoping phrase reports its `window` and leaves
+ * the bound alone, because "in June" asks which slice is most relevant, not that
+ * July must be hidden. `knownAt` is never set — see its doc for why.
  *
  * @throws TypeError if `query` is not a string or `now` is not a valid date.
  */
@@ -346,12 +369,12 @@ export function parseTemporalQuery(query: string, options: TemporalQueryOptions 
   const { found, impossible } = findDate(query, 0, now);
   if (impossible || !found) return nothing(query);
 
-  // The relation is decided by the words immediately before the date, not by
+  // The direction is decided by the words immediately before the date, not by
   // scanning the whole query: "since" in "since the Atlas migration, in June
   // 2023" must not claim a date it does not introduce.
   const lead = query.slice(Math.max(0, found.start - LEAD_WINDOW), found.start);
-  const relation: TemporalRelation = LEADS.before.test(lead) ? 'before' : LEADS.after.test(lead) ? 'after' : 'at';
-  const prefix = (relation === 'at' ? LEADS.at : LEADS.exclusionary).exec(lead);
+  const directed = DIRECTED.find(direction => direction.expression.test(lead));
+  const prefix = (directed ? LEADS.directed : LEADS.at).exec(lead);
   const start = prefix ? found.start - (lead.length - prefix.index) : found.start;
   const base = {
     cleanedQuery: clean(query, [{ start, end: found.end }]),
@@ -359,14 +382,13 @@ export function parseTemporalQuery(query: string, options: TemporalQueryOptions 
     grain: found.anchor.grain,
     matched: [{ text: query.slice(start, found.end), start, end: found.end }],
   };
+  if (!directed) return { ...base, relation: 'at', window: { from: iso(found.anchor.from), to: iso(found.anchor.to) } };
 
-  if (relation === 'before') {
-    // A half-open `to` is the first excluded instant, so the last visible one is
-    // a millisecond earlier. `asOf` and `knownAt` move together: a caller asking
-    // what was true before a date is also asking what was known before it.
-    const bound = iso(found.anchor.to - 1);
-    return { ...base, relation, asOf: bound, knownAt: bound, window: { from: iso(0), to: iso(found.anchor.to) } };
+  if (directed.relation === 'before') {
+    // The boundary is the first excluded instant, so the last visible one is a
+    // millisecond earlier. `knownAt` is deliberately left open — see its doc.
+    const boundary = directed.inclusive ? found.anchor.to : found.anchor.from;
+    return { ...base, relation: 'before', asOf: iso(boundary - 1), window: { from: iso(0), to: iso(boundary) } };
   }
-  if (relation === 'after') return { ...base, relation, window: { from: iso(found.anchor.from), to: iso(FAR_FUTURE) } };
-  return { ...base, relation, window: { from: iso(found.anchor.from), to: iso(found.anchor.to) } };
+  return { ...base, relation: 'after', window: { from: iso(directed.inclusive ? found.anchor.from : found.anchor.to), to: iso(FAR_FUTURE) } };
 }
