@@ -137,6 +137,33 @@ describe('sqlite-vec dense index', () => {
     expect(plain.recall({ query: CORPUS[0], limit: 8 }).map(hit => hit.memory.id)).not.toContain(ids[0]);
   });
 
+  it('still reads vectors written as JSON before packed storage existed', () => {
+    const path = location();
+    const db = memory({ path });
+    const ids = seed(db);
+    const wanted = db.recall({ query: 'oat milk coffee', limit: 3 }).map(hit => hit.memory.id);
+    expect(wanted.length).toBeGreaterThan(0);
+    db.close(); opened.splice(opened.indexOf(db), 1);
+
+    // Rewrite every vector in the pre-T1.2 shape — a JSON array of doubles in a
+    // TEXT column — exactly as a database written by an earlier release holds it.
+    const raw = new DatabaseSync(path);
+    try {
+      const rows = raw.prepare('SELECT memory_id, data, dimensions FROM local_embeddings').all() as { memory_id: string; data: Uint8Array; dimensions: number }[];
+      expect(rows.length).toBe(CORPUS.length);
+      for (const row of rows) {
+        expect(row.data).toBeInstanceOf(Uint8Array); // packed today
+        const packed = new Float32Array(row.data.buffer.slice(row.data.byteOffset, row.data.byteOffset + row.data.byteLength));
+        raw.prepare('UPDATE local_embeddings SET data=? WHERE memory_id=?').run(JSON.stringify([...packed]), row.memory_id);
+      }
+    } finally { raw.close(); }
+
+    // No migration is run, and the old rows answer the same question.
+    const reopened = memory({ path });
+    expect(reopened.recall({ query: 'oat milk coffee', limit: 3 }).map(hit => hit.memory.id)).toEqual(wanted);
+    expect(ids).toEqual(expect.arrayContaining(wanted));
+  });
+
   it('never loads a model or an index on the zero-model deterministic path', () => {
     const db = memory({ retrieval: 'lexical', embedder: undefined });
     seed(db);
