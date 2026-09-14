@@ -10,11 +10,13 @@ import type {
   MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, RetrievalMode, RetrievalOutcomeInput, RetrievalStage, RetrievalStatus, RollbackUnchangedRecordsInput, SnapshotIdempotencyEntry, StoreMemoryInput, SyncMemoryEmbedder, SyncMemoryReranker,
 } from './types.js';
 import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, type LedgerRow } from './ledger.js';
-// Imported on its own line rather than added to the shared type import above,
-// which two other branches are editing in parallel.
+import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
+// On its own lines mid-block rather than folded into the shared type import
+// above or appended to the end: two other branches insert imports directly
+// after './ledger.js' and directly after './reranking/shared.js', and this gap
+// is the one place a third insertion merges without a conflict.
 import type { LedgerTemporalRouting } from './types.js';
 import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
-import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 
 export type * from './types.js';
@@ -22,11 +24,6 @@ export type * from './types.js';
 type DataRow = { data: string };
 type TemporalView = { asOf: string; knownAt: string; historical: boolean };
 type ScoredId = { id: string; score: number };
-/** A query's own time expression, resolved into retrieval parameters. `window`
- * is the prioritisation window — the parsed one widened by
- * `TEMPORAL_PRIORITY_SLACK_MS` — while `entry.window` keeps the window the query
- * named, so the ledger reports the parse and not the policy. */
-type TemporalRoute = { query: string; asOf?: string; knownAt?: string; window: TemporalWindow; entry: LedgerTemporalRouting };
 /** Collects each ranking stage's candidate list on the way through one recall, so
  * the ledger can record what was considered and not only what was returned. The
  * engine fills it only when the ledger asks for it; retrieval itself never reads it. */
@@ -51,6 +48,11 @@ const TEMPORAL_PRIORITY_SLACK_MS = 7 * 86_400_000;
  * stage protects the podium, so a window read from a query cannot evict the
  * matches the retriever was most sure of. */
 const TEMPORAL_PRIORITY_KEEP = 3;
+/** A query's own time expression, resolved into retrieval parameters. `window`
+ * is the prioritisation window — the parsed one widened by
+ * `TEMPORAL_PRIORITY_SLACK_MS` — while `entry.window` keeps the window the query
+ * named, so the ledger reports the parse and not the policy. */
+type TemporalRoute = { query: string; asOf?: string; knownAt?: string; window: TemporalWindow; entry: LedgerTemporalRouting };
 const SCOPE = "workspace_id = ? AND (agent_id = ? OR visibility = 'workspace')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const LOCAL_SNAPSHOT_LIMITS = Object.freeze({ maxRecords: 100000, maxBytes: 32 * 1024 * 1024 });

@@ -322,6 +322,12 @@ export interface RecallInput {
   limit?: number;
   kinds?: MemoryKind[];
   includeUntrusted?: boolean;
+  /** Read the time expression in `query` and retrieve accordingly. Off by default,
+   * so results, ledger entries and benchmark numbers are unchanged until asked for.
+   * An explicit `asOf` or `knownAt` always wins over a parsed one. Declared beside
+   * the other time options rather than at the end of the interface, which is where
+   * a parallel branch appends its own field. */
+  temporalRouting?: 'auto' | 'off';
   /** Real-world time to recall. Historical mode is enabled by either time field. */
   asOf?: string;
   /** Only use memories and outcome evidence recorded by this time. */
@@ -337,10 +343,6 @@ export interface RecallInput {
    * floor sits near 0.55 and a floor below ~0.5 filters almost nothing. Raw recall
    * is a diagnostic view and defaults to no floor; compile() gates separately. */
   minSimilarity?: number;
-  /** Read the time expression in `query` and retrieve accordingly. Off by default,
-   * so results, ledger entries and benchmark numbers are unchanged until asked for.
-   * An explicit `asOf` or `knownAt` always wins over a parsed one. */
-  temporalRouting?: 'auto' | 'off';
 }
 
 export interface ListMemoryInput {
@@ -420,13 +422,13 @@ export interface CompileInput {
   lexicalScoring?: 'overlap' | 'bm25';
   maxTokens: number;
   taskId?: string;
+  /** Read the time expression in `query` and compile accordingly. Off by default.
+   * An explicit `asOf` or `knownAt` always wins over a parsed one. */
+  temporalRouting?: 'auto' | 'off';
   /** Real-world time represented by this packet. Historical context is labeled in its envelope. */
   asOf?: string;
   /** Excludes records, corrections and outcome evidence learned after this instant. */
   knownAt?: string;
-  /** Read the time expression in `query` and compile accordingly. Off by default.
-   * An explicit `asOf` or `knownAt` always wins over a parsed one. */
-  temporalRouting?: 'auto' | 'off';
 }
 
 export interface RecallResult {
