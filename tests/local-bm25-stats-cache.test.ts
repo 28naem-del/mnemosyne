@@ -393,4 +393,95 @@ describe('BM25 corpus statistics cache', () => {
     expect(probe.calls()).toBe(1);
     rmSync(root, { recursive: true, force: true });
   });
+
+  /**
+   * Everything above invalidates a live entry for a boundary the clock has yet
+   * to reach. The opposite direction is the one `markTemporalBoundsIfNeeded`
+   * explicitly declines to flag — "already `<= now` at insert, so it can never
+   * be crossed again" — and that argument holds only while the clock runs
+   * *forwards*. `#time()` does not check that it does, and
+   * `LocalMemoryOptions.now` is a public constructor option with no
+   * monotonicity contract, so an NTP step, a sleep/resume, a VM snapshot
+   * restore or a caller's own clock can move `now` backwards across a warm
+   * entry. No write happens, so `writeSeq`/`dataVersion` cannot fire, and no
+   * sticky flag can either. The two tests below pin both damage directions:
+   * stale-HIGH `documents` (inflated scores) and stale-LOW (total recall loss).
+   */
+  it('recomputes live statistics when the reader clock steps backwards, with no temporal bound anywhere in the workspace', () => {
+    // Nothing here is flagged and nothing should be: every instant came off
+    // this engine's own clock and was already `<= now` at insert. That is
+    // precisely the workspace the live cache is designed to serve, which is
+    // what makes a backward step dangerous rather than merely inefficient.
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-stepback-'));
+    const path = join(root, 'memory.sqlite');
+    let current = 3;
+    const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+    opened.push(db);
+    db.store(fact('widget alpha report'));
+    db.store(fact('widget beta report'));
+    current = 12; // the clock advances normally, and two more rows are written
+    db.store(fact('gadget gamma notice'));
+    db.store(fact('gadget delta notice'));
+    const check = new DatabaseSync(path);
+    expect(check.prepare('SELECT 1 FROM local_settings WHERE key=?').get('bm25-temporal-bounds:test')).toBeUndefined();
+    check.close();
+
+    db.recall({ query: 'widget', lexicalScoring: 'bm25' }); // warms the live entry at documents=4
+    const probe = countCorpusStatsCalls();
+    current = 3; // the reader's clock STEPS BACK. No write in between.
+    const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    const live = probe.calls(); // read before the ground-truth connection adds its own
+    // Ground truth: the same database read at day(3) by a connection that never cached.
+    const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(3)) });
+    opened.push(cold);
+    const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(truth).toHaveLength(2); // `m.created_at<=knownAt` puts the two day(12) rows back out of scope
+    const pairs = (rows: typeof truth) => rows.map(r => [r.memory.id, r.score] as const).sort((a, b) => a[0].localeCompare(b[0]));
+    expect(pairs(after)).toEqual(pairs(truth));
+    expect(live).toBe(1); // the step-back is a miss: documents=4 must not be served at day(3)
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('recomputes live statistics when the reader clock steps back behind an import whose validUntil had already expired', () => {
+    // "`validUntil <= now` — already expired, and a larger `asOf` keeps it
+    // expired. Safe to cache." Only under a monotone clock: a step back to
+    // before `validUntil` puts both imported rows back in scope. `documents`
+    // then runs stale-LOW against a live `df`, IDF turns negative and
+    // #bm25Recall's `score > 0` gate drops every row — silent, total recall
+    // loss, including the purely local row that has nothing to do with the import.
+    const producer = memory('alice', 'producer', () => new Date(day(1)));
+    producer.store(fact('widget alpha report', { validUntil: day(5) }));
+    producer.store(fact('widget beta report', { validUntil: day(5) }));
+    const exported = producer.export();
+    const snapshot = { ...exported, workspaceId: 'test', idempotency: [], outcomes: [],
+      memories: exported.memories.map(record => ({ ...record, workspaceId: 'test' })) };
+
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-stepback-expired-'));
+    const path = join(root, 'memory.sqlite');
+    let current = 10; // the importer's clock is well past the imported validUntil
+    const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+    opened.push(db);
+    const anchor = db.store(fact('widget survivor local row'));
+    db.import(snapshot);
+    const check = new DatabaseSync(path);
+    // Expired on arrival, so nothing is flagged and the live cache stays on.
+    expect(check.prepare('SELECT 1 FROM local_settings WHERE key=?').get('bm25-temporal-bounds:test')).toBeUndefined();
+    check.close();
+
+    const warm = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(warm.map(r => r.memory.id)).toEqual([anchor.id]); // documents=1: the imports are expired
+    const probe = countCorpusStatsCalls();
+    current = 3; // the clock steps BACK behind day(5): both imported rows re-enter scope
+    const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    const live = probe.calls();
+    const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(3)) });
+    opened.push(cold);
+    const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(truth).toHaveLength(2); // the anchor's createdAt is day(10), so at day(3) only the two imports are in scope
+    expect(after).not.toHaveLength(0); // the failure this guards is returning nothing at all
+    const pairs = (rows: typeof truth) => rows.map(r => [r.memory.id, r.score] as const).sort((a, b) => a[0].localeCompare(b[0]));
+    expect(pairs(after)).toEqual(pairs(truth));
+    expect(live).toBe(1);
+    rmSync(root, { recursive: true, force: true });
+  });
 });
