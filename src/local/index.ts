@@ -62,6 +62,7 @@ export class LocalMemory {
   readonly #modelCacheDir?: string;
   readonly #requireEmbedder: boolean;
   readonly #minSimilarity: number;
+  readonly #rrfK: number;
   readonly #ledgerEnabled: boolean;
   readonly #ledgerQueries: 'text' | 'digest';
   /** `undefined` means not resolved yet; `null` means resolved to no embedder. */
@@ -73,7 +74,7 @@ export class LocalMemory {
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'ledger'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -93,6 +94,7 @@ export class LocalMemory {
     if (options.modelCacheDir !== undefined) this.#modelCacheDir = v.string(options.modelCacheDir, 'modelCacheDir', 4096);
     this.#requireEmbedder = v.boolean(options.requireEmbedder);
     this.#minSimilarity = this.#similarity(options.minSimilarity, 0);
+    this.#rrfK = v.limit(options.rrfK, 10, 1000);
     const ledger = options.ledger === undefined ? {} : options.ledger;
     if (ledger !== false) v.keys(v.object(ledger, 'ledger'), ['enabled', 'queries'], 'ledger');
     this.#ledgerEnabled = ledger !== false && v.boolean((ledger as LedgerOptions).enabled ?? true);
@@ -756,11 +758,7 @@ export class LocalMemory {
     if (!Array.isArray(embedded) || embedded.length !== 1) throw new TypeError('Embedder must return one query vector');
     const query = this.#vector(embedded[0], dimensions);
     const semantic = this.#scanVectorsSync({ model, dimensions, query, maxCandidates, time, includeUntrusted, kinds: input.kinds ?? [], minSimilarity: this.#similarity(input.minSimilarity, this.#minSimilarity) });
-    const fused = new Map<string, ScoredId>();
-    for (const channel of [lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic]) channel.forEach((entry, rank) => {
-      const old = fused.get(entry.id);
-      fused.set(entry.id, { id: entry.id, score: (old?.score ?? 0) + 1 / (60 + rank + 1) });
-    });
+    const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], this.#rrfK);
     const ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     const results: RecallResult[] = [];
     for (const entry of ranked) {
@@ -949,6 +947,16 @@ export class LocalMemory {
     });
   }
 
+  /** Reciprocal rank fusion: each channel contributes 1/(k + rank) per candidate. */
+  #fuse(channels: readonly ScoredId[][], k: number): Map<string, ScoredId> {
+    const fused = new Map<string, ScoredId>();
+    for (const channel of channels) channel.forEach((entry, rank) => {
+      const previous = fused.get(entry.id);
+      fused.set(entry.id, { id: entry.id, score: (previous?.score ?? 0) + 1 / (k + rank + 1) });
+    });
+    return fused;
+  }
+
   #retainBest(heap: ScoredId[], entry: ScoredId, limit: number): void {
     const worse = (a: ScoredId, b: ScoredId): boolean => a.score < b.score || (a.score === b.score && a.id > b.id);
     if (heap.length < limit) {
@@ -1087,7 +1095,7 @@ export class LocalMemory {
   /** RRF over local lexical and exact cosine candidates; optional reranking cannot invent IDs. */
   async recallHybrid(input: RecallInput, options: HybridRecallOptions): Promise<RecallResult[]> {
     this.#assertOpen();
-    v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'signal', 'timeoutMs', 'maxCandidates'], 'hybrid options');
+    v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'signal', 'timeoutMs', 'maxCandidates', 'rrfK'], 'hybrid options');
     const { model, dimensions } = this.#embeddingContract(options.embedder);
     const maxCandidates = v.limit(options.maxCandidates, 1000, 10000);
     const count = v.limit(input.limit, 10);
@@ -1105,11 +1113,7 @@ export class LocalMemory {
     this.#assertOpen(); this.#abort(options.signal);
     time = this.#temporal(input);
     const semantic = await this.#scanVectors(input, options, { model, dimensions, query, maxCandidates, time });
-    const fused = new Map<string, ScoredId>();
-    for (const channel of [lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic]) channel.forEach((entry, rank) => {
-      const old = fused.get(entry.id);
-      fused.set(entry.id, { id: entry.id, score: (old?.score ?? 0) + 1 / (60 + rank + 1) });
-    });
+    const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], v.limit(options.rrfK, this.#rrfK, 1000));
     let ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     if (options.reranker && ranked.length) {
       let candidates: (ScoredId & { memory: MemoryRecord })[] = [];

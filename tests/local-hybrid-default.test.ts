@@ -89,7 +89,7 @@ withModel('hybrid RRF retrieval is the default', () => {
     expect(ids).toContain(lexicalHit.id);
     expect(ids).toContain(denseHit.id);
     // Reciprocal rank fusion, so scores are rank sums rather than BM25 scores.
-    expect(db.recall({ query: QUERY })[0].score).toBeLessThanOrEqual(2 / 61);
+    expect(db.recall({ query: QUERY })[0].score).toBeLessThanOrEqual(2 / 11);
   });
 
   it('keeps the model off the write path: storing indexes no vectors, recall does', () => {

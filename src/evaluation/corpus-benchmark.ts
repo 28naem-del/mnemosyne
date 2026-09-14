@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setImmediate } from 'node:timers/promises';
-import { createLocalMemory, type LocalMemory, type MemoryRecord } from '../local/index.js';
+import { createLocalMemory, type LocalMemory, type MemoryEmbedder, type MemoryRecord } from '../local/index.js';
 import type { CorpusAttempt, CorpusBenchmarkOptions, CorpusBenchmarkReport, CorpusCondition, CorpusDataset, CorpusSummary, EvaluationLabel, EvaluationTurn, EvidenceScore } from './corpus-types.js';
 export * from './corpus-types.js';
 export * from './corpus-adapters.js';
@@ -115,7 +115,7 @@ function summary(rows: CorpusAttempt[]): CorpusSummary {
 
 /** No generation or judge path. Optional embeddings use only explicit caller callbacks. */
 export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBenchmarkOptions = {}): Promise<CorpusBenchmarkReport> {
-  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'includeBm25', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId'];
+  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'includeBm25', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId'];
   if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !optionKeys.includes(key))) throw new Error('Unknown corpus evaluation option.');
   if (options.includeBm25 !== undefined && typeof options.includeBm25 !== 'boolean') throw new Error('includeBm25 must be boolean.');
   if (options.hybridLexicalScoring !== undefined && !['overlap', 'bm25'].includes(options.hybridLexicalScoring)) throw new Error('Invalid hybrid lexical scoring.');
@@ -139,13 +139,20 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
   const check = () => { options.signal?.throwIfAborted(); if (performance.now() >= deadline) throw new Error('Corpus evaluation time budget exceeded.'); };
   const calls = { embedding: 0, embeddingInputBytes: 0, generation: 0 as const, judge: 0 as const };
   const supplied = options.embedder;
-  if (supplied && (typeof supplied.embed !== 'function' || !supplied.model?.trim() || !Number.isSafeInteger(supplied.dimensions) || supplied.dimensions < 1 || supplied.dimensions > 4096)) throw new Error('Invalid explicit embedder.');
-  const embedder = supplied && { model: supplied.model, dimensions: supplied.dimensions, async embed(texts: string[], operation: { signal: AbortSignal }) {
+  const valid = (candidate: MemoryEmbedder): boolean => typeof candidate.embed === 'function' && !!candidate.model?.trim() && Number.isSafeInteger(candidate.dimensions) && candidate.dimensions >= 1 && candidate.dimensions <= 4096;
+  if (supplied && !valid(supplied)) throw new Error('Invalid explicit embedder.');
+  if (options.queryEmbedder && !supplied) throw new Error('A query embedder requires a document embedder.');
+  if (options.queryEmbedder && !valid(options.queryEmbedder)) throw new Error('Invalid explicit query embedder.');
+  // Both sides must land in one vector space, or a cosine between them is meaningless.
+  if (options.queryEmbedder && supplied && (options.queryEmbedder.model !== supplied.model || options.queryEmbedder.dimensions !== supplied.dimensions)) throw new Error('Query and document embedders must declare the same model identity and width.');
+  const meter = (target: MemoryEmbedder) => ({ model: target.model, dimensions: target.dimensions, async embed(texts: string[], operation: { signal: AbortSignal }) {
     check(); const bytes = texts.reduce((total, value) => total + Buffer.byteLength(value), 0);
     if (calls.embedding >= settings.maxEmbeddingCalls || calls.embeddingInputBytes + bytes > settings.maxEmbeddingInputBytes) throw new Error('Embedding budget exceeded.');
     calls.embedding++; calls.embeddingInputBytes += bytes;
-    return supplied.embed([...texts], operation);
-  } };
+    return target.embed([...texts], operation);
+  } });
+  const embedder = supplied && meter(supplied);
+  const queryEmbedder = supplied && meter(options.queryEmbedder ?? supplied);
   const conditions: CorpusCondition[] = ['no-memory', 'full-context', 'lexical', ...(options.includeBm25 ? ['bm25' as const] : []), ...(embedder ? ['hybrid' as const] : [])];
   const labels = new Map(dataset.labels.map(label => [label.questionId, label]));
   const attempts: CorpusAttempt[] = [], ingestion: CorpusBenchmarkReport['ingestion'] = [];
@@ -198,7 +205,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
             const retrievalStarted = performance.now();
             const hits = condition === 'no-memory' ? [] : condition === 'full-context' ? chunks : (condition === 'lexical' || condition === 'bm25'
               ? memory!.recall({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: condition === 'bm25' ? 'bm25' : 'overlap' })
-              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap' }, { embedder: embedder!, maxCandidates: settings.maxCandidates, timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
+              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap' }, { embedder: queryEmbedder!, maxCandidates: settings.maxCandidates, timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
             row.retrievalMs = performance.now() - retrievalStarted;
             check(); row.retrieval = score(hits, label); row.retrievedChunks = hits.length;
             const packingStarted = performance.now(); let selected: Chunk[] = [];
@@ -219,7 +226,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
     } finally { memory?.close(); }
   }
   return { kind: 'offline corpus retrieval evaluation', protocol: dataset.protocol, dataset: { ...dataset.provenance, adapter: dataset.adapter, normalizedSha256, questions: dataset.questions.length, corpora: dataset.corpora.length },
-    runtime: { node: process.version, platform: `${process.platform}/${process.arch}`, implementationSha256, fingerprint: 'SHA256 of relative paths and bytes of all runtime JS (or source TS in source execution), excluding declarations' }, settings, calls, ...(embedder ? { embedding: { model: embedder.model, dimensions: embedder.dimensions } } : {}), answerQuality: 'not-evaluated',
+    runtime: { node: process.version, platform: `${process.platform}/${process.arch}`, implementationSha256, fingerprint: 'SHA256 of relative paths and bytes of all runtime JS (or source TS in source execution), excluding declarations' }, settings, calls, ...(embedder ? { embedding: { model: embedder.model, dimensions: embedder.dimensions, asymmetric: options.queryEmbedder !== undefined } } : {}), answerQuality: 'not-evaluated',
     complete: attempts.length === dataset.questions.length * conditions.length && attempts.every(row => row.status === 'completed' || row.status === 'context-overflow'), ingestion, attempts,
     summaries: Object.fromEntries(conditions.map(condition => [condition, summary(attempts.filter(row => row.condition === condition))])), notices: dataset.notices, durationMs: performance.now() - started,
     limitations: ['Retrieval coverage is not generated-answer correctness, abstention accuracy, citation entailment, or an official benchmark score. No reader or judge runs.',

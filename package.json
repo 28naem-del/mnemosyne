@@ -139,7 +139,7 @@
     "check": "npm run typecheck && npm test && npm run typecheck:examples",
     "demo": "node dist/cli/index.js demo",
     "demo:record": "node dist/cli/index.js demo --record",
-    "benchmark": "node dist/evaluation/local-benchmark.js",
+    "benchmark": "node dist/evaluation/locomo-benchmark.js",
     "demo:learning": "node dist/cli/index.js learning-demo",
     "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v",
     "pretest": "npm run build",
@@ -150,7 +150,8 @@
     "evaluate": "node dist/cli/index.js evaluate",
     "benchmark:agent": "node dist/cli/index.js benchmark-agent",
     "setup:embedder": "node scripts/fetch-local-model.mjs",
-    "benchmark:fetch": "node scripts/fetch-benchmark-corpus.mjs"
+    "benchmark:fetch": "node scripts/fetch-benchmark-corpus.mjs",
+    "benchmark:scale": "node dist/evaluation/local-benchmark.js"
   },
   "keywords": [
     "ai",

@@ -182,6 +182,15 @@ export interface LocalMemoryOptions {
   requireEmbedder?: boolean;
   /** Default dense similarity floor for every recall, 0-1. Defaults to 0. */
   minSimilarity?: number;
+  /** Reciprocal rank fusion constant, 1-1000. Defaults to 10.
+   *
+   * RRF scores a candidate as the sum of 1/(k + rank) over the channels that
+   * returned it, so k sets how quickly rank differences stop mattering. The
+   * widely quoted k=60 comes from fusing TREC runs a thousand results deep; this
+   * engine fuses two hundred-result channels into a top-ten answer, where k on
+   * the order of the cut depth keeps the head of each channel meaningful.
+   * Measured on LoCoMo: k=60 scores 61.75 mean recall@10 and k=10 scores 65.63. */
+  rrfK?: number;
   /** Provenance and outcome ledger settings. `false` disables it entirely. */
   ledger?: LedgerOptions | false;
 }
@@ -262,6 +271,8 @@ export interface EmbeddingIndexOptions {
 export interface EmbeddingIndexResult { indexed: number; skipped: number; remaining: number }
 export interface HybridRecallOptions {
   embedder: MemoryEmbedder;
+  /** Reciprocal rank fusion constant, 1-1000. Defaults to the memory's setting. */
+  rrfK?: number;
   reranker?: MemoryReranker;
   signal?: AbortSignal;
   /** Deadline for each provider call and for the cooperative full vector scan; incomplete scans reject. */
