@@ -446,13 +446,18 @@ export class LocalMemory {
     }
   }
 
-  #insert(record: MemoryRecord, origin: LedgerProvenance['origin'] = 'store'): void {
+  /** `clockNow` is THIS engine's current time, which is not the same thing as
+   * `record.createdAt`: on the `import()` path `createdAt` came off the
+   * producing machine's clock. It is the baseline
+   * {@link markTemporalBoundsIfNeeded} compares temporal bounds against, so
+   * it has to be the reader's clock — hence required, never defaulted. */
+  #insert(record: MemoryRecord, origin: LedgerProvenance['origin'], clockNow: string): void {
     this.#writeSeq++;
     this.#db.prepare(`INSERT INTO memories(id,workspace_id,agent_id,visibility,trust,status,kind,text,fact_key,supersedes,created_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       record.id, record.workspaceId, record.agentId, record.visibility, record.trust, record.status,
       record.kind, record.text, record.key ?? null, record.supersedes ?? null, record.createdAt, JSON.stringify(record),
     );
-    markTemporalBoundsIfNeeded(this.#db, record);
+    markTemporalBoundsIfNeeded(this.#db, record, clockNow);
     this.#indexText(record);
     this.#links(record);
     this.#audit(record.id, 'stored');
@@ -642,7 +647,7 @@ export class LocalMemory {
       const record: MemoryRecord = { ...payload, id: randomUUID(), workspaceId: this.#workspaceId, agentId: this.#agentId, createdAt: now, updatedAt: now, status: 'active' };
       if (record.validUntil !== undefined && record.validUntil <= (record.validFrom ?? record.createdAt)) throw new TypeError('validUntil must follow validFrom or createdAt');
       this.#validateDependencies(record);
-      this.#insert(record);
+      this.#insert(record, 'store', now);
       if (idempotencyKey) this.#db.prepare('INSERT INTO idempotency(workspace_id,agent_id,key,payload,memory_id) VALUES(?,?,?,?,?)').run(this.#workspaceId, this.#agentId, idempotencyKey, v.canonical(payload), record.id);
       return record;
     });
@@ -1826,7 +1831,7 @@ export class LocalMemory {
       const record: MemoryRecord = { ...old, validFrom, ...(validUntil === undefined ? {} : { validUntil }), id: correctionId, text, source, trust: previous.trust === 'untrusted' ? 'untrusted' : 'observed', status: 'active', supersedes: id, createdAt: now, updatedAt: now, metadata };
       if (record.dependencies.some((dependency) => this.get(dependency)?.trust === 'untrusted')) record.trust = 'untrusted';
       this.#validateDependencies(record);
-      this.#insert(record, 'correction');
+      this.#insert(record, 'correction', now);
       this.#appendLedger('correction', record.id, { correction: { supersededId: id, correctionId, reason, invalidatedIds, invalidatedCount: invalidatedIds.length } });
       return record;
     });
@@ -2079,7 +2084,7 @@ export class LocalMemory {
       }
       const record: MemoryRecord = { ...normalized, id: correctionId, workspaceId: this.#workspaceId, agentId: this.#agentId, status: 'active', createdAt: now, updatedAt: now, ...(supersedes ? { supersedes } : {}) };
       this.#validateDependencies(record);
-      this.#insert(record);
+      this.#insert(record, 'store', now);
       return record;
     });
   }
@@ -2260,13 +2265,13 @@ export class LocalMemory {
     });
     if (new Set(idempotency.map((entry) => entry.key)).size !== idempotency.length || new Set(idempotency.map((entry) => entry.memoryId)).size !== idempotency.length) throw new Error('Duplicate snapshot idempotency mapping');
     return this.#transaction(() => {
-      const result: ImportResult = { imported: 0, skipped: 0, outcomesImported: 0 };
+      const result: ImportResult = { imported: 0, skipped: 0, outcomesImported: 0 }, importedAt = this.#time();
       for (const record of ordered) {
         const existing = this.#decode(this.#db.prepare('SELECT data FROM memories WHERE id=?').get(record.id));
         if (existing) {
           if (existing.workspaceId !== this.#workspaceId || existing.agentId !== this.#agentId || v.canonical(existing) !== v.canonical(record)) throw new Error('Snapshot id conflicts with existing memory');
           result.skipped++;
-        } else { this.#insert(record, 'import'); result.imported++; }
+        } else { this.#insert(record, 'import', importedAt); result.imported++; }
       }
       for (const outcome of outcomes) {
         const existing = this.#db.prepare('SELECT data FROM outcomes WHERE id=?').get(outcome.id) as DataRow | undefined;

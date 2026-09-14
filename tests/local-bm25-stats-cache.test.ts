@@ -217,6 +217,47 @@ describe('BM25 corpus statistics cache', () => {
     expect(probe.calls()).toBe(3);
   });
 
+  it('gives up the live cache for an imported record whose validFrom is past for the producer but still future for the importer', () => {
+    // `record.createdAt` is no guide to whether a bound has been crossed *here*:
+    // on the import path it came off the producing machine's clock, and
+    // `#snapshotRecord` deliberately does not bound it to the importer's
+    // present. A producer running ahead writes a validFrom that is already past
+    // for it and still future for the reader, so the baseline has to be the
+    // reader's own clock.
+    const producer = memory('alice', 'producer-clock-ahead', () => new Date(day(10)));
+    producer.store(fact('widget gamma imported', { validFrom: day(5) })); // past for the producer
+    const snapshot = { ...producer.export(), workspaceId: 'test' };
+    snapshot.memories = snapshot.memories.map(record => ({ ...record, workspaceId: 'test' }));
+
+    // A real file, so a second connection can read the same database as ground truth.
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-import-'));
+    const path = join(root, 'memory.sqlite');
+    let current = 1; // the importer is nine days behind the producer
+    const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+    opened.push(db);
+    const anchor = db.store(fact('widget alpha'));
+    db.import(snapshot);
+    const probe = countCorpusStatsCalls();
+    const before = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(before.map(r => r.memory.id)).toEqual([anchor.id]); // the import is not in scope yet
+
+    current = 11; // day(5)/day(10) crossed by clock advance alone, with no write
+    const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    const live = probe.calls(); // read before the ground-truth connection below adds its own
+    // Ground truth: the same store read by a connection that never cached anything.
+    const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(11)) });
+    opened.push(cold);
+    const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(truth).toHaveLength(2);
+    expect(after.map(r => [r.memory.id, r.score])).toEqual(truth.map(r => [r.memory.id, r.score]));
+    // A stale-low `documents` against a live `df` sends IDF negative and
+    // #bm25Recall's `score > 0` gate drops BOTH rows — including `anchor`,
+    // which has nothing to do with the import. Guard that explicitly.
+    expect(after.map(r => r.memory.id)).toContain(anchor.id);
+    expect(live).toBe(2); // nothing is cached live while a crossing is pending
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('scopes the temporal-bounds flag per workspace: a validFrom record in one workspace does not disable the live cache in another', () => {
     // node:sqlite's `:memory:` is a distinct database per connection, so use a
     // real temp file to actually share one database across two workspaces.

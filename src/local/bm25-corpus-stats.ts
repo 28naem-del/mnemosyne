@@ -105,10 +105,11 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
  *
  * The predicate is deliberately narrower than "the record has a `validFrom`
  * or a `validUntil`". What matters is not that a boundary exists but that one
- * is still *ahead* of the insert, because only an uncrossed boundary can be
- * crossed later with no write to invalidate against. `#bm25Recall`'s scope
- * test is `(validFrom ?? createdAt) <= asOf AND (validUntil IS NULL OR
- * validUntil > asOf)`, which for a live view is monotone in the clock:
+ * is still *ahead of this engine's clock* at insert time, because only an
+ * uncrossed boundary can be crossed later with no write to invalidate
+ * against. `#bm25Recall`'s scope test is `(validFrom ?? createdAt) <= asOf
+ * AND (validUntil IS NULL OR validUntil > asOf)`, which for a live view is
+ * monotone in the clock:
  *
  *  - `validFrom <= now`, no `validUntil` — in scope now, and no later `asOf`
  *    can push it out. **Safe to cache.**
@@ -124,23 +125,30 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
  * single correction permanently disable live-view caching for that whole
  * workspace and put its live queries back on the O(corpus) scan.
  *
- * `now` is the record's own `createdAt`: the value the caller already took
- * from the engine's injected clock for this insert, so this never reads a
- * clock of its own (which would both break the engine's determinism under a
- * test clock and tick a monotonic one an extra time per insert). On the
- * `import()` path `createdAt` comes from the snapshot instead; for a snapshot
- * written in the past that only makes this *more* conservative, since bounds
- * that have since expired still read as future relative to `createdAt`.
+ * `now` must be **the reading engine's** current time, and the caller passes
+ * it in rather than this reading a clock of its own (a clock read per insert
+ * would break the engine's determinism under an injected clock and tick a
+ * monotonic one an extra time). It is emphatically *not* `record.createdAt`:
+ * on the `import()` path `createdAt` came from the producing machine's clock,
+ * which `#snapshotRecord` deliberately does not bound to the importer's
+ * present. A producer whose clock is a few minutes fast writes a `validFrom`
+ * that is past for it and still future for the importer; measured against
+ * `createdAt` that reads as already-crossed, the flag is not set, and the
+ * importer then crosses the boundary by clock advance alone. That is not a
+ * small drift: `documents` goes stale-low while `df` stays live, so
+ * `log1p((documents - df + 0.5) / (df + 0.5))` turns negative and
+ * `#bm25Recall`'s `score > 0` gate drops the rows outright — silent, total
+ * recall loss for the query, including rows that have nothing to do with the
+ * imported record. So the baseline is the reader's clock, always.
  *
  * Sticky (`INSERT OR IGNORE`, never cleared): the pending crossing may happen
  * at any later time, and the flag has to outlive the record — erasing it does
  * not un-stale a cache entry built while it was there.
  *
- * Call on every insert; a no-op unless the record carries a bound that is
- * still in the future at insert time.
+ * Call on every insert; a no-op unless the record carries a bound still in the
+ * reader's future at insert time.
  */
-export function markTemporalBoundsIfNeeded(db: DatabaseSync, record: { workspaceId: string; createdAt: string; validFrom?: string; validUntil?: string }): void {
-  const now = record.createdAt;
+export function markTemporalBoundsIfNeeded(db: DatabaseSync, record: { workspaceId: string; validFrom?: string; validUntil?: string }, now: string): void {
   if (!((record.validFrom !== undefined && record.validFrom > now) || (record.validUntil !== undefined && record.validUntil > now))) return;
   db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run(`bm25-temporal-bounds:${record.workspaceId}`, '1');
 }
