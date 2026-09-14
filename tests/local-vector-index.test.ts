@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -317,6 +317,49 @@ describe('hnsw dense index', () => {
     const reopened = memory({ path, indexMode: 'hnsw' });
     expect(reopened.recall({ query: 'oat milk coffee', limit: 8 }).length).toBeGreaterThan(0);
     expect(reopened.retrieval.index).toMatchObject({ mode: 'hnsw', size: CORPUS.length });
+  });
+
+  withHnsw('reopens a legacy sidecar (no labels array) by reading the graph, not rebuilding it', () => {
+    const path = location();
+    const writer = memory({ path, indexMode: 'hnsw' });
+    const ids = seed(writer);
+    writer.recall({ query: 'coffee' }); // resolves the dense index
+    writer.close(); opened.splice(opened.indexOf(writer), 1);
+
+    const binPath = `${path}-hnsw`;
+    const sidecarPath = `${binPath}.meta.json`;
+    const before = statSync(binPath);
+    const current = JSON.parse(readFileSync(sidecarPath, 'utf8')) as { dimensions: number; count: number; maxLabel: number; labels: number[] };
+    expect(Array.isArray(current.labels)).toBe(true); // sanity: this really is the current format
+
+    // Downgrade to the shape every hnsw sidecar had before this fix -- exactly
+    // what a real deployed index looked like beforehand (e.g. the reviewer's
+    // 1M-point fixture's sidecar: `{dimensions, count, maxLabel}`, no `labels`).
+    writeFileSync(sidecarPath, JSON.stringify({ dimensions: current.dimensions, count: current.count, maxLabel: current.maxLabel }));
+
+    const reopened = memory({ path, indexMode: 'hnsw' });
+    const hits = reopened.recall({ query: 'coffee', limit: 8 });
+    expect(hits.length).toBeGreaterThan(0);
+    expect(reopened.retrieval.index).toMatchObject({ mode: 'hnsw', size: ids.length });
+    reopened.close(); opened.splice(opened.indexOf(reopened), 1);
+
+    // Proof a rebuild did not happen -- not merely that size() ended up right,
+    // which the buggy rebuild-from-scratch path also gets right eventually.
+    // `flush()` always writes the graph through a staged file and renames it
+    // over the original (see HnswIndex.flush); POSIX rename always hands the
+    // destination name a new inode, even when the write reproduces the exact
+    // same bytes -- and an hnsw rebuild from the same rows in the same order
+    // does reproduce the exact same bytes (see 'rebuilds deterministically...'
+    // above), so byte-for-byte content equality alone cannot tell a read-only
+    // reopen apart from a rebuild that happened to be silent about it. The
+    // inode (and mtime, for a human-readable second signal) can: neither
+    // changes unless something actually wrote through flush(), and this
+    // reopen-and-query never dirtied the index because it never called
+    // upsert() -- every label came back from getIdsList() on the file that
+    // was already there.
+    const after = statSync(binPath);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
   });
 });
 

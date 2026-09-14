@@ -38,6 +38,7 @@ interface HnswNative {
   addPoint(point: number[], label: number, replaceDeleted?: boolean): void;
   markDelete(label: number): void;
   searchKnn(query: number[], k: number, filter?: (label: number) => boolean): { distances: number[]; neighbors: number[] };
+  getIdsList(): number[];
   getCurrentCount(): number;
   getMaxElements(): number;
   setEf(ef: number): void;
@@ -47,7 +48,14 @@ export function hnswAvailable(): boolean {
   try { require.resolve('hnswlib-node'); return true; } catch { return false; }
 }
 
-interface Sidecar { dimensions: number; count: number; maxLabel: number; labels: number[] }
+/**
+ * `labels` is only present in sidecars written by this build or later. A
+ * sidecar from before label tracking existed has exactly `{dimensions, count,
+ * maxLabel}` — still trustworthy for `dimensions` and `maxLabel`, just missing
+ * the array. See the constructor for how that legacy shape is handled: NOT a
+ * lost sidecar, because the graph file it describes is still intact.
+ */
+interface Sidecar { dimensions: number; count: number; maxLabel: number; labels?: number[] }
 
 export class HnswIndex implements DenseIndex {
   readonly kind = 'hnsw' as const;
@@ -78,8 +86,32 @@ export class HnswIndex implements DenseIndex {
       // A sidecar that disagrees about width describes a different model; the
       // engine drops the files and rebuilds rather than reading them as ours.
       this.#index.readIndexSync(path, true);
-      this.#labels = new Set(sidecar.labels);
-      this.#maxLabel = sidecar.maxLabel;
+      if (sidecar.labels) {
+        this.#labels = new Set(sidecar.labels);
+        this.#maxLabel = sidecar.maxLabel;
+      } else {
+        // Legacy sidecar: no `labels` array, but the graph readIndexSync just
+        // loaded is not lost — it is intact and readable — so reconstruct
+        // labels from it instead of discarding it for a fresh, empty index.
+        // getIdsList() returns every physical slot in the graph, including
+        // ones a prior session already markDelete()'d (hnswlib excludes a
+        // deleted id from search results, it does not forget the id itself),
+        // so this can over-count relative to what local_vec_labels currently
+        // authorizes. That is safe, not merely tolerated: the very next thing
+        // the caller does with a freshly opened index is compare size() against
+        // local_vec_labels and, on any mismatch, call reconcile(live) — which
+        // prunes exactly what the database no longer authorizes and is the
+        // authority either way. maxLabel is trusted from the sidecar itself
+        // (it already survived a prior flush); the max over the reconstructed
+        // ids is only a defensive floor in case that field is ever missing —
+        // computed by loop, not `Math.max(...ids)`, since ids can run into the
+        // millions and spreading that many arguments overflows the call stack.
+        const ids = this.#index.getIdsList();
+        this.#labels = new Set(ids);
+        let maxSeen = sidecar.maxLabel ?? 0;
+        for (const id of ids) if (id > maxSeen) maxSeen = id;
+        this.#maxLabel = maxSeen;
+      }
     } else {
       this.#index.initIndex(1024, HNSW_M, HNSW_EF_CONSTRUCTION, HNSW_SEED, true);
     }
@@ -97,9 +129,11 @@ export class HnswIndex implements DenseIndex {
     if (!path || !existsSync(path)) return null;
     try {
       const parsed = JSON.parse(readFileSync(path, 'utf8')) as Sidecar;
-      // A sidecar written before label tracking existed cannot be trusted for
-      // accounting; treated the same as a lost sidecar (fresh init, full resync).
-      return parsed.dimensions === this.#dimensions && Array.isArray(parsed.labels) ? parsed : null;
+      // Width is the one field that must agree for the graph to mean what this
+      // sidecar says it means; a legacy sidecar missing `labels` still agrees
+      // on `dimensions` and is handled in the constructor, not rejected here.
+      if (parsed.dimensions !== this.#dimensions) return null;
+      return 'labels' in parsed && !Array.isArray(parsed.labels) ? null : parsed;
     } catch { return null; }
   }
 
