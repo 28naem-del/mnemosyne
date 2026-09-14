@@ -258,6 +258,42 @@ describe('BM25 corpus statistics cache', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('gives up the live cache for an imported record dated into the importer\'s future by createdAt alone, with no validFrom at all', () => {
+    // The scope test is `(validFrom ?? createdAt) <= asOf`, so `createdAt`
+    // carries the lower bound whenever `validFrom` is absent. A record with no
+    // temporal bound whatsoever is still out of scope now and in scope later if
+    // it was written by a clock ahead of this one. Only reachable via import():
+    // every local write path takes createdAt from this same clock.
+    const producer = memory('alice', 'producer-clock-ahead', () => new Date(day(10)));
+    producer.store(fact('widget gamma imported')); // no validFrom, no validUntil — createdAt is day(10)
+    const snapshot = { ...producer.export(), workspaceId: 'test' };
+    snapshot.memories = snapshot.memories.map(record => ({ ...record, workspaceId: 'test' }));
+    expect(snapshot.memories.every(record => record.validFrom === undefined)).toBe(true);
+
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-created-'));
+    const path = join(root, 'memory.sqlite');
+    let current = 1; // the importer is nine days behind the producer
+    const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+    opened.push(db);
+    const anchor = db.store(fact('widget alpha'));
+    db.import(snapshot);
+    const probe = countCorpusStatsCalls();
+    const before = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(before.map(r => r.memory.id)).toEqual([anchor.id]); // not in scope yet
+
+    current = 11; // createdAt day(10) crossed by clock advance alone, with no write
+    const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    const live = probe.calls();
+    const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(11)) });
+    opened.push(cold);
+    const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+    expect(truth).toHaveLength(2);
+    expect(after.map(r => [r.memory.id, r.score])).toEqual(truth.map(r => [r.memory.id, r.score]));
+    expect(after.map(r => r.memory.id)).toContain(anchor.id); // the unrelated local row must survive
+    expect(live).toBe(2); // nothing cached live while a crossing is pending
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('scopes the temporal-bounds flag per workspace: a validFrom record in one workspace does not disable the live cache in another', () => {
     // node:sqlite's `:memory:` is a distinct database per connection, so use a
     // real temp file to actually share one database across two workspaces.

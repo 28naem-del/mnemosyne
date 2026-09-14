@@ -145,10 +145,21 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
  * at any later time, and the flag has to outlive the record — erasing it does
  * not un-stale a cache entry built while it was there.
  *
- * Call on every insert; a no-op unless the record carries a bound still in the
- * reader's future at insert time.
+ * The lower bound is `validFrom ?? createdAt`, not `validFrom` alone, because
+ * that is literally what `#bm25Recall`'s scope test compares against. A record
+ * with no `validFrom` at all but a `createdAt` in the reader's future — again
+ * only reachable through `import()`, since every local write path takes
+ * `createdAt` from this same clock — is out of scope now and enters scope on
+ * clock advance with no write, which is the identical hazard with the
+ * identical negative-IDF consequence. Mirroring the SQL keeps the two in step
+ * instead of leaving a gap that depends on which field happens to carry the
+ * boundary.
+ *
+ * Call on every insert; a no-op unless the record carries a boundary still in
+ * the reader's future at insert time.
  */
-export function markTemporalBoundsIfNeeded(db: DatabaseSync, record: { workspaceId: string; validFrom?: string; validUntil?: string }, now: string): void {
-  if (!((record.validFrom !== undefined && record.validFrom > now) || (record.validUntil !== undefined && record.validUntil > now))) return;
+export function markTemporalBoundsIfNeeded(db: DatabaseSync, record: { workspaceId: string; createdAt: string; validFrom?: string; validUntil?: string }, now: string): void {
+  const lowerBound = record.validFrom ?? record.createdAt; // exactly `#bm25Recall`'s `(validFrom ?? createdAt)`
+  if (!(lowerBound > now || (record.validUntil !== undefined && record.validUntil > now))) return;
   db.prepare('INSERT OR IGNORE INTO local_settings(key,value) VALUES(?,?)').run(`bm25-temporal-bounds:${record.workspaceId}`, '1');
 }
