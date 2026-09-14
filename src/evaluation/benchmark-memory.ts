@@ -36,7 +36,7 @@ export function recentHistoryCondition(): BenchmarkCondition {
 /** Isolated SQLite lifecycle baseline; uses synthetic source authority, never a live store. */
 export function lexicalMemoryCondition(): BenchmarkCondition {
   return { id: 'mnemosyne-lexical', revision: '1', create: () => {
-    const memory = createLocalMemory({ path: ':memory:', workspaceId: 'benchmark', agentId: 'reader' });
+    const memory = createLocalMemory({ path: ':memory:', workspaceId: 'benchmark', agentId: 'reader', retrieval: 'lexical' });
     const ids = new Map<string, string>();
     return {
       apply(event: BenchmarkMemoryEvent) {
@@ -54,7 +54,7 @@ export function lexicalMemoryCondition(): BenchmarkCondition {
 /** Adaptive selection without a background model: its extra reader budget is zero. */
 export function adaptiveMemoryCondition(): BenchmarkCondition {
   return { id: 'mnemosyne-adaptive', revision: '1', create: () => {
-    const memory = createLocalMemory({ path: ':memory:', workspaceId: 'benchmark', agentId: 'reader' });
+    const memory = createLocalMemory({ path: ':memory:', workspaceId: 'benchmark', agentId: 'reader', retrieval: 'lexical' });
     const context = new AdaptiveContext(new MemoryRuntime(memory), { tokenCounter: value => Buffer.byteLength(value), tokenizerId: 'utf8-bytes-v1' });
     const ids = new Map<string, string>();
     return {

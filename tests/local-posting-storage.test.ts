@@ -8,7 +8,7 @@ import { createLocalMemory, type LocalMemory } from '../src/local/index.js';
 const connections: (LocalMemory | DatabaseSync)[] = [];
 const directories: string[] = [];
 function location() { const directory = mkdtempSync(join(tmpdir(), 'mnemosyne-posting-layout-')); directories.push(directory); return join(directory, 'memory.sqlite'); }
-function memory(path: string) { const db = createLocalMemory({ path, workspaceId: 'fixture', agentId: 'owner' }); connections.push(db); return db; }
+function memory(path: string) { const db = createLocalMemory({ path, workspaceId: 'fixture', agentId: 'owner', retrieval: 'lexical' }); connections.push(db); return db; }
 function sqlite(path: string) { const db = new DatabaseSync(path); db.exec('PRAGMA foreign_keys=ON;'); connections.push(db); return db; }
 const source = { uri: 'test:posting-layout' };
 afterEach(() => { connections.splice(0).reverse().forEach(db => db.close()); directories.splice(0).forEach(path => rmSync(path, { recursive: true, force: true })); });

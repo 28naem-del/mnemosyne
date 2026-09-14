@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
-import type { MemoryEmbedder } from '../types.js';
+import type { MemoryEmbedder, SyncMemoryEmbedder } from '../types.js';
 import { BUNDLED_EMBEDDING_ID, BUNDLED_EMBEDDING_MODEL, bundledModelFilePath, bundledModelStatus, verifyBundledModel } from './model-assets.js';
 import { encodeWordPiece, loadWordPieceVocabulary, type WordPieceVocabulary } from './wordpiece.js';
 
@@ -18,17 +18,7 @@ import { encodeWordPiece, loadWordPieceVocabulary, type WordPieceVocabulary } fr
  * No network access occurs here. Weights are read from a digest-verified local
  * cache; populating that cache is a separate, explicit setup step.
  */
-export interface SyncMemoryEmbedder extends MemoryEmbedder {
-  readonly model: string;
-  readonly dimensions: number;
-  /** Synchronous embedding. `role` selects the asymmetric query/passage convention. */
-  embedSync(texts: readonly string[], role?: EmbeddingRole): number[][];
-  /** A view whose async `embed` applies the query convention, sharing this vector space. */
-  forQueries(): MemoryEmbedder;
-  /** A view whose async `embed` applies the passage convention, sharing this vector space. */
-  forPassages(): MemoryEmbedder;
-  close(): void;
-}
+export type { SyncMemoryEmbedder } from '../types.js';
 
 export type EmbeddingRole = 'query' | 'passage';
 
@@ -76,7 +66,7 @@ function loadRuntime(): { binding: NativeBinding; Tensor: TensorModule['Tensor']
   }
 }
 
-class BundledEmbedder implements SyncMemoryEmbedder {
+class BundledEmbedderEngine {
   readonly model = BUNDLED_EMBEDDING_ID;
   readonly dimensions = BUNDLED_EMBEDDING_MODEL.dimensions;
   readonly #session: NativeSession;
@@ -125,7 +115,8 @@ class BundledEmbedder implements SyncMemoryEmbedder {
     });
   }
 
-  embedSync(texts: readonly string[], role: EmbeddingRole = this.#role): number[][] {
+  embedSync(texts: readonly string[], role: EmbeddingRole | undefined = this.#role): number[][] {
+    role = role ?? this.#role;
     this.#assertOpen();
     if (role !== 'query' && role !== 'passage') throw new TypeError("role must be 'query' or 'passage'");
     const prepared = this.#prepare(texts, role);
@@ -187,7 +178,22 @@ class BundledEmbedder implements SyncMemoryEmbedder {
   }
 }
 
-/** Loads the pinned int8 model from the verified local cache. Never downloads. */
+/**
+ * Loads the pinned int8 model from the verified local cache. Never downloads.
+ *
+ * Returns a frozen plain object rather than a class instance: the kernel's
+ * adapter validation only accepts plain objects, so that an adapter cannot
+ * smuggle prototype behaviour into the retrieval path.
+ */
 export function createBundledEmbedder(options: BundledEmbedderOptions = {}): SyncMemoryEmbedder {
-  return new BundledEmbedder(options);
+  const engine = new BundledEmbedderEngine(options);
+  return Object.freeze({
+    model: engine.model,
+    dimensions: engine.dimensions,
+    embedSync: (texts: readonly string[], role?: EmbeddingRole) => engine.embedSync(texts, role),
+    embed: (texts: readonly string[], call: { signal: AbortSignal }) => engine.embed(texts, call),
+    forQueries: () => engine.forQueries(),
+    forPassages: () => engine.forPassages(),
+    close: () => engine.close(),
+  });
 }

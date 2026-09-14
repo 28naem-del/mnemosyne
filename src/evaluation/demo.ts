@@ -63,7 +63,10 @@ export function runMemoryDemo(): DemoReport {
     const successor = open('publisher');
     const handoff = successor.resume('catalogue-update');
     const recalled = successor.recall({ query, limit: 20 });
-    snapshot(successor, { id: 'handoff', title: 'A fresh agent picks up the work', description: 'The first connection is closed. A different agent reads the shared lesson and checkpoint from disk, while the private note stays hidden.', agent: 'publisher', checks: [{ label: 'Fresh agent can retrieve the shared procedure', passed: recalled.some(r => r.memory.id === procedure.id) }, { label: 'Checkpoint survives a closed connection', passed: handoff !== null }, { label: 'Private note is inaccessible by ID and search', passed: successor.get(privateNote.id) === null && successor.recall({ query: 'BLUE HERON', includeUntrusted: true }).length === 0 }] });
+    snapshot(successor, { id: 'handoff', title: 'A fresh agent picks up the work', description: 'The first connection is closed. A different agent reads the shared lesson and checkpoint from disk, while the private note stays hidden.', agent: 'publisher', checks: [{ label: 'Fresh agent can retrieve the shared procedure', passed: recalled.some(r => r.memory.id === procedure.id) }, { label: 'Checkpoint survives a closed connection', passed: handoff !== null }, // A dense retriever always has a nearest neighbour, so "search returns nothing"
+      // is not a privacy property. The property is that the private record is never
+      // reachable by ID and never appears among another agent's results.
+      { label: 'Private note is never retrievable by another agent', passed: successor.get(privateNote.id) === null && !successor.recall({ query: 'BLUE HERON', includeUntrusted: true, limit: 50 }).some(result => result.memory.id === privateNote.id) }] });
 
     const owner = open('designer');
     const revised = owner.correct(spec.id, { text: 'Catalogue images now require a 1600 x 1200 output canvas. Preserve aspect ratio. Owner approval is still required before publishing.', source: { uri: 'demo://owner/brief-v2' }, reason: 'The owner increased the output dimensions.' });
@@ -83,7 +86,7 @@ export function runMemoryDemo(): DemoReport {
     const checks = steps.flatMap(s => s.checks);
     const failures = checks.filter(c => !c.passed);
     if (failures.length) throw new Error(`Demo verification failed: ${failures.map(c => c.label).join('; ')}`);
-    return { mode: 'live', title: 'One experience. A better starting point.', description: 'A reproducible memory-engine demonstration using two agent identities and a real temporary SQLite database. No language model or paid API is involved.', generatedAt: new Date().toISOString(), steps, checksPassed: checks.length, checksTotal: checks.length, limitations: ['This tests memory semantics, not autonomous agent competence or AGI.', 'Outcome evidence is supplied by the caller/controller; the library does not authenticate it.', 'Local retrieval is lexical. Semantic retrieval remains available through the separate Qdrant API.', 'Deleted data may remain in external exports, backups, or previously delivered context.'] };
+    return { mode: 'live', title: 'One experience. A better starting point.', description: 'A reproducible memory-engine demonstration using two agent identities and a real temporary SQLite database. No language model or paid API is involved.', generatedAt: new Date().toISOString(), steps, checksPassed: checks.length, checksTotal: checks.length, limitations: ['This tests memory semantics, not autonomous agent competence or AGI.', 'Outcome evidence is supplied by the caller/controller; the library does not authenticate it.', 'This demonstration uses scoped lexical recall. Optional semantic retrieval and reranking are available through explicitly configured local model providers.', 'Deleted data may remain in external exports, backups, or previously delivered context.'] };
   } finally {
     for (const memory of opened) memory.close();
     rmSync(directory, { recursive: true, force: true });

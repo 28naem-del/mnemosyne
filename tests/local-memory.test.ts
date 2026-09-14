@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +16,7 @@ function location(): string {
   return join(root, 'memory.sqlite');
 }
 function memory(path = ':memory:', agentId = 'alice', workspaceId = 'project'): LocalMemory {
-  const result = createLocalMemory({ path, agentId, workspaceId });
+  const result = createLocalMemory({ path, agentId, workspaceId, retrieval: 'lexical' });
   opened.push(result);
   return result;
 }
@@ -32,7 +32,8 @@ describe('local persistence and ownership', () => {
     const runtime = mkdtempSync(join(tmpdir(), 'mnemosyne-runtime-'));
     roots.push(runtime);
     writeFileSync(join(runtime, 'package.json'), '{"type":"module"}');
-    for (const file of ['index', 'validation', 'types']) {
+    mkdirSync(join(runtime, 'embedding'), { recursive: true });
+    for (const file of ['index', 'validation', 'types', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece']) {
       const code = readFileSync(new URL(`../src/local/${file}.ts`, import.meta.url), 'utf8');
       writeFileSync(join(runtime, `${file}.js`), ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText);
     }

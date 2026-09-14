@@ -34,6 +34,8 @@ export interface MemoryRecord {
   updatedAt: string;
   status: MemoryStatus;
   supersedes?: string;
+  /** Kernel-recorded correction cascade. Absent on ambiguous legacy invalidations. */
+  invalidation?: { sourceId: string; correctionId: string; recordedAt: string };
   dependencies: string[];
   metadata: Record<string, JsonValue>;
 }
@@ -54,6 +56,11 @@ export interface StoreMemoryInput {
   idempotencyKey?: string;
 }
 
+/** `hybrid` fuses dense and lexical candidates with RRF. `lexical` is the
+ * zero-model deterministic path: no model participates in retrieval at all,
+ * which is what makes it auditable, so it remains a first-class selection. */
+export type RetrievalMode = 'hybrid' | 'lexical';
+
 export interface LocalMemoryOptions {
   path: string;
   workspaceId: string;
@@ -61,10 +68,35 @@ export interface LocalMemoryOptions {
   now?: () => Date;
   /** Counts rendered context text, including its instruction/citation envelope. */
   tokenCounter?: (text: string) => number;
+  /** Defaults to `hybrid`. Select `lexical` for the zero-model deterministic path. */
+  retrieval?: RetrievalMode;
+  /** Explicit synchronous embedder. Defaults to the bundled pinned local model.
+   * `null` is equivalent to selecting `lexical`. */
+  embedder?: SyncMemoryEmbedder | null;
+  /** Absolute cache directory for the bundled model. Defaults to MNEMOSYNE_MODEL_CACHE. */
+  modelCacheDir?: string;
+  /** Throw when `hybrid` is requested but no embedder is available, instead of
+   * reporting a degradation and retrieving lexically. Defaults to false. */
+  requireEmbedder?: boolean;
+  /** Default dense similarity floor for every recall, 0-1. Defaults to 0. */
+  minSimilarity?: number;
+}
+
+/** What retrieval actually does, as opposed to what was asked for. A hybrid
+ * request that could not load a model reports `mode: 'lexical'` with the
+ * reason in `degraded`; it is never silent. */
+export interface RetrievalStatus {
+  requested: RetrievalMode;
+  mode: RetrievalMode;
+  embeddingModel?: string;
+  dimensions?: number;
+  degraded?: string;
 }
 
 export interface RecallInput {
   query: string;
+  /** BM25 is the default. Explicit overlap retains the earlier lexical formula. */
+  lexicalScoring?: 'overlap' | 'bm25';
   limit?: number;
   kinds?: MemoryKind[];
   includeUntrusted?: boolean;
@@ -72,8 +104,17 @@ export interface RecallInput {
   asOf?: string;
   /** Only use memories and outcome evidence recorded by this time. */
   knownAt?: string;
-  /** SQL-ranked candidate budget before provenance checks, at most 10000. */
+  /** Candidate budget, at most 10000. BM25 scores all scoped matches before retaining candidates. */
   maxCandidates?: number;
+  /** Minimum cosine for a dense candidate to count as affirmative evidence, 0-1.
+   * Defaults to the value given to createLocalMemory, which itself defaults to 0.
+   *
+   * A dense retriever always has a nearest neighbour, so an unrelated query still
+   * returns its closest record. Measured on the bundled model, true matches score
+   * about 0.69-0.77 while unrelated text still scores about 0.33-0.53, so a useful
+   * floor sits near 0.55 and a floor below ~0.5 filters almost nothing. Raw recall
+   * is a diagnostic view and defaults to no floor; compile() gates separately. */
+  minSimilarity?: number;
 }
 
 export interface ListMemoryInput {
@@ -93,6 +134,15 @@ export interface MemoryEmbedder {
   dimensions: number;
   embed(texts: readonly string[], options: { signal: AbortSignal }): Promise<number[][]>;
 }
+/** An embedder that can also run inline on a synchronous call path. The bundled
+ * model satisfies this; remote embedders cannot, which is why they stay on the
+ * explicit `recallHybrid` path. */
+export interface SyncMemoryEmbedder extends MemoryEmbedder {
+  embedSync(texts: readonly string[], role?: 'query' | 'passage'): number[][];
+  forQueries(): MemoryEmbedder;
+  forPassages(): MemoryEmbedder;
+  close(): void;
+}
 export interface MemoryReranker {
   rerank(query: string, candidates: readonly MemoryRecord[], options: { signal: AbortSignal }): Promise<{ id: string; score: number }[]>;
 }
@@ -110,10 +160,22 @@ export interface HybridRecallOptions {
   embedder: MemoryEmbedder;
   reranker?: MemoryReranker;
   signal?: AbortSignal;
-  /** Per-provider-call deadline; late results are ignored. */
+  /** Deadline for each provider call and for the cooperative full vector scan; incomplete scans reject. */
   timeoutMs?: number;
-  /** Maximum vector candidates scanned, at most 10000. */
+  /** Maximum best-scoring vector candidates retained, at most 10000. Every authorized indexed row is scanned. */
   maxCandidates?: number;
+}
+
+export interface CompileInput {
+  query: string;
+  /** BM25 is the default; overlap retains the earlier lexical formula. */
+  lexicalScoring?: 'overlap' | 'bm25';
+  maxTokens: number;
+  taskId?: string;
+  /** Real-world time represented by this packet. Historical context is labeled in its envelope. */
+  asOf?: string;
+  /** Excludes records, corrections and outcome evidence learned after this instant. */
+  knownAt?: string;
 }
 
 export interface RecallResult {

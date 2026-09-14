@@ -11,7 +11,7 @@ import { migrationOriginIdentity, registerMigrationOriginForgotten } from '../sr
 
 const opened: LocalMemory[] = [], roots: string[] = [];
 const one = { id: 'region', revision: 'v1', text: 'Atlas deployment region is Dubai.' };
-function database(path = ':memory:', agentId = 'host') { const memory = createLocalMemory({ path, workspaceId: 'bridge-fixture', agentId }); opened.push(memory); return memory; }
+function database(path = ':memory:', agentId = 'host') { const memory = createLocalMemory({ path, workspaceId: 'bridge-fixture', agentId, retrieval: 'lexical' }); opened.push(memory); return memory; }
 function file() { const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bridge-')); roots.push(root); return join(root, 'memory.db'); }
 function fixture(options: Omit<MemoryBridgeOptions, 'adapter'> = {}, memory = database()) {
   let matches: LegacyMemoryMatch[] = [{ ...one }];
@@ -217,9 +217,16 @@ describe('privacy, races and bounded failure', () => {
   });
 
   it('enforces source watch expiry and a separate reconciled packet lifetime', async () => {
-    const value = fixture({ budgets: { packetLifetimeMs: 1 } }); const packet = await value.bridge.recall(query);
-    await new Promise(resolve => setTimeout(resolve, 5)); expect(() => value.bridge.validate(packet.context)).toThrow();
-    let clock = new Date('2030-01-01T00:00:00.000Z'); const memory = createLocalMemory({ path: ':memory:', workspaceId: 'bridge-fixture', agentId: 'host', now: () => clock }); opened.push(memory);
+    const value = fixture({ budgets: { packetLifetimeMs: 1 } });
+    let monotonicTime = 1000;
+    const monotonicClock = vi.spyOn(performance, 'now').mockImplementation(() => monotonicTime);
+    try {
+      const packet = await value.bridge.recall(query);
+      expect(() => value.bridge.validate(packet.context)).not.toThrow();
+      monotonicTime += 1;
+      expect(() => value.bridge.validate(packet.context)).toThrow(MemoryBridgeError);
+    } finally { monotonicClock.mockRestore(); }
+    let clock = new Date('2030-01-01T00:00:00.000Z'); const memory = createLocalMemory({ path: ':memory:', workspaceId: 'bridge-fixture', agentId: 'host', retrieval: 'lexical', now: () => clock }); opened.push(memory);
     const runtime = new MemoryRuntime(memory), maintenance = new MemoryMaintenance(runtime, { now: () => clock });
     const bridge = new MemoryBridge(runtime, { adapter: value.adapter, trust: 'observed', maintenance });
     const first = await bridge.recall(query), id = first.context.memoryIds[0];
@@ -300,10 +307,17 @@ describe('privacy, races and bounded failure', () => {
   });
 
   it('uses a monotonic context lifetime despite a backward wall-clock adjustment', async () => {
-    const value = fixture({ budgets: { packetLifetimeMs: 3 } }), packet = await value.bridge.recall(query);
-    const wallClock = vi.spyOn(Date, 'now').mockReturnValue(0);
-    try { await new Promise(resolve => setTimeout(resolve, 8)); expect(() => value.bridge.validate(packet.context)).toThrow(); }
-    finally { wallClock.mockRestore(); }
+    let monotonicTime = 1000;
+    const monotonicClock = vi.spyOn(performance, 'now').mockImplementation(() => monotonicTime);
+    const wallClock = vi.spyOn(Date, 'now');
+    try {
+      const value = fixture({ budgets: { packetLifetimeMs: 3 } }), packet = await value.bridge.recall(query);
+      wallClock.mockReturnValue(0);
+      monotonicTime += 2;
+      expect(() => value.bridge.validate(packet.context)).not.toThrow();
+      monotonicTime += 1;
+      expect(() => value.bridge.validate(packet.context)).toThrow(MemoryBridgeError);
+    } finally { wallClock.mockRestore(); monotonicClock.mockRestore(); }
   });
 
   it('merges private native originals without changing paired legacy coverage', async () => {

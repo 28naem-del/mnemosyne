@@ -9,7 +9,8 @@ const count = Number(values.count);
 const queryCount = Number(values.queries);
 if (!Number.isSafeInteger(count) || count < 100 || count > 100_000 || !Number.isSafeInteger(queryCount) || queryCount < 10 || queryCount > 1_000) throw new Error('count must be 100–100000; queries must be 10–1000.');
 const directory = mkdtempSync(join(tmpdir(), 'mnemosyne-scale-'));
-const memory = createLocalMemory({ path: join(directory, 'memory.sqlite'), workspaceId: 'benchmark', agentId: 'fixture-controller' });
+// This is the synthetic LEXICAL smoke test, so it pins the zero-model path.
+const memory = createLocalMemory({ path: join(directory, 'memory.sqlite'), workspaceId: 'benchmark', agentId: 'fixture-controller', retrieval: 'lexical' });
 const percentile = (samples: number[], fraction: number) => [...samples].sort((a, b) => a - b)[Math.min(samples.length - 1, Math.floor(samples.length * fraction))];
 try {
   const ids: string[] = [];

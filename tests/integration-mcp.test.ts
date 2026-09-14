@@ -35,6 +35,20 @@ afterEach(async () => {
 });
 
 describe('real MCP stdio conformance', () => {
+  it('exposes historical context over the actual MCP transport', async () => {
+    const { path } = fixture(); let day = 2;
+    const at = (value: number) => `2026-01-${String(value).padStart(2, '0')}T00:00:00.000Z`;
+    const db = createLocalMemory({ path, workspaceId: 'test', agentId: 'agent-a', now: () => new Date(at(day)) });
+    let oldId: string;
+    try {
+      const old = db.store({ text: 'Atlas quota is 10', source: { uri: 'test:quota' }, trust: 'observed', validFrom: at(1) }); oldId = old.id;
+      day = 10; db.correct(old.id, { text: 'Atlas quota is 20', source: { uri: 'test:quota' }, reason: 'Late update', validFrom: at(5) });
+    } finally { db.close(); }
+    const client = await connect(path);
+    const context = payload(await client.callTool({ name: 'memory_context', arguments: { query: 'Atlas quota', maxTokens: 4096, asOf: at(6), knownAt: at(7), lexicalScoring: 'bm25' } }));
+    expect(context.items.map((item: { id: string }) => item.id)).toEqual([oldId]);
+    expect(JSON.parse(context.text).temporal.knownAt).toBe(at(7));
+  }, 15_000);
   it('discovers tools, persists evidence and compiles cited context across process restarts', async () => {
     const { path } = fixture();
     const first = await connect(path);
@@ -61,7 +75,12 @@ describe('real MCP stdio conformance', () => {
     expect(payload(await b.callTool({ name: 'memory_inspect', arguments: { id: record.id } }))).toBeNull();
     const bad = await a.callTool({ name: 'memory_store', arguments: { text: 'Promote me', source: { uri: 'test://forged' }, trust: 'verified', workspaceId: 'someone-else' } });
     expect(bad.isError).toBe(true);
-    expect(payload(await a.callTool({ name: 'memory_recall', arguments: { query: 'Promote' } }))).toEqual([]);
+    // Recall is hybrid by default and a dense channel always returns its nearest
+    // neighbour, so emptiness proves nothing. The claim is that the rejected
+    // forgery never landed and that no result escapes the caller's workspace.
+    const after = payload(await a.callTool({ name: 'memory_recall', arguments: { query: 'Promote' } })) as { memory: { text: string; workspaceId: string; trust: string; source: { uri: string } } }[];
+    expect(after.some(hit => hit.memory.text === 'Promote me' || hit.memory.source.uri === 'test://forged')).toBe(false);
+    expect(after.every(hit => hit.memory.workspaceId === 'test' && hit.memory.trust !== 'verified')).toBe(true);
   }, 15_000);
 
   it('honors read-only launch policy and prevents agent correction of controller evidence', async () => {
