@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { createBundledEmbedder, type SyncMemoryEmbedder } from '../local/embedding/index.js';
 import { asMemoryReranker, createBundledReranker, type SyncMemoryReranker } from '../local/reranking/index.js';
-import { adaptLoCoMoCorpus, adaptLongMemEvalCorpus, runCorpusBenchmark } from './corpus-benchmark.js';
+import { adaptLoCoMoCorpus, adaptLongMemEvalCorpus, runCorpusBenchmark, summarizeAttempts } from './corpus-benchmark.js';
 import type { BenchmarkConditionId, CorpusBenchmarkReport, CorpusDataset, CorpusSummary } from './corpus-types.js';
 import { createMem0Factory } from './matched-mem0.js';
 import { createZepFactory } from './matched-zep.js';
@@ -61,7 +61,7 @@ interface SystemOutcome { id: string; factory: MatchedSystemFactory; system: Mat
 
 const percent = (value: number | null | undefined): string => value === null || value === undefined ? 'n/a' : (value * 100).toFixed(2);
 
-function loadCorpus(kind: 'locomo' | 'longmemeval', file: string, questionLimit?: number): { dataset: CorpusDataset; sha256: string; bytes: number } {
+function loadCorpus(kind: 'locomo' | 'longmemeval', file: string, questionLimit?: number, stride = 1): { dataset: CorpusDataset; sha256: string; bytes: number } {
   const raw = readFileSync(file);
   const sha256 = createHash('sha256').update(raw).digest('hex');
   const parsed = JSON.parse(raw.toString('utf8')) as unknown;
@@ -70,8 +70,16 @@ function loadCorpus(kind: 'locomo' | 'longmemeval', file: string, questionLimit?
   // The published cleaned release carries same-day history sessions that the
   // strict instant parser rejects, so the documented question-day policy is used
   // and named in the report. Nothing is repaired.
-  const sliced = Array.isArray(parsed) && questionLimit !== undefined ? parsed.slice(0, questionLimit) : parsed;
-  return { dataset: adaptLongMemEvalCorpus(sliced, provenance, { timestampPolicy: 'question-day' }), sha256, bytes: raw.byteLength };
+  //
+  // The published release is GROUPED BY QUESTION CATEGORY — the first 70 entries
+  // are all single-session-user — so taking a prefix would produce a subset made
+  // of one category and a number that says nothing about the benchmark. Striding
+  // takes every Nth entry in source order instead, which is deterministic,
+  // reproducible from the flag alone, and keeps each category in proportion.
+  let entries = Array.isArray(parsed) ? parsed : parsed;
+  if (Array.isArray(entries) && stride > 1) entries = entries.filter((_, index) => index % stride === 0);
+  if (Array.isArray(entries) && questionLimit !== undefined) entries = entries.slice(0, questionLimit);
+  return { dataset: adaptLongMemEvalCorpus(entries, provenance, { timestampPolicy: 'question-day' }), sha256, bytes: raw.byteLength };
 }
 
 /**
@@ -80,8 +88,9 @@ function loadCorpus(kind: 'locomo' | 'longmemeval', file: string, questionLimit?
  * the same reduced corpus, and the counts printed with the table are the sliced
  * counts, so a bounded run is never reported as a full-dataset result.
  */
-function sliceCorpus(dataset: CorpusDataset, maxCorpora?: number, maxQuestions?: number): CorpusDataset {
-  const corpora = maxCorpora !== undefined ? dataset.corpora.slice(0, maxCorpora) : dataset.corpora;
+function sliceCorpus(dataset: CorpusDataset, maxCorpora?: number, maxQuestions?: number, offset = 0): CorpusDataset {
+  const from = dataset.corpora.slice(offset);
+  const corpora = maxCorpora !== undefined ? from.slice(0, maxCorpora) : from;
   const ids = new Set(corpora.map(corpus => corpus.id));
   let questions = dataset.questions.filter(question => ids.has(question.corpusId));
   if (maxQuestions !== undefined) questions = questions.slice(0, maxQuestions);
@@ -144,10 +153,59 @@ function mnemosyneMode(report: CorpusBenchmarkReport, condition: BenchmarkCondit
   return `hybrid dense+BM25 RRF + cross-encoder, embedder=${model}, reranker=${report.settings.reranker === 'enabled' ? `on(top-${report.settings.rerankTopN})` : 'off'}`;
 }
 
+/**
+ * Combines the parts of a run that was split across invocations.
+ *
+ * A split run is only a split run if every part was the same experiment, so the
+ * merge refuses parts whose settings block, corpus digest, embedding identity or
+ * system roster differ in any way. Summaries are recomputed by the harness's own
+ * `summarizeAttempts`, never by a second implementation here.
+ */
+function mergeParts(files: string[]): CorpusBenchmarkReport {
+  const parts = files.map(file => JSON.parse(readFileSync(file, 'utf8')) as CorpusBenchmarkReport & { matched?: unknown });
+  if (!parts.length) throw new Error('No part files to merge.');
+  // `corpusIndexBase` is the partition coordinate, not an experimental setting:
+  // it is required to differ between parts, and its entire purpose is to make the
+  // partitioned run mint the same chunk identities as an unpartitioned one. Every
+  // other setting must match exactly.
+  const key = (report: CorpusBenchmarkReport) => JSON.stringify({
+    settings: { ...report.settings, corpusIndexBase: 'partition-coordinate' }, source: report.dataset.sourceSha256, adapter: report.dataset.adapter,
+    embedding: report.embedding ?? null, systems: (report.systems ?? []).map(system => [system.id, system.revision, system.mode]),
+    implementation: report.runtime.implementationSha256, protocol: report.protocol });
+  const reference = key(parts[0]);
+  for (const [index, part] of parts.entries()) {
+    if (key(part) !== reference) throw new Error(`Part ${files[index]} did not run the same experiment as ${files[0]}; merging it would compare different settings under one heading.`);
+  }
+  const seen = new Set<string>();
+  const attempts = parts.flatMap(part => part.attempts);
+  for (const attempt of attempts) {
+    const identity = `${attempt.condition} ${attempt.questionId}`;
+    if (seen.has(identity)) throw new Error(`Question ${attempt.questionId} appears twice for condition ${attempt.condition}; the parts overlap.`);
+    seen.add(identity);
+  }
+  const conditions = [...new Set(attempts.map(attempt => attempt.condition))];
+  const merged: CorpusBenchmarkReport = {
+    ...parts[0],
+    dataset: { ...parts[0].dataset, questions: attempts.length / Math.max(1, conditions.length), corpora: parts.reduce((sum, part) => sum + part.dataset.corpora, 0) },
+    ingestion: parts.flatMap(part => part.ingestion),
+    attempts,
+    summaries: Object.fromEntries(conditions.map(condition => [condition, summarizeAttempts(attempts.filter(attempt => attempt.condition === condition))])),
+    ...(parts[0].systems ? { systems: parts[0].systems.map(system => ({ ...system,
+      ingestMilliseconds: parts.reduce((sum, part) => sum + (part.systems?.find(entry => entry.id === system.id)?.ingestMilliseconds ?? 0), 0),
+      status: parts.some(part => part.systems?.find(entry => entry.id === system.id)?.status === 'ingest-failed') ? 'ingest-failed' as const : system.status,
+      reason: parts.flatMap(part => { const found = part.systems?.find(entry => entry.id === system.id)?.reason; return found ? [found] : []; })[0] })) } : {}),
+    complete: parts.every(part => part.complete),
+    durationMs: parts.reduce((sum, part) => sum + part.durationMs, 0),
+    limitations: [...parts[0].limitations, `Merged from ${parts.length} part runs whose settings, corpus digest, embedding identity, system roster and implementation digest were verified identical before combining.`],
+  };
+  return merged;
+}
+
 export async function matchedBenchmark(args = process.argv.slice(2)): Promise<void> {
   const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: {
     corpus: { type: 'string' }, systems: { type: 'string' }, 'top-k': { type: 'string' },
     'max-corpora': { type: 'string' }, 'max-questions': { type: 'string' }, out: { type: 'string' },
+    'corpus-offset': { type: 'string' }, merge: { type: 'string' }, stride: { type: 'string' },
     'mem0-extraction': { type: 'string' }, 'no-rerank': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, help: { type: 'boolean' },
   } });
   if (values.help) {
@@ -157,8 +215,12 @@ export async function matchedBenchmark(args = process.argv.slice(2)): Promise<vo
   --systems mem0-oss,zep|none        competitors to include (default: all resolvable)
   --top-k N                          K, identical for every system (default 10)
   --max-corpora N                    score only the first N conversations/haystacks
+  --corpus-offset N                  start at corpus N, for splitting a long run into parts
+  --stride N                         score every Nth question (LongMemEval-S is grouped by
+                                     category, so a prefix subset would be one category)
   --max-questions N                  bound the question count
   --out DIR                          write one raw JSON report per corpus
+  --merge DIR                        combine the part files in DIR into one report
   --mem0-extraction off|llm          Mem0 write path. off = no LLM, free, offline (default)
   --no-rerank                        drop our reranked condition from the table
   --dry-run                          tiny slice, for proving the wiring
@@ -169,6 +231,24 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
   }
   const corpus = values.corpus ?? 'locomo';
   if (!['locomo', 'longmemeval', 'both'].includes(corpus)) throw new Error('--corpus must be locomo, longmemeval or both');
+  const topKForMerge = Number(values['top-k'] ?? 10);
+  if (values.merge !== undefined) {
+    const dir = resolve(values.merge);
+    const strideForMerge = values.stride !== undefined ? Number(values.stride) : 1;
+    const mergeTag = strideForMerge > 1 ? `${corpus}-stride${strideForMerge}-k${topKForMerge}` : `${corpus}-k${topKForMerge}`;
+    const prefix = `${mergeTag}-part`;
+    const files = readdirSync(dir).filter(name => name.startsWith(prefix) && name.endsWith('.json')).sort().map(name => join(dir, name));
+    if (!files.length) throw new Error(`No ${prefix}*.json part files in ${dir}.`);
+    const merged = mergeParts(files);
+    const target = join(dir, `${mergeTag}.json`);
+    writeFileSync(target, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+    console.log(`merged ${files.length} parts -> ${target}`);
+    console.log(`${merged.dataset.questions} questions, ${merged.dataset.corpora} corpora, complete=${merged.complete}`);
+    const outcomes: SystemOutcome[] = (merged.systems ?? []).map(system => ({ id: system.id, factory: { id: system.id, describe: () => '', resolve: () => Promise.resolve({ available: false, reason: system.reason ?? '' }) },
+      system: system.status === 'scored' ? { id: system.id, revision: system.revision, mode: system.mode, create: () => Promise.reject(new Error('merged report')) } : null, ...(system.reason ? { reason: system.reason } : {}) }));
+    for (const line of printTable(merged, outcomes, topKForMerge)) console.log(line);
+    return;
+  }
   const extraction = (values['mem0-extraction'] ?? 'off') as 'off' | 'llm';
   if (!['off', 'llm'].includes(extraction)) throw new Error('--mem0-extraction must be off or llm');
   if (extraction === 'llm') throw new Error('--mem0-extraction llm needs an explicit LLM configuration and a spend decision; it is not wired to any key by this command.');
@@ -176,6 +256,10 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
   const topK = Number(values['top-k'] ?? 10);
   if (!Number.isSafeInteger(topK) || topK < 1 || topK > 100) throw new Error('--top-k must be between 1 and 100');
   const maxCorpora = values['max-corpora'] !== undefined ? Number(values['max-corpora']) : dry ? 2 : undefined;
+  const corpusOffset = values['corpus-offset'] !== undefined ? Number(values['corpus-offset']) : 0;
+  if (!Number.isSafeInteger(corpusOffset) || corpusOffset < 0) throw new Error('--corpus-offset must be a non-negative integer');
+  const stride = values.stride !== undefined ? Number(values.stride) : 1;
+  if (!Number.isSafeInteger(stride) || stride < 1 || stride > 1000) throw new Error('--stride must be between 1 and 1000');
   const maxQuestions = values['max-questions'] !== undefined ? Number(values['max-questions']) : dry ? 20 : undefined;
   const requested = (values.systems ?? '').split(',').map(entry => entry.trim()).filter(Boolean);
   const noSystems = requested.length === 1 && requested[0] === 'none';
@@ -205,12 +289,15 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
       console.log(`  source ${spec.provenance.sourceUrl}\n  license ${spec.provenance.license}. It is not redistributed by this package.`);
       failed = true; continue;
     }
-    const { dataset, sha256, bytes } = loadCorpus(kind, file, maxCorpora);
+    // LongMemEval gives every question its own haystack, so a bounded run must
+    // stop building corpora at the end of its own window rather than at the start
+    // of it — otherwise an offset run would slice away everything it needs.
+    const { dataset, sha256, bytes } = loadCorpus(kind, file, maxCorpora === undefined ? undefined : corpusOffset + maxCorpora, stride);
     // Slicing happens here, deterministically and in source order, rather than
     // through the runner's `maxQuestions` — which is an upper bound that rejects
     // an oversized corpus, not a sampler. The slice is recorded in the report so
     // a partial run can never be mistaken for a full one.
-    const scoped = sliceCorpus(dataset, maxCorpora, maxQuestions);
+    const scoped = sliceCorpus(dataset, maxCorpora, maxQuestions, corpusOffset);
     const started = Date.now();
     const report = await runCorpusBenchmark(scoped, {
       topK, includeBm25: true, hybridLexicalScoring: 'bm25', includeHybridWithoutRerank: true,
@@ -218,9 +305,11 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
       ...(reranker ? { reranker: asMemoryReranker(reranker), rerankTopN: 50 } : {}),
       ...(systems.length ? { systems } : {}),
       maxEmbeddingCalls: 1_000_000, maxEmbeddingInputBytes: 2_147_483_647, timeoutMs: 3_600_000, systemIngestTimeoutMs: 3_600_000,
+      // Keeps a split run's chunk identities equal to an unsplit run's.
+      corpusIndexBase: corpusOffset,
     });
 
-    console.log(`\n=== MATCHED RUN — ${spec.label} ===`);
+    console.log(`\n=== MATCHED RUN — ${spec.label}${stride > 1 ? ` [every ${stride}th question, source order]` : ''} ===`);
     console.log(`${report.dataset.questions} questions, ${report.dataset.corpora} corpora, ${report.summaries.bm25?.annotatedQuestions ?? 0} with positive evidence labels`);
     console.log(`corpus sha256 ${sha256} (${bytes} bytes)  normalized ${report.dataset.normalizedSha256}`);
     console.log(`runtime ${report.runtime.node} ${report.runtime.platform}  elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`);
@@ -231,7 +320,10 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
     for (const notice of report.notices) console.log(`note: ${notice}`);
 
     if (outDir) {
-      const target = join(outDir, `${kind}-k${topK}.json`);
+      // A partial run is written as a part file, never as the whole-run name.
+      const partial = corpusOffset > 0 || maxCorpora !== undefined;
+      const tag = stride > 1 ? `${kind}-stride${stride}-k${topK}` : `${kind}-k${topK}`;
+      const target = join(outDir, partial ? `${tag}-part${String(corpusOffset).padStart(3, '0')}.json` : `${tag}.json`);
       writeFileSync(target, `${JSON.stringify({ ...report, matched: { requested, outcomes: outcomes.map(outcome => ({ id: outcome.id, available: outcome.system !== null, mode: outcome.system?.mode ?? null, reason: outcome.reason ?? null, describes: outcome.factory.describe() })) } }, null, 2)}\n`, { mode: 0o600 });
       console.log(`raw report -> ${target}`);
     }

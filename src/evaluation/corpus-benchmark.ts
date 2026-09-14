@@ -105,6 +105,12 @@ function score(chunks: Chunk[], label: EvaluationLabel): EvidenceScore {
 }
 /** Statuses where retrieval actually ran and its score is a measurement. */
 const retrieved = (row: CorpusAttempt): boolean => row.status === 'completed' || row.status === 'context-overflow';
+/**
+ * Exported so a run split across several invocations is summarised by the same
+ * code as a run done in one. A merge step that re-implemented this would be free
+ * to disagree with it, and the disagreement would be invisible in the table.
+ */
+export function summarizeAttempts(rows: CorpusAttempt[]): CorpusSummary { return summary(rows); }
 function summary(rows: CorpusAttempt[]): CorpusSummary {
   const annotated = rows.filter(row => row.retrieval.annotated);
   // The denominator is deliberately NOT shrunk: an attempt that failed on a hard
@@ -126,7 +132,7 @@ function summary(rows: CorpusAttempt[]): CorpusSummary {
 
 /** No generation or judge path. Optional embeddings use only explicit caller callbacks. */
 export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBenchmarkOptions = {}): Promise<CorpusBenchmarkReport> {
-  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs'];
+  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs', 'corpusIndexBase'];
   if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !optionKeys.includes(key))) throw new Error('Unknown corpus evaluation option.');
   if (options.includeBm25 !== undefined && typeof options.includeBm25 !== 'boolean') throw new Error('includeBm25 must be boolean.');
   if (options.includeHybridWithoutRerank !== undefined && typeof options.includeHybridWithoutRerank !== 'boolean') throw new Error('includeHybridWithoutRerank must be boolean.');
@@ -147,6 +153,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
     maxEmbeddingCalls: integer(options.maxEmbeddingCalls, 10000, 1, 1000000), maxEmbeddingInputBytes: integer(options.maxEmbeddingInputBytes, 536_870_912, 1, 2_147_483_648),
     rerankTopN: integer(options.rerankTopN, 50, 1, 1000),
     systemIngestTimeoutMs: integer(options.systemIngestTimeoutMs, integer(options.timeoutMs, 600000, 1, 3_600_000), 1, 3_600_000),
+    corpusIndexBase: integer(options.corpusIndexBase, 0, 0, 1_000_000),
     accountingId: options.accountingId ?? 'utf8-bytes-v1', bm25Condition: options.includeBm25 ? 'enabled' : 'disabled', hybridLexicalScoring: options.hybridLexicalScoring ?? 'overlap',
     // Recorded so a report says whether the hybrid condition was reranked, and by what.
     reranker: options.reranker ? 'enabled' : 'disabled',
@@ -205,7 +212,9 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
         for (const [turnIndex, turn] of corpus.turns.entries()) {
           check();
           for (const piece of splitEvaluationText(turn.text, settings.chunkBytes)) {
-            const fingerprint = digest(`corpus-v1:${corpusIndex}:${turnIndex}:${piece.startByte}`);
+            // Ordinal within the WHOLE dataset, so a run split into parts mints the
+          // same identities as the same run done in one.
+          const fingerprint = digest(`corpus-v1:${settings.corpusIndexBase + corpusIndex}:${turnIndex}:${piece.startByte}`);
             const id = `${fingerprint.slice(0, 8)}-${fingerprint.slice(8, 12)}-4${fingerprint.slice(13, 16)}-8${fingerprint.slice(17, 20)}-${fingerprint.slice(20, 32)}`;
             chunks.push({ id, turn, ...piece });
           }

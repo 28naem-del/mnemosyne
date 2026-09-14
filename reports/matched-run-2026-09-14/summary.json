@@ -1,0 +1,541 @@
+{
+  "title": "Mnemosyne matched run — 2026-09-14",
+  "generatedFrom": "merged raw reports in reports/matched-run-2026-09-14/",
+  "spendUsd": 0,
+  "runs": [
+    {
+      "corpus": "LoCoMo (locomo10)",
+      "topK": 5,
+      "file": "locomo-k5.json",
+      "questions": 1986,
+      "corpora": 10,
+      "annotatedQuestions": 1531,
+      "complete": true,
+      "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "normalizedSha256": "69d74a91b0c381f2fe97eed17ca5bb5b8b65067ee9f1b54cbefef726e692c489",
+      "adapter": "locomo-original-dialogue-v1",
+      "implementationSha256": "5a69808fca29e655421d7228928cdad0cb52b61b44eb3e06a41ae61385579b38",
+      "runtime": "v26.4.0 darwin/arm64",
+      "durationSeconds": 805.8,
+      "settings": {
+        "topK": 5,
+        "maxContextUnits": 8192,
+        "chunkBytes": 4096,
+        "maxQuestions": 5000,
+        "maxTurnsPerCorpus": 100000,
+        "maxCorpusBytes": 67108864,
+        "maxTotalBytes": 536870912,
+        "maxCandidates": 10000,
+        "timeoutMs": 3600000,
+        "maxEmbeddingCalls": 1000000,
+        "maxEmbeddingInputBytes": 2147483647,
+        "rerankTopN": 50,
+        "systemIngestTimeoutMs": 3600000,
+        "corpusIndexBase": 0,
+        "accountingId": "utf8-bytes-v1",
+        "bm25Condition": "enabled",
+        "hybridLexicalScoring": "bm25",
+        "reranker": "enabled",
+        "hybridWithoutRerankCondition": "enabled",
+        "matchedSystems": "mem0-oss"
+      },
+      "rows": [
+        {
+          "id": "lexical",
+          "label": "Mnemosyne zero-model overlap",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.3373058425119745,
+            "anyHit": 0.3762246897452645,
+            "allHit": 0.3109079033311561,
+            "mrr": 0.27966470716307384,
+            "p95RetrievalMs": 3.968209000013303,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "bm25",
+          "label": "Mnemosyne zero-model BM25",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.44951520401918066,
+            "anyHit": 0.4990202482037884,
+            "allHit": 0.41280209013716523,
+            "mrr": 0.35841497931635047,
+            "p95RetrievalMs": 13.044916999991983,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid-norerank",
+          "label": "Mnemosyne hybrid (dense+BM25 RRF)",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.5467867757393008,
+            "anyHit": 0.6067929457870673,
+            "allHit": 0.4970607446113651,
+            "mrr": 0.4478445460483349,
+            "p95RetrievalMs": 57.89862500000163,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid",
+          "label": "Mnemosyne hybrid + rerank",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.6722514753528599,
+            "anyHit": 0.7400391900718485,
+            "allHit": 0.6165904637491836,
+            "mrr": 0.6159481820161126,
+            "p95RetrievalMs": 247.76470800000243,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:mem0-oss",
+          "label": "Mem0 OSS (extraction off)",
+          "mode": "mem0-oss@3.1.8, extraction=off(infer:false), retrieval=vector-cosine(exact), vectorStore=memory(sqlite,isolated), embedder=injected:onnxruntime-node|Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3|int8|cls|l2|512|bge-query-prefix-v1, history=disabled, telemetry=disabled, overfetch=1x",
+          "metrics": {
+            "recallAtK": 0.5508983292609811,
+            "anyHit": 0.6198563030698889,
+            "allHit": 0.4983670803396473,
+            "mrr": 0.4633028521663405,
+            "p95RetrievalMs": 199.24804199999198,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        }
+      ],
+      "notRun": [
+        {
+          "id": "zep",
+          "status": "not-run",
+          "reason": "ZEP_API_KEY is not set. Zep needs a Zep Cloud account and a ZEP_API_KEY. Zep Community Edition, the self-hostable server, is deprecated upstream and its own compose file points at zepai/zep:latest, which no longer exists on Docker Hub, so there is no free self-hosted path. Graphiti, the engine underneath Zep, additionally needs a graph store and a generative LLM for episode ingestion."
+        }
+      ],
+      "ingest": [
+        {
+          "id": "mem0-oss",
+          "status": "scored",
+          "seconds": 148.2
+        }
+      ]
+    },
+    {
+      "corpus": "LoCoMo (locomo10)",
+      "topK": 10,
+      "file": "locomo-k10.json",
+      "questions": 1986,
+      "corpora": 10,
+      "annotatedQuestions": 1531,
+      "complete": true,
+      "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "normalizedSha256": "69d74a91b0c381f2fe97eed17ca5bb5b8b65067ee9f1b54cbefef726e692c489",
+      "adapter": "locomo-original-dialogue-v1",
+      "implementationSha256": "6a6594bb9c50710c728ece7ba5aad0913d56d4848e065e492f494883941c9638",
+      "runtime": "v26.4.0 darwin/arm64",
+      "durationSeconds": 768.6,
+      "settings": {
+        "topK": 10,
+        "maxContextUnits": 8192,
+        "chunkBytes": 4096,
+        "maxQuestions": 5000,
+        "maxTurnsPerCorpus": 100000,
+        "maxCorpusBytes": 67108864,
+        "maxTotalBytes": 536870912,
+        "maxCandidates": 10000,
+        "timeoutMs": 3600000,
+        "maxEmbeddingCalls": 1000000,
+        "maxEmbeddingInputBytes": 2147483647,
+        "rerankTopN": 50,
+        "systemIngestTimeoutMs": 3600000,
+        "corpusIndexBase": 0,
+        "accountingId": "utf8-bytes-v1",
+        "bm25Condition": "enabled",
+        "hybridLexicalScoring": "bm25",
+        "reranker": "enabled",
+        "hybridWithoutRerankCondition": "enabled",
+        "matchedSystems": "mem0-oss"
+      },
+      "note": "headline K",
+      "rows": [
+        {
+          "id": "lexical",
+          "label": "Mnemosyne zero-model overlap",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.4049393012950088,
+            "anyHit": 0.4519921619856303,
+            "allHit": 0.37099934683213587,
+            "mrr": 0.2898761572994098,
+            "p95RetrievalMs": 3.3473329999978887,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "bm25",
+          "label": "Mnemosyne zero-model BM25",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.5246772845670147,
+            "anyHit": 0.5826257348138472,
+            "allHit": 0.47811887655127366,
+            "mrr": 0.36959788705379815,
+            "p95RetrievalMs": 12.59616700001061,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid-norerank",
+          "label": "Mnemosyne hybrid (dense+BM25 RRF)",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.6298569236171481,
+            "anyHit": 0.6982364467668191,
+            "allHit": 0.5715218811234487,
+            "mrr": 0.4606430074751437,
+            "p95RetrievalMs": 56.9850419999857,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid",
+          "label": "Mnemosyne hybrid + rerank",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.7357341595091663,
+            "anyHit": 0.8007838014369693,
+            "allHit": 0.6779882429784455,
+            "mrr": 0.6240002902968294,
+            "p95RetrievalMs": 243.9740420000162,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:mem0-oss",
+          "label": "Mem0 OSS (extraction off)",
+          "mode": "mem0-oss@3.1.8, extraction=off(infer:false), retrieval=vector-cosine(exact), vectorStore=memory(sqlite,isolated), embedder=injected:onnxruntime-node|Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3|int8|cls|l2|512|bge-query-prefix-v1, history=disabled, telemetry=disabled, overfetch=1x",
+          "metrics": {
+            "recallAtK": 0.6372002539855051,
+            "anyHit": 0.7093403004572175,
+            "allHit": 0.5754408883082952,
+            "mrr": 0.47557592817227073,
+            "p95RetrievalMs": 196.06754200000432,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        }
+      ],
+      "notRun": [
+        {
+          "id": "zep",
+          "status": "not-run",
+          "reason": "ZEP_API_KEY is not set. Zep needs a Zep Cloud account and a ZEP_API_KEY. Zep Community Edition, the self-hostable server, is deprecated upstream and its own compose file points at zepai/zep:latest, which no longer exists on Docker Hub, so there is no free self-hosted path. Graphiti, the engine underneath Zep, additionally needs a graph store and a generative LLM for episode ingestion."
+        }
+      ],
+      "ingest": [
+        {
+          "id": "mem0-oss",
+          "status": "scored",
+          "seconds": 125.4
+        }
+      ]
+    },
+    {
+      "corpus": "LoCoMo (locomo10)",
+      "topK": 20,
+      "file": "locomo-k20.json",
+      "questions": 1986,
+      "corpora": 10,
+      "annotatedQuestions": 1531,
+      "complete": true,
+      "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "normalizedSha256": "69d74a91b0c381f2fe97eed17ca5bb5b8b65067ee9f1b54cbefef726e692c489",
+      "adapter": "locomo-original-dialogue-v1",
+      "implementationSha256": "5a69808fca29e655421d7228928cdad0cb52b61b44eb3e06a41ae61385579b38",
+      "runtime": "v26.4.0 darwin/arm64",
+      "durationSeconds": 797.8,
+      "settings": {
+        "topK": 20,
+        "maxContextUnits": 8192,
+        "chunkBytes": 4096,
+        "maxQuestions": 5000,
+        "maxTurnsPerCorpus": 100000,
+        "maxCorpusBytes": 67108864,
+        "maxTotalBytes": 536870912,
+        "maxCandidates": 10000,
+        "timeoutMs": 3600000,
+        "maxEmbeddingCalls": 1000000,
+        "maxEmbeddingInputBytes": 2147483647,
+        "rerankTopN": 50,
+        "systemIngestTimeoutMs": 3600000,
+        "corpusIndexBase": 0,
+        "accountingId": "utf8-bytes-v1",
+        "bm25Condition": "enabled",
+        "hybridLexicalScoring": "bm25",
+        "reranker": "enabled",
+        "hybridWithoutRerankCondition": "enabled",
+        "matchedSystems": "mem0-oss"
+      },
+      "rows": [
+        {
+          "id": "lexical",
+          "label": "Mnemosyne zero-model overlap",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.4684349438909985,
+            "anyHit": 0.5284128020901372,
+            "allHit": 0.42064010450685824,
+            "mrr": 0.2951742396332068,
+            "p95RetrievalMs": 4.27020800000173,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "bm25",
+          "label": "Mnemosyne zero-model BM25",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.5797611801432734,
+            "anyHit": 0.6472893533638145,
+            "allHit": 0.5264532984977139,
+            "mrr": 0.3740428233241109,
+            "p95RetrievalMs": 13.227708999998868,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid-norerank",
+          "label": "Mnemosyne hybrid (dense+BM25 RRF)",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.711765287080041,
+            "anyHit": 0.7857609405617244,
+            "allHit": 0.6472893533638145,
+            "mrr": 0.46673480205508217,
+            "p95RetrievalMs": 58.10679099999834,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid",
+          "label": "Mnemosyne hybrid + rerank",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.7770345426555173,
+            "anyHit": 0.8419333768778576,
+            "allHit": 0.7145656433703462,
+            "mrr": 0.6269221792739637,
+            "p95RetrievalMs": 252.18370799999684,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:mem0-oss",
+          "label": "Mem0 OSS (extraction off)",
+          "mode": "mem0-oss@3.1.8, extraction=off(infer:false), retrieval=vector-cosine(exact), vectorStore=memory(sqlite,isolated), embedder=injected:onnxruntime-node|Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3|int8|cls|l2|512|bge-query-prefix-v1, history=disabled, telemetry=disabled, overfetch=1x",
+          "metrics": {
+            "recallAtK": 0.7191266596717516,
+            "anyHit": 0.790333115610712,
+            "allHit": 0.6525146962769431,
+            "mrr": 0.479845175790404,
+            "p95RetrievalMs": 200.77512499998556,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        }
+      ],
+      "notRun": [
+        {
+          "id": "zep",
+          "status": "not-run",
+          "reason": "ZEP_API_KEY is not set. Zep needs a Zep Cloud account and a ZEP_API_KEY. Zep Community Edition, the self-hostable server, is deprecated upstream and its own compose file points at zepai/zep:latest, which no longer exists on Docker Hub, so there is no free self-hosted path. Graphiti, the engine underneath Zep, additionally needs a graph store and a generative LLM for episode ingestion."
+        }
+      ],
+      "ingest": [
+        {
+          "id": "mem0-oss",
+          "status": "scored",
+          "seconds": 133.4
+        }
+      ]
+    },
+    {
+      "corpus": "LongMemEval-S (cleaned)",
+      "topK": 20,
+      "file": "longmemeval-stride10-k20.json",
+      "questions": 50,
+      "corpora": 50,
+      "annotatedQuestions": 46,
+      "complete": true,
+      "sourceSha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+      "normalizedSha256": "206cdf3cdac99d9057b0c6f307fe71c27c6ab0aa2e45786a8e2d7160d398621e",
+      "adapter": "longmemeval-cleaned-v1",
+      "implementationSha256": "c25dea57de327f110db7d25f6f6d06e65a015156ed4a254d2a0be0cb63c08650",
+      "runtime": "v26.4.0 darwin/arm64",
+      "durationSeconds": 2341.7,
+      "settings": {
+        "topK": 20,
+        "maxContextUnits": 8192,
+        "chunkBytes": 4096,
+        "maxQuestions": 5000,
+        "maxTurnsPerCorpus": 100000,
+        "maxCorpusBytes": 67108864,
+        "maxTotalBytes": 536870912,
+        "maxCandidates": 10000,
+        "timeoutMs": 3600000,
+        "maxEmbeddingCalls": 1000000,
+        "maxEmbeddingInputBytes": 2147483647,
+        "rerankTopN": 50,
+        "systemIngestTimeoutMs": 3600000,
+        "corpusIndexBase": 0,
+        "accountingId": "utf8-bytes-v1",
+        "bm25Condition": "enabled",
+        "hybridLexicalScoring": "bm25",
+        "reranker": "enabled",
+        "hybridWithoutRerankCondition": "enabled",
+        "matchedSystems": "mem0-oss"
+      },
+      "note": "every 10th question in source order (50 of 500); the release is grouped by category, so a prefix would be one category",
+      "rows": [
+        {
+          "id": "lexical",
+          "label": "Mnemosyne zero-model overlap",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.898913043478261,
+            "anyHit": 0.9565217391304348,
+            "allHit": 0.8043478260869565,
+            "mrr": 0.7156961697722567,
+            "p95RetrievalMs": 7.2743330000084825,
+            "questions": 50,
+            "completed": 50,
+            "errors": 0,
+            "annotatedQuestions": 46
+          }
+        },
+        {
+          "id": "bm25",
+          "label": "Mnemosyne zero-model BM25",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.9630434782608696,
+            "anyHit": 1,
+            "allHit": 0.8913043478260869,
+            "mrr": 0.9127329192546583,
+            "p95RetrievalMs": 17.183124999981374,
+            "questions": 50,
+            "completed": 50,
+            "errors": 0,
+            "annotatedQuestions": 46
+          }
+        },
+        {
+          "id": "hybrid-norerank",
+          "label": "Mnemosyne hybrid (dense+BM25 RRF)",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.9648550724637681,
+            "anyHit": 1,
+            "allHit": 0.8913043478260869,
+            "mrr": 0.9409937888198757,
+            "p95RetrievalMs": 59.80879200000345,
+            "questions": 50,
+            "completed": 50,
+            "errors": 0,
+            "annotatedQuestions": 46
+          }
+        },
+        {
+          "id": "hybrid",
+          "label": "Mnemosyne hybrid + rerank",
+          "mode": null,
+          "metrics": {
+            "recallAtK": 0.9666666666666667,
+            "anyHit": 1,
+            "allHit": 0.9130434782608695,
+            "mrr": 0.9415458937198068,
+            "p95RetrievalMs": 1895.9751249999972,
+            "questions": 50,
+            "completed": 50,
+            "errors": 0,
+            "annotatedQuestions": 46
+          }
+        },
+        {
+          "id": "system:mem0-oss",
+          "label": "Mem0 OSS (extraction off)",
+          "mode": "mem0-oss@3.1.8, extraction=off(infer:false), retrieval=vector-cosine(exact), vectorStore=memory(sqlite,isolated), embedder=injected:onnxruntime-node|Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3|int8|cls|l2|512|bge-query-prefix-v1, history=disabled, telemetry=disabled, overfetch=1x",
+          "metrics": {
+            "recallAtK": 0.9666666666666667,
+            "anyHit": 1,
+            "allHit": 0.9130434782608695,
+            "mrr": 0.9565217391304348,
+            "p95RetrievalMs": 209.85987499999464,
+            "questions": 50,
+            "completed": 50,
+            "errors": 0,
+            "annotatedQuestions": 46
+          }
+        }
+      ],
+      "notRun": [
+        {
+          "id": "zep",
+          "status": "not-run",
+          "reason": "ZEP_API_KEY is not set. Zep needs a Zep Cloud account and a ZEP_API_KEY. Zep Community Edition, the self-hostable server, is deprecated upstream and its own compose file points at zepai/zep:latest, which no longer exists on Docker Hub, so there is no free self-hosted path. Graphiti, the engine underneath Zep, additionally needs a graph store and a generative LLM for episode ingestion."
+        }
+      ],
+      "ingest": [
+        {
+          "id": "mem0-oss",
+          "status": "scored",
+          "seconds": 987.4
+        }
+      ]
+    }
+  ]
+}

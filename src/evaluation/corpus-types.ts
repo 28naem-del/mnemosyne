@@ -80,6 +80,19 @@ export interface CorpusBenchmarkOptions {
   systems?: MatchedSystem[];
   /** Per-system wall-clock bound for loading one corpus. Defaults to the run timeout. */
   systemIngestTimeoutMs?: number;
+  /**
+   * Ordinal of this run's first corpus within the whole dataset.
+   *
+   * Chunk identities are derived from the corpus ordinal, so a run over corpora
+   * 5-9 would otherwise number them 0-4 and mint different identities for the
+   * same passages. Identities feed insertion order and therefore tie-breaking
+   * among equally-scored candidates, so a long run split into parts would not
+   * quite equal the same run done in one — which is exactly the kind of
+   * difference a reproducible comparison cannot carry. Setting the base makes a
+   * split run produce byte-identical identities to the whole run. Defaults to 0,
+   * so an unsplit run is unchanged.
+   */
+  corpusIndexBase?: number;
   maxEmbeddingCalls?: number;
   maxEmbeddingInputBytes?: number;
   /** All conditions use this same counter over the exact complete envelope. */
