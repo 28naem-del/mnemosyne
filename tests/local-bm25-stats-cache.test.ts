@@ -300,7 +300,9 @@ describe('BM25 corpus statistics cache', () => {
     // the SQL — it drops createdAt exactly when validFrom is present, which is
     // the backdated case: "true since 2020", recorded on a clock running fast.
     const producer = memory('alice', 'producer-clock-ahead', () => new Date(day(10)));
-    producer.store(fact('widget gamma imported', { validFrom: day(2) })); // validFrom PAST, createdAt day(10) future for the importer
+    // validFrom must be past for the *importer* (day(1)), not merely for the producer —
+    // otherwise `validFrom > now` catches it and this never exercises the createdAt clause.
+    producer.store(fact('widget gamma imported', { validFrom: '2026-08-01T00:00:00.000Z' }));
     const snapshot = { ...producer.export(), workspaceId: 'test' };
     snapshot.memories = snapshot.memories.map(record => ({ ...record, workspaceId: 'test' }));
 
@@ -331,16 +333,25 @@ describe('BM25 corpus statistics cache', () => {
     // #at() only filters `superseded`/`invalidated` once `updatedAt <= knownAt`,
     // so updatedAt is a fourth clock-dependent field. Here `documents` goes
     // stale-HIGH rather than low, so scores inflate instead of rows vanishing.
-    const producer = memory('alice', 'producer-clock-ahead', () => new Date(day(10)));
+    // createdAt must be PAST for the importer and updatedAt FUTURE, so that only the
+    // updatedAt clause can fire: store at day(1), supersede at day(10), import at day(2).
+    let producerNow = 1;
+    const producer = memory('alice', 'producer-clock-ahead', () => new Date(day(producerNow)));
     const original = producer.store(fact('widget original text here'));
+    producerNow = 10;
     producer.correct(original.id, { text: 'widget corrected text here', reason: 'revised', source: { uri: 'test:bm25-cache' } });
-    const snapshot = { ...producer.export(), workspaceId: 'test' };
-    snapshot.memories = snapshot.memories.map(record => ({ ...record, workspaceId: 'test' }));
-    expect(snapshot.memories.some(r => r.status === 'superseded' && r.updatedAt > day(1))).toBe(true);
+    const exported = producer.export();
+    // Keep ONLY the superseded original: the correction itself carries createdAt=day(10),
+    // which would be future for the importer and flag via createdAt instead.
+    const snapshot = { ...exported, workspaceId: 'test', idempotency: [], outcomes: [],
+      memories: exported.memories.filter(r => r.status === 'superseded').map(record => ({ ...record, workspaceId: 'test' })) };
+    expect(snapshot.memories).toHaveLength(1);
+    expect(snapshot.memories[0].createdAt).toBe(day(1));   // past for the importer at day(2)
+    expect(snapshot.memories[0].updatedAt).toBe(day(10));  // still future for it
 
     const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-updated-'));
     const path = join(root, 'memory.sqlite');
-    let current = 1;
+    let current = 2;
     const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
     opened.push(db);
     db.store(fact('widget survivor local row'));
