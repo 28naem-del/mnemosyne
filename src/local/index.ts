@@ -116,6 +116,7 @@ export class LocalMemory {
   #cursorSecret = "";
   readonly #indexMode: DenseIndexMode;
   readonly #sqliteVecPath?: string;
+  readonly #cacheSize?: number;
   #vecLoaded = false;
   #vecError?: string;
   #denseIndex: DenseIndex | null = null;
@@ -130,7 +131,7 @@ export class LocalMemory {
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode', 'sqliteVecPath'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode', 'sqliteVecPath', 'cacheSize'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -165,6 +166,16 @@ export class LocalMemory {
     this.#ledgerMaxCandidates = ledger === false ? 100 : v.limit((ledger as LedgerOptions).maxCandidates, 100, 1000);
     this.#indexMode = resolveDenseIndexMode(options.indexMode);
     if (options.sqliteVecPath !== undefined) this.#sqliteVecPath = v.string(options.sqliteVecPath, 'sqliteVecPath', 4096);
+    // SQLite's own PRAGMA cache_size sign convention: positive is a page count,
+    // negative is a KiB budget (the size SQLite will actually respect, since page
+    // size varies). Bounded well below any value that could itself be a memory
+    // hazard; the default (applied below when this is unset) is -65536, 64 MiB.
+    if (options.cacheSize !== undefined) {
+      if (!Number.isSafeInteger(options.cacheSize) || options.cacheSize === 0 || Math.abs(options.cacheSize) > 2_097_152) {
+        throw new TypeError('cacheSize must be a nonzero integer of magnitude at most 2097152 (SQLite PRAGMA cache_size: positive = pages, negative = KiB)');
+      }
+      this.#cacheSize = options.cacheSize;
+    }
     this.#path = path === ':memory:' ? path : resolve(path);
     if (this.#path !== ':memory:') {
       mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
@@ -185,7 +196,7 @@ export class LocalMemory {
     this.#db = new DatabaseSync(this.#path, wantsVec ? { allowExtension: true } : {});
     try {
       if (wantsVec) { const loaded = tryLoadSqliteVec(this.#db, this.#sqliteVecPath); this.#vecLoaded = loaded.loaded; this.#vecError = loaded.error; }
-      this.#db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;');
+      this.#db.exec(`PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA cache_size=${this.#cacheSize ?? -65536};`);
       const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
       if (version > SCHEMA_VERSION) throw new Error(`Unsupported memory schema version ${version}`);
       this.#enableWal();

@@ -299,6 +299,15 @@ export interface LocalMemoryOptions {
    * without the caller asking for it. This option requires the caller to name
    * the path explicitly. */
   sqliteVecPath?: string;
+  /** `PRAGMA cache_size`, applied on every open. SQLite's own units: a
+   * **positive** value is a page count; a **negative** value is a KiB budget
+   * (what this engine defaults to and recommends, since page size can vary).
+   * Defaults to `-65536` — 64 MiB. A larger page cache means fewer trips
+   * through the OS page cache for the shortlist rescore and BM25 postings the
+   * hot recall path reads on every query, which matters once the working set
+   * stops fitting in whatever RAM SQLite would otherwise settle for on its
+   * own (a few MB). Must be a nonzero integer, magnitude at most 2,097,152. */
+  cacheSize?: number;
 }
 
 /** What retrieval actually does, as opposed to what was asked for. A hybrid
