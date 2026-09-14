@@ -246,3 +246,71 @@ describe('hnsw dense index', () => {
     expect(reopened.retrieval.index).toMatchObject({ mode: 'hnsw', size: CORPUS.length });
   });
 });
+
+describe('vector storage format version guard', () => {
+  it('bumps schema version so a JSON-only reader refuses the file instead of crashing on a packed row', () => {
+    const path = location();
+    const db = memory({ path });
+    seed(db);
+    db.recall({ query: 'coffee' }); // forces embeddings to be written and packed
+    db.close(); opened.splice(opened.indexOf(db), 1);
+
+    const raw = new DatabaseSync(path);
+    try {
+      const version = (raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+      // A build through T1.1 refuses anything past 1, so this file must read as 2.
+      expect(version).toBeGreaterThan(1);
+
+      // Reproduce that older build's exact guard: `if (version > 1) throw ...`.
+      const olderReaderGuard = (): void => { if (version > 1) throw new Error(`Unsupported memory schema version ${version}`); };
+      expect(olderReaderGuard).toThrow(/Unsupported memory schema version 2/);
+
+      // And prove why the guard matters: without it, that older build's dense
+      // recall does `JSON.parse(row.vector)` on this same row and gets an
+      // uncontrolled SyntaxError instead of the clear, named error above.
+      const row = raw.prepare('SELECT data FROM local_embeddings LIMIT 1').get() as { data: Uint8Array };
+      expect(row.data).toBeInstanceOf(Uint8Array);
+      expect(() => JSON.parse(row.data as unknown as string)).toThrow(SyntaxError);
+    } finally { raw.close(); }
+  });
+
+  it('bumps a pre-existing v1 database (with packed rows already in it) to v2 on open, without touching a row', () => {
+    const path = location();
+    const seeded = memory({ path });
+    seed(seeded);
+    seeded.recall({ query: 'coffee' });
+    seeded.close(); opened.splice(opened.indexOf(seeded), 1);
+
+    // Simulate a database written by an earlier, unfixed revision of this same
+    // branch: packed BLOB rows already present, but the version never bumped.
+    const raw = new DatabaseSync(path);
+    let before: { id: string; data: Uint8Array }[];
+    try {
+      raw.exec('PRAGMA user_version=1;');
+      before = raw.prepare('SELECT memory_id AS id, data FROM local_embeddings ORDER BY memory_id').all() as never;
+      expect((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(1);
+    } finally { raw.close(); }
+
+    const reopened = memory({ path });
+    expect(reopened.recall({ query: 'oat milk coffee', limit: 3 }).length).toBeGreaterThan(0);
+    reopened.close(); opened.splice(opened.indexOf(reopened), 1);
+
+    const after = new DatabaseSync(path);
+    try {
+      expect((after.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(2);
+      const rows = after.prepare('SELECT memory_id AS id, data FROM local_embeddings ORDER BY memory_id').all() as { id: string; data: Uint8Array }[];
+      expect(rows).toEqual(before); // the bump rewrote no data, only the version number
+    } finally { after.close(); }
+  });
+
+  it('leaves an unsupported future version untouched and refuses it, same as before', () => {
+    const path = location();
+    const raw = new DatabaseSync(path);
+    raw.exec('PRAGMA user_version=99');
+    raw.close();
+    expect(() => memory({ path })).toThrow(/Unsupported memory schema version 99/);
+    const reopened = new DatabaseSync(path);
+    try { expect((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(99); }
+    finally { reopened.close(); }
+  });
+});

@@ -31,6 +31,20 @@ const DENSE_OVERFETCH = 2;
  *  answer is exactly the exact scan's. */
 const DENSE_WIDENING = 8;
 
+/**
+ * `local_embeddings.data` was JSON text through schema version 1. This build
+ * always writes it as a packed float32 BLOB (`#encodeVector`) and reads either
+ * shape back (`#decodeVector`), but a build that predates this one only ever
+ * wrote and read JSON — handed a BLOB row, its `JSON.parse(row.vector)` throws
+ * an uncontrolled `SyntaxError` deep inside a recall. Bumping to 2 the moment a
+ * database could hold that shape makes an older build refuse the file up front,
+ * at the `user_version` guard in the constructor, with a message that names the
+ * mismatch instead of a parse crash three calls later. A v1 database gets no
+ * data rewritten — `#decodeVector` already reads both shapes — only its version
+ * number moves, in `#bumpVectorSchema()`.
+ */
+const SCHEMA_VERSION = 2;
+
 /** Collects each ranking stage's candidate list on the way through one recall, so
  * the ledger can record what was considered and not only what was returned. The
  * engine fills it only when the ledger asks for it; retrieval itself never reads it. */
@@ -167,9 +181,10 @@ export class LocalMemory {
       if (wantsVec) { const loaded = tryLoadSqliteVec(this.#db); this.#vecLoaded = loaded.loaded; this.#vecError = loaded.error; }
       this.#db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;');
       const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-      if (version > 1) throw new Error(`Unsupported memory schema version ${version}`);
+      if (version > SCHEMA_VERSION) throw new Error(`Unsupported memory schema version ${version}`);
       this.#enableWal();
       if (version === 0) this.#migrate();
+      else if (version === 1) this.#bumpVectorSchema();
       this.#advancedSchema();
       this.#privateFiles();
     } catch (error) {
@@ -200,7 +215,7 @@ export class LocalMemory {
     this.#transaction(() => {
       // Another process may have initialized this file while BEGIN waited.
       const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-      if (version === 1) return;
+      if (version === SCHEMA_VERSION) return;
       if (version !== 0) throw new Error(`Unsupported memory schema version ${version}`);
       this.#db.exec(`
         CREATE TABLE memories (
@@ -246,8 +261,28 @@ export class LocalMemory {
           INSERT INTO memories_fts(rowid, text) VALUES(new.rowid, new.text);
         END;
         INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 1);
-        PRAGMA user_version=1;
+        PRAGMA user_version=${SCHEMA_VERSION};
       `);
+    });
+  }
+
+  /**
+   * Move an existing v1 database to v2 without touching a row of data.
+   *
+   * v1 predates the packed float32 embedding format; `#decodeVector` already
+   * reads both shapes, so a v1 database opened by this build needs nothing
+   * rewritten — only its declared version needs to catch up, so that a build
+   * which only ever understood JSON refuses the file instead of misreading a
+   * BLOB row as text. Runs for every v1 database this build opens, whether or
+   * not it has written any embeddings yet: from this point on, any it writes
+   * are packed.
+   */
+  #bumpVectorSchema(): void {
+    this.#transaction(() => {
+      // Another connection may have already bumped this, or moved it further.
+      const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+      if (version !== 1) return;
+      this.#db.exec(`PRAGMA user_version=${SCHEMA_VERSION};`);
     });
   }
 

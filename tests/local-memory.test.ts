@@ -68,7 +68,11 @@ describe('local persistence and ownership', () => {
     expect(second.get(stored.id)).toEqual(stored);
     expect(second.recall({ query: 'pull requests' })[0].memory.id).toBe(stored.id);
     const db = new DatabaseSync(path);
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(1);
+    // Schema version 2: `local_embeddings.data` is a packed float32 BLOB as of
+    // T1.2, and a build that only ever wrote JSON must refuse a v2 file instead
+    // of misreading a BLOB row as text (see the "vector storage format version
+    // guard" tests in tests/local-vector-index.test.ts).
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(2);
     db.close();
   });
 

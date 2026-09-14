@@ -11,11 +11,16 @@ function regular(path: string, identity: { dev: number; ino: number }): void {
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.dev !== identity.dev || stat.ino !== identity.ino) throw new Error();
 }
+// Kept in sync with SCHEMA_VERSION in local/index.ts by hand: this worker is
+// deliberately isolated and imports nothing from the rest of the engine. v1
+// (JSON embeddings) and v2 (packed float32) are both databases this build
+// reads and writes correctly, so both back up and restore cleanly.
+const SUPPORTED_USER_VERSIONS = [1, 2];
 function information(db: DatabaseSync, maxBytes: number) {
   const userVersion = Number(db.prepare('PRAGMA user_version').get()?.user_version);
   const pageCount = Number(db.prepare('PRAGMA page_count').get()?.page_count);
   const pageSize = Number(db.prepare('PRAGMA page_size').get()?.page_size);
-  if (userVersion !== 1 || !Number.isSafeInteger(pageCount) || !Number.isSafeInteger(pageSize) || pageCount <= 0 || pageSize < 512 || pageCount * pageSize > maxBytes) throw new Error();
+  if (!SUPPORTED_USER_VERSIONS.includes(userVersion) || !Number.isSafeInteger(pageCount) || !Number.isSafeInteger(pageSize) || pageCount <= 0 || pageSize < 512 || pageCount * pageSize > maxBytes) throw new Error();
   const tables = db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('memories','dependencies','outcomes','idempotency','audit')").all();
   if (tables.length !== 5) throw new Error();
   // Preparing verifies the core columns without exporting any row values.
