@@ -82,7 +82,10 @@ withModel('hybrid RRF retrieval is the default', () => {
   });
 
   it('fuses both channels, keeping the lexical hit the zero-model path already found', () => {
-    const db = memory();
+    // Pinned to rerank: false so this case keeps measuring exactly what it names.
+    // The default path now rescores the fused head with the cross-encoder, which
+    // replaces these scores; that contract is pinned in local-reranker.test.ts.
+    const db = memory({ rerank: false });
     const lexicalHit = db.store(fact(LEXICAL_ONLY));
     const denseHit = db.store(fact(DENSE_ONLY));
     const ids = db.recall({ query: QUERY }).map(hit => hit.memory.id);
@@ -90,6 +93,19 @@ withModel('hybrid RRF retrieval is the default', () => {
     expect(ids).toContain(denseHit.id);
     // Reciprocal rank fusion, so scores are rank sums rather than BM25 scores.
     expect(db.recall({ query: QUERY })[0].score).toBeLessThanOrEqual(2 / 11);
+  });
+
+  it('fuses both channels with the reranker on, which is the default', () => {
+    const db = memory();
+    const lexicalHit = db.store(fact(LEXICAL_ONLY));
+    const denseHit = db.store(fact(DENSE_ONLY));
+    const results = db.recall({ query: QUERY });
+    expect(results.map(hit => hit.memory.id)).toContain(lexicalHit.id);
+    expect(results.map(hit => hit.memory.id)).toContain(denseHit.id);
+    // Rescored candidates carry a logistic of the cross-encoder score, so they sit
+    // above every unrescored one and the list stays ordered by score.
+    expect(results[0].score).toBeGreaterThan(0.5);
+    expect(results.map(hit => hit.score)).toEqual([...results.map(hit => hit.score)].sort((a, b) => b - a));
   });
 
   it('keeps the model off the write path: storing indexes no vectors, recall does', () => {

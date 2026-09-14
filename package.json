@@ -117,6 +117,10 @@
     "./local/embedding": {
       "types": "./dist/local/embedding/index.d.ts",
       "import": "./dist/local/embedding/index.js"
+    },
+    "./local/reranking": {
+      "types": "./dist/local/reranking/index.d.ts",
+      "import": "./dist/local/reranking/index.js"
     }
   },
   "files": [
@@ -151,7 +155,8 @@
     "benchmark:agent": "node dist/cli/index.js benchmark-agent",
     "setup:embedder": "node scripts/fetch-local-model.mjs",
     "benchmark:fetch": "node scripts/fetch-benchmark-corpus.mjs",
-    "benchmark:scale": "node dist/evaluation/local-benchmark.js"
+    "benchmark:scale": "node dist/evaluation/local-benchmark.js",
+    "setup:reranker": "node scripts/fetch-local-reranker.mjs"
   },
   "keywords": [
     "ai",

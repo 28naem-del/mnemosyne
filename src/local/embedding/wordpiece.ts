@@ -139,7 +139,8 @@ export function encodeWordPiecePair(a: string, b: string, vocabulary: WordPieceV
   const body = maxTokens - 3;
   let lengthA = first.length, lengthB = second.length;
   const truncated = lengthA + lengthB > body;
-  while (lengthA + lengthB > body) { if (lengthA > lengthB) lengthA--; else lengthB--; }
+  // The reference breaks a tie against the FIRST sequence, so `>=`, not `>`.
+  while (lengthA + lengthB > body) { if (lengthA >= lengthB) lengthA--; else lengthB--; }
   const ids = [vocabulary.cls, ...first.slice(0, lengthA), vocabulary.sep, ...second.slice(0, lengthB), vocabulary.sep];
   const typeIds = ids.map((_, index) => index > lengthA + 1 ? 1 : 0);
   return { ids, typeIds, truncated };
