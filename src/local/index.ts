@@ -12,12 +12,26 @@ import type {
 import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, type LedgerRow } from './ledger.js';
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
+import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
+import type { HnswIndex } from './vector/hnsw.js';
 
 export type * from './types.js';
 
 type DataRow = { data: string };
 type TemporalView = { asOf: string; knownAt: string; historical: boolean };
 type ScoredId = { id: string; score: number };
+type DenseScan = { model: string; dimensions: number; query: number[]; maxCandidates: number; time: TemporalView; includeUntrusted: boolean; kinds: string[]; minSimilarity: number };
+type DenseRow = { id: string; vector: string; source_hash: string };
+
+/** Shortlist depth as a multiple of the candidate budget. An index proposes more
+ *  than the budget because the gate below it will reject some of what it proposes. */
+const DENSE_OVERFETCH = 2;
+/** Growth when a shortlist was filtered down past the budget. Widening always
+ *  terminates at the index size, where the shortlist IS the whole index and the
+ *  answer is exactly the exact scan's. */
+const DENSE_WIDENING = 8;
+/** Labels per authorization statement, under SQLite's bound-parameter ceiling. */
+const DENSE_LABEL_CHUNK = 900;
 /** Collects each ranking stage's candidate list on the way through one recall, so
  * the ledger can record what was considered and not only what was returned. The
  * engine fills it only when the ledger asks for it; retrieval itself never reads it. */
@@ -86,10 +100,16 @@ export class LocalMemory {
   #rerankerDegraded?: string;
   readonly #atomicContext = new AsyncLocalStorage<{ done: boolean }>();
   #cursorSecret = "";
+  readonly #indexMode: DenseIndexMode;
+  #vecLoaded = false;
+  #vecError?: string;
+  #denseIndex: DenseIndex | null = null;
+  #denseResolved = false;
+  #denseStatus?: DenseIndexStatus;
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -122,6 +142,7 @@ export class LocalMemory {
     this.#ledgerQueries = ledger === false ? 'digest' : v.enumeration((ledger as LedgerOptions).queries ?? 'digest', ['text', 'digest'] as const, 'ledger.queries');
     this.#ledgerCandidates = ledger === false ? 'off' : v.enumeration((ledger as LedgerOptions).candidates ?? 'full', ['full', 'off'] as const, 'ledger.candidates');
     this.#ledgerMaxCandidates = ledger === false ? 100 : v.limit((ledger as LedgerOptions).maxCandidates, 100, 1000);
+    this.#indexMode = resolveDenseIndexMode(options.indexMode);
     this.#path = path === ':memory:' ? path : resolve(path);
     if (this.#path !== ':memory:') {
       mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
@@ -135,8 +156,13 @@ export class LocalMemory {
       if (!file.isFile() || file.isSymbolicLink()) throw new Error('Database path must be a regular file');
       chmodSync(this.#path, 0o600);
     }
-    this.#db = new DatabaseSync(this.#path);
+    // The extension capability is opened only for a mode that needs it, and the
+    // loader closes SQL-level access to load_extension() the moment the load
+    // returns, so no statement reaching this database can load anything itself.
+    const wantsVec = this.#indexMode === 'auto' || this.#indexMode === 'sqlite-vec';
+    this.#db = new DatabaseSync(this.#path, wantsVec ? { allowExtension: true } : {});
     try {
+      if (wantsVec) { const loaded = tryLoadSqliteVec(this.#db); this.#vecLoaded = loaded.loaded; this.#vecError = loaded.error; }
       this.#db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;');
       const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
       if (version > 1) throw new Error(`Unsupported memory schema version ${version}`);
@@ -321,7 +347,7 @@ export class LocalMemory {
         CREATE INDEX IF NOT EXISTS idempotency_memory ON idempotency(memory_id);
         CREATE INDEX IF NOT EXISTS dependencies_target ON dependencies(to_id);
         CREATE INDEX IF NOT EXISTS memories_runtime_jobs ON memories(workspace_id) WHERE json_extract(data,'$.metadata.runtimeType')='job';
-      ${LEDGER_SCHEMA}`);
+      ${LEDGER_SCHEMA}${VECTOR_SCHEMA}`);
       if (!this.#db.prepare('PRAGMA table_info(local_search)').all().some(column => column.name === 'token_count')) this.#db.exec('ALTER TABLE local_search ADD COLUMN token_count INTEGER');
       if (!this.#db.prepare('PRAGMA table_info(local_terms)').all().some(column => column.name === 'frequency')) {
         this.#db.exec('ALTER TABLE local_terms ADD COLUMN frequency INTEGER NOT NULL DEFAULT 1; UPDATE local_search SET token_count=NULL;');
@@ -331,6 +357,7 @@ export class LocalMemory {
       this.#cursorSecret = (this.#db.prepare("SELECT value FROM local_settings WHERE key='cursor-secret'").get() as { value: string }).value;
       for (const row of this.#db.prepare('SELECT m.data FROM memories m LEFT JOIN local_search s ON s.memory_id=m.id WHERE s.memory_id IS NULL').iterate()) this.#indexText(this.#decode(row)!);
       this.#repairTermFrequencies();
+      prepareDenseIndexSchema(this.#db, this.#vecLoaded);
     });
   }
 
@@ -832,6 +859,9 @@ export class LocalMemory {
       ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
       ...(reranker ? { rerankerModel: reranker.model, rerankTopN: this.#rerankTopN } : {}),
       ...(this.#rerankerDegraded ? { rerankDegraded: this.#rerankerDegraded } : {}),
+      // Size is read live rather than remembered, so it reports the index as it
+      // is now and not as it was when it was opened.
+      ...(this.#denseStatus ? { index: { ...this.#denseStatus, ...(this.#denseIndex ? { size: this.#denseIndex.size() } : {}) } } : {}),
     };
   }
 
@@ -975,6 +1005,9 @@ export class LocalMemory {
    * selecting it and writing its vector.
    */
   #indexPendingVectors(embedder: SyncMemoryEmbedder, model: string, dimensions: number): void {
+    // Resolved first, so an index that has to be built from an existing database
+    // is caught up before this batch adds to it.
+    const denseIndex = this.#resolveDenseIndex(model, dimensions);
     const pendingSql = `FROM memories m JOIN local_search s ON s.memory_id=m.id LEFT JOIN local_embeddings e ON e.memory_id=m.id AND e.model=?
       WHERE m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND m.status='active' AND m.trust!='untrusted' AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       AND (e.memory_id IS NULL OR e.source_hash!=s.source_hash)`;
@@ -994,7 +1027,16 @@ export class LocalMemory {
       const vectors = embedder.embedSync(rows.map(record => record.text), 'passage');
       if (!Array.isArray(vectors) || vectors.length !== rows.length) throw new TypeError('Embedder must return one vector per input text');
       this.#transaction(() => {
-        for (let index = 0; index < rows.length; index++) write.run(rows[index].id, model, dimensions, this.#textHash(rows[index].text), JSON.stringify(this.#vector(vectors[index], dimensions)));
+        const entries: DenseIndexEntry[] = [];
+        for (let index = 0; index < rows.length; index++) {
+          const vector = this.#vector(vectors[index], dimensions);
+          write.run(rows[index].id, model, dimensions, this.#textHash(rows[index].text), JSON.stringify(vector));
+          // The index is fed inside the transaction that writes the vector, so a
+          // rolled-back batch cannot leave an index entry for a vector that was
+          // never stored.
+          if (denseIndex) entries.push({ label: this.#assignLabel(rows[index].id, model), vector: Float32Array.from(vector) });
+        }
+        denseIndex?.upsert(entries);
       });
       // A full page that indexed nothing would loop forever; refuse instead.
       if (rows.length < 64) return;
@@ -1002,39 +1044,183 @@ export class LocalMemory {
     }
   }
 
-  /** Synchronous twin of #scanVectors: exact cosine over every authorized indexed
-   * row, retaining a bounded heap of identifiers rather than source text. */
-  #scanVectorsSync(scan: { model: string; dimensions: number; query: number[]; maxCandidates: number; time: TemporalView; includeUntrusted: boolean; kinds: string[]; minSimilarity: number }): ScoredId[] {
-    const heap: ScoredId[] = [];
-    const { kinds, time, includeUntrusted } = scan;
-    const statement = this.#db.prepare(`SELECT e.memory_id AS id,e.data AS vector,e.source_hash FROM local_embeddings e JOIN memories m ON m.id=e.memory_id
-      WHERE e.model=? AND e.dimensions=? AND e.memory_id>? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
-      ${time.historical ? '' : "AND (m.status!='invalidated' OR json_extract(m.data,'$.invalidation.correctionId') IS NOT NULL)"} ${includeUntrusted ? '' : "AND m.trust!='untrusted'"}
+  /**
+   * Candidates for the dense channel — two implementations, ONE definition of
+   * what may be returned.
+   *
+   * `#denseWhere` is the SQL half of the gate (scope, visibility, trust,
+   * advisory, status, and both temporal cut-offs) and `#denseAccept` is the JS
+   * half (bitemporal reconstruction at the requested clocks, a staleness check
+   * against the source text, and an exact rescore). The exact scan walks every
+   * indexed row through that pair. The ANN path walks a *proposed shortlist*
+   * through the very same pair.
+   *
+   * That is the whole safety argument for putting an index here: an index sees
+   * vectors and labels and nothing else, so it can only ever narrow what a query
+   * sees, never widen it. A stale, corrupt or adversarial index costs recall; it
+   * cannot surface a record the exact scan would have withheld.
+   */
+  #scanVectorsSync(scan: DenseScan): ScoredId[] {
+    const index = this.#resolveDenseIndex(scan.model, scan.dimensions);
+    const proposed = index && this.#annVectorScan(index, scan);
+    return proposed ?? this.#exactVectorScan(scan);
+  }
+
+  /** The dense predicate. Shared verbatim by the exact scan and the ANN post-filter. */
+  #denseWhere(scan: DenseScan): string {
+    return `AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
+      ${scan.time.historical ? '' : "AND (m.status!='invalidated' OR json_extract(m.data,'$.invalidation.correctionId') IS NOT NULL)"} ${scan.includeUntrusted ? '' : "AND m.trust!='untrusted'"}
       AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       AND m.created_at<=? AND coalesce(json_extract(m.data,'$.validFrom'),m.created_at)<=?
       AND (json_extract(m.data,'$.validUntil') IS NULL OR json_extract(m.data,'$.validUntil')>?)
-      ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}
+      ${scan.kinds.length ? `AND m.kind IN (${scan.kinds.map(() => '?').join(',')})` : ''}`;
+  }
+
+  #denseWhereParameters(scan: DenseScan): string[] {
+    return [this.#workspaceId, this.#agentId, scan.time.knownAt, scan.time.asOf, scan.time.asOf, ...scan.kinds];
+  }
+
+  /**
+   * The JS half of the dense gate.
+   *
+   * The rescore happens here, at full precision, from the stored vector — never
+   * from a distance an index reported. An index decides which records are
+   * *looked at*; it never decides what a record scores, so switching indexes
+   * cannot move a score.
+   */
+  #denseAccept(row: DenseRow, scan: DenseScan): ScoredId | null {
+    const stored = this.get(row.id), memory = stored && this.#at(stored, scan.time);
+    if (!memory || row.source_hash !== this.#textHash(memory.text)) return null;
+    const vector = this.#vector(JSON.parse(row.vector), scan.dimensions);
+    let score = 0;
+    for (let index = 0; index < scan.dimensions; index++) score += vector[index] * scan.query[index];
+    // Nonpositive cosine is not affirmative semantic evidence, and neither is
+    // anything under the caller's floor. A dense retriever always has a
+    // nearest neighbour, so without a floor an unrelated query still returns
+    // its closest record; the floor is how a caller asks for abstention.
+    return score > 0 && score >= scan.minSimilarity ? { id: memory.id, score } : null;
+  }
+
+  /** Exact cosine over every authorized indexed row, retaining a bounded heap of
+   *  identifiers rather than source text. The definitive answer, and the one the
+   *  differential tests hold every index against. */
+  #exactVectorScan(scan: DenseScan): ScoredId[] {
+    const heap: ScoredId[] = [];
+    const statement = this.#db.prepare(`SELECT e.memory_id AS id,e.data AS vector,e.source_hash FROM local_embeddings e JOIN memories m ON m.id=e.memory_id
+      WHERE e.model=? AND e.dimensions=? AND e.memory_id>? ${this.#denseWhere(scan)}
       ORDER BY e.memory_id LIMIT 512`);
+    const parameters = this.#denseWhereParameters(scan);
     let cursor = '';
     for (;;) {
       this.#assertOpen();
-      const rows = statement.all(scan.model, scan.dimensions, cursor, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds) as { id: string; vector: string; source_hash: string }[];
+      const rows = statement.all(scan.model, scan.dimensions, cursor, ...parameters) as DenseRow[];
       for (const row of rows) {
         cursor = row.id;
-        const stored = this.get(row.id), memory = stored && this.#at(stored, time);
-        if (!memory || row.source_hash !== this.#textHash(memory.text)) continue;
-        const vector = this.#vector(JSON.parse(row.vector), scan.dimensions);
-        let score = 0;
-        for (let index = 0; index < scan.dimensions; index++) score += vector[index] * scan.query[index];
-        // Nonpositive cosine is not affirmative semantic evidence, and neither is
-        // anything under the caller's floor. A dense retriever always has a
-        // nearest neighbour, so without a floor an unrelated query still returns
-        // its closest record; the floor is how a caller asks for abstention.
-        if (score > 0 && score >= scan.minSimilarity) this.#retainBest(heap, { id: memory.id, score }, scan.maxCandidates);
+        const accepted = this.#denseAccept(row, scan);
+        if (accepted) this.#retainBest(heap, accepted, scan.maxCandidates);
       }
       if (rows.length < 512) break;
     }
     return heap.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  }
+
+  /**
+   * Shortlist from an index, then authorize.
+   *
+   * The shortlist is deliberately deeper than the candidate budget, because the
+   * gate below rejects some of what the index proposes and a budget filled from
+   * a too-short shortlist would silently be a different answer than the exact
+   * scan's. When it still comes up short the shortlist widens, and widening
+   * terminates at the index size — where the shortlist IS the whole index, so the
+   * result is exactly what the exact scan returns. Returns null only when there
+   * is nothing indexed yet, which is the caller's cue to scan.
+   */
+  #annVectorScan(index: DenseIndex, scan: DenseScan): ScoredId[] | null {
+    const size = index.size();
+    if (!size) return null;
+    const query = Float32Array.from(scan.query);
+    let depth = Math.min(size, Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64));
+    for (;;) {
+      this.#assertOpen();
+      const accepted = this.#authorizeLabels(index.search(query, depth), scan);
+      if (accepted.length >= scan.maxCandidates || depth >= size) return accepted.slice(0, scan.maxCandidates);
+      depth = Math.min(size, depth * DENSE_WIDENING);
+    }
+  }
+
+  /** Run proposed labels through the same SQL predicate and JS gate as the scan. */
+  #authorizeLabels(labels: readonly number[], scan: DenseScan): ScoredId[] {
+    if (!labels.length) return [];
+    const accepted: ScoredId[] = [];
+    const placeholders = Array.from({ length: DENSE_LABEL_CHUNK }, () => '?').join(',');
+    const statement = this.#db.prepare(`SELECT e.memory_id AS id,e.data AS vector,e.source_hash
+      FROM local_vec_labels l JOIN local_embeddings e ON e.memory_id=l.memory_id AND e.model=l.model JOIN memories m ON m.id=e.memory_id
+      WHERE l.label IN (${placeholders}) AND e.model=? AND e.dimensions=? ${this.#denseWhere(scan)}`);
+    const parameters = this.#denseWhereParameters(scan);
+    for (let offset = 0; offset < labels.length; offset += DENSE_LABEL_CHUNK) {
+      const chunk = labels.slice(offset, offset + DENSE_LABEL_CHUNK).map((label) => BigInt(label));
+      // Padded with 0, which AUTOINCREMENT never assigns, so the statement keeps
+      // one shape and is prepared once however ragged the last chunk is.
+      while (chunk.length < DENSE_LABEL_CHUNK) chunk.push(0n);
+      for (const row of statement.all(...chunk, scan.model, scan.dimensions, ...parameters) as DenseRow[]) {
+        const entry = this.#denseAccept(row, scan);
+        if (entry) accepted.push(entry);
+      }
+    }
+    return accepted.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  }
+
+  /** Open the configured index on first dense use, and bring it up to date. */
+  #resolveDenseIndex(model: string, dimensions: number): DenseIndex | null {
+    if (this.#denseResolved) return this.#denseIndex;
+    this.#denseResolved = true;
+    const selection = this.#transaction(() => createDenseIndex(this.#db, {
+      mode: this.#indexMode, model, dimensions, databasePath: this.#path, vecLoaded: this.#vecLoaded, ...(this.#vecError ? { vecError: this.#vecError } : {}),
+    }));
+    this.#denseIndex = selection.index;
+    this.#denseStatus = selection.status;
+    if (selection.index && selection.rebuild) this.#syncDenseIndex(selection.index, model, dimensions);
+    return this.#denseIndex;
+  }
+
+  /**
+   * Populate an index from `local_embeddings`, which stays the source of truth.
+   *
+   * This is what makes the index migration-free: a database written before it
+   * existed, or one whose sidecar file was lost, is caught up lazily on first
+   * dense use rather than by an upgrade step. HNSW resumes from its own
+   * watermark, so a lost flush costs the tail of the index and not the whole of
+   * it; sqlite-vec lives in the database file and simply re-upserts, which is
+   * idempotent. Rows are walked in `memory_id` order so labels — and therefore
+   * the graph an HNSW rebuild produces — are the same every time.
+   */
+  #syncDenseIndex(index: DenseIndex, model: string, dimensions: number): void {
+    const after = index.kind === 'hnsw' ? (index as HnswIndex).watermark : 0;
+    const statement = this.#db.prepare(`SELECT e.memory_id AS id, e.data AS vector, l.label
+      FROM local_embeddings e LEFT JOIN local_vec_labels l ON l.memory_id=e.memory_id AND l.model=e.model
+      WHERE e.model=? AND e.dimensions=? AND (l.label IS NULL OR l.label>?) ORDER BY e.memory_id`);
+    let batch: DenseIndexEntry[] = [];
+    this.#transaction(() => {
+      for (const row of statement.iterate(model, dimensions, after) as Iterable<{ id: string; vector: string; label: number | bigint | null }>) {
+        const label = row.label === null ? this.#assignLabel(row.id, model) : Number(row.label);
+        batch.push({ label, vector: Float32Array.from(this.#vector(JSON.parse(row.vector), dimensions)) });
+        if (batch.length === 512) { index.upsert(batch); batch = []; }
+      }
+      if (batch.length) index.upsert(batch);
+    });
+  }
+
+  #labelsFor(memoryIds: readonly string[]): number[] {
+    if (!memoryIds.length) return [];
+    const statement = this.#db.prepare('SELECT label FROM local_vec_labels WHERE memory_id=?');
+    return memoryIds.flatMap((memoryId) => (statement.all(memoryId) as { label: number | bigint }[]).map((row) => Number(row.label)));
+  }
+
+  /** Labels are AUTOINCREMENT, so one is never reused after an erasure — a reused
+   *  label would let a new record inherit a forgotten one's place in a stale index. */
+  #assignLabel(memoryId: string, model: string): number {
+    const row = this.#db.prepare('INSERT INTO local_vec_labels(memory_id,model) VALUES(?,?) ON CONFLICT(memory_id,model) DO UPDATE SET model=excluded.model RETURNING label').get(memoryId, model) as { label: number | bigint };
+    return Number(row.label);
   }
 
   #rankedRecall(input: RecallInput, eligible?: (memory: MemoryRecord) => boolean, at?: TemporalView): RecallResult[] {
@@ -1478,17 +1664,26 @@ export class LocalMemory {
   }
 
   forget(id: string): { deletedIds: string[] } {
+    let erased: number[] = [];
     const deletedIds = this.#transaction(() => {
       this.#owned(id);
       // Also purge correction history and derived text, which may quote the source.
       const records = this.#descendants([id], true);
       const visible = records.filter((record) => record.agentId === this.#agentId || record.visibility === 'workspace').map((record) => record.id);
+      // Read the labels before the delete, because the cascade takes them with it.
+      erased = this.#labelsFor(records.map((record) => record.id));
       for (const record of records) this.#db.prepare('DELETE FROM memories WHERE id=? AND workspace_id=?').run(record.id, this.#workspaceId);
       // Counts only. Naming the erased records here would defeat the erasure the
       // caller just asked for; their ledger entries cascaded away with them.
       this.#appendLedger('erasure', null, { erasure: { deletedCount: records.length } });
       return visible;
     });
+    // The vec0 rows went with the labels, inside the transaction, via the trigger.
+    // An HNSW index lives in a file the transaction cannot reach, so its vectors
+    // are struck here. Either way the record is already unreachable: its label is
+    // gone, AUTOINCREMENT never reissues it, and the authorization join drops any
+    // candidate whose label no longer resolves.
+    if (erased.length) this.#denseIndex?.remove(erased);
     // Secure deletion covers live SQLite/FTS content. OS snapshots, SSD remapping,
     // backups and a WAL pinned by another reader cannot be guaranteed erased.
     if (!this.#transactionDepth) this.#db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
@@ -1917,6 +2112,10 @@ export class LocalMemory {
     this.#embedderShared = false;
     if (this.#rerankerShared && this.#reranker) releaseSharedReranker(this.#reranker);
     this.#rerankerShared = false;
+    // An HNSW index lives outside the database file, so closing is when it is
+    // persisted. A flush lost to a crash costs the tail of the index, which the
+    // next open rebuilds from its watermark — it never costs correctness.
+    try { this.#denseIndex?.close(); } finally { this.#denseIndex = null; }
     this.#db.close();
     this.#closed = true;
   }
