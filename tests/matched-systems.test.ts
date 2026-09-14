@@ -206,14 +206,29 @@ describe('the agent-benchmark bridge', () => {
 });
 
 describe('the Zep adapter', () => {
-  const stub = (): { client: ZepLikeClient; added: string[]; deleted: string[] } => {
-    const store: { id: string; text: string }[] = [], added: string[] = [], deleted: string[] = [];
-    return { added, deleted, client: {
+  /** Implements the same surface `@getzep/zep-cloud`'s typings declare, including
+   * the asynchronous episode processing a real Zep graph performs. */
+  const stub = (unprocessedRounds = 0): { client: ZepLikeClient; added: string[]; deleted: string[]; removed: string[]; slept: number[] } => {
+    const store: { uuid: string; text: string; source: string; metadata: Record<string, unknown> }[] = [];
+    const added: string[] = [], deleted: string[] = [], removed: string[] = [], slept: number[] = [];
+    let rounds = unprocessedRounds, counter = 0;
+    return { added, deleted, removed, slept, client: {
       user: { add: async ({ userId }) => { added.push(userId); }, delete: async userId => { deleted.push(userId); } },
       graph: {
-        add: async ({ data, sourceDescription }) => { store.push({ id: sourceDescription ?? '', text: data }); },
-        search: async ({ query, limit }): Promise<ZepSearchResponse> => ({
-          episodes: store.filter(entry => entry.text.toLowerCase().includes(query.toLowerCase())).slice(0, limit).map(entry => ({ content: entry.text, sourceDescription: entry.id })) }),
+        add: async ({ data, sourceDescription, metadata }) => {
+          const uuid = `ep-${++counter}`;
+          store.push({ uuid, text: data, source: sourceDescription ?? '', metadata: metadata ?? {} });
+          return { uuid };
+        },
+        search: async ({ query, limit, scope }): Promise<ZepSearchResponse> => {
+          expect(scope).toBe('episodes');
+          return { episodes: store.filter(entry => entry.text.toLowerCase().includes(query.toLowerCase())).slice(0, limit)
+            .map(entry => ({ uuid: entry.uuid, content: entry.text, sourceDescription: entry.source, metadata: entry.metadata })) };
+        },
+        episode: {
+          getByUserId: async () => ({ episodes: store.map(entry => ({ uuid: entry.uuid, processed: rounds-- > 0 ? false : true })) }),
+          delete: async uuid => { removed.push(uuid); const at = store.findIndex(entry => entry.uuid === uuid); if (at >= 0) store.splice(at, 1); },
+        },
       },
     } };
   };
@@ -226,18 +241,20 @@ describe('the Zep adapter', () => {
       if (!resolution.available) {
         expect(resolution.reason).toContain('@getzep/zep-cloud is not installed');
         expect(resolution.reason).toContain('ZEP_API_KEY');
-        expect(resolution.reason).toContain('discontinued');
+        expect(resolution.reason).toContain('deprecated upstream');
+        expect(resolution.reason).toContain('no free self-hosted path');
       }
       expect(createZepFactory({ baseDir: base }).describe()).toContain('BLOCKED');
     } finally { rmSync(base, { recursive: true, force: true }); }
   });
 
-  it('ingests, retrieves and tears down against a client implementing the same surface', async () => {
-    const { client, added, deleted } = stub();
-    const resolution = await createZepFactory({ baseDir: tmpdir(), client }).resolve({ seed: 0, signal: new AbortController().signal });
+  it('ingests, retrieves, deletes and tears down against a client implementing the same surface', async () => {
+    const { client, added, deleted, removed, slept } = stub();
+    const resolution = await createZepFactory({ baseDir: tmpdir(), client, sleep: async ms => { slept.push(ms); } }).resolve({ seed: 0, signal: new AbortController().signal });
     expect(resolution.available).toBe(true);
     if (!resolution.available) return;
     expect(resolution.system.mode).toContain('extraction=graphiti');
+    expect(resolution.system.mode).toContain('scope=episodes');
     const signal = new AbortController().signal;
     const session = await resolution.system.create({ corpusId: 'c0', seed: 3, signal });
     await session.ingest([
@@ -245,10 +262,35 @@ describe('the Zep adapter', () => {
       { id: 'chunk-b', text: 'Mountain weather is unrelated.' },
     ], { signal });
     expect(added).toEqual(['matched-c0-3']);
+    expect(slept).toEqual([]);
     expect(await session.retrieve({ query: 'orchid', limit: 5, signal })).toEqual(['chunk-a']);
     expect(await session.retrieve({ query: 'nothing here', limit: 5, signal })).toEqual([]);
+    await session.forget!(['chunk-a'], { signal });
+    expect(removed).toEqual(['ep-1']);
+    expect(await session.retrieve({ query: 'orchid', limit: 5, signal })).toEqual([]);
     await session.close();
     expect(deleted).toEqual(['matched-c0-3']);
+  });
+
+  it('waits for Zep\'s asynchronous extraction instead of measuring its queue depth', async () => {
+    const { client, slept } = stub(3);
+    const resolution = await createZepFactory({ baseDir: tmpdir(), client, sleep: async ms => { slept.push(ms); } }).resolve({ seed: 0, signal: new AbortController().signal });
+    if (!resolution.available) throw new Error('stub client should resolve');
+    const signal = new AbortController().signal;
+    const session = await resolution.system.create({ corpusId: 'c0', seed: 1, signal });
+    await session.ingest([{ id: 'chunk-a', text: 'orchid' }], { signal });
+    // Backs off rather than hammering, and only returns once nothing is pending.
+    expect(slept).toEqual([1000, 2000, 4000]);
+    expect(await session.retrieve({ query: 'orchid', limit: 5, signal })).toEqual(['chunk-a']);
+  });
+
+  it('fails loudly rather than scoring a half-loaded graph', async () => {
+    const { client } = stub(Number.MAX_SAFE_INTEGER);
+    const resolution = await createZepFactory({ baseDir: tmpdir(), client, ingestSettleMs: 1, sleep: async () => {} }).resolve({ seed: 0, signal: new AbortController().signal });
+    if (!resolution.available) throw new Error('stub client should resolve');
+    const signal = new AbortController().signal;
+    const session = await resolution.system.create({ corpusId: 'c0', seed: 1, signal });
+    await expect(session.ingest([{ id: 'chunk-a', text: 'orchid' }], { signal })).rejects.toThrow('did not finish processing');
   });
 });
 
