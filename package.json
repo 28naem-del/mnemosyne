@@ -113,6 +113,10 @@
     "./bridge": {
       "types": "./dist/bridge/index.d.ts",
       "import": "./dist/bridge/index.js"
+    },
+    "./local/embedding": {
+      "types": "./dist/local/embedding/index.d.ts",
+      "import": "./dist/local/embedding/index.js"
     }
   },
   "files": [
@@ -144,7 +148,9 @@
     "pretest:watch": "npm run build",
     "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts examples/agent-loop.ts examples/adaptive-context.ts examples/agent-benchmark.ts examples/backup-restore.ts examples/profiles.ts examples/gradual-migration.ts",
     "evaluate": "node dist/cli/index.js evaluate",
-    "benchmark:agent": "node dist/cli/index.js benchmark-agent"
+    "benchmark:agent": "node dist/cli/index.js benchmark-agent",
+    "setup:embedder": "node scripts/fetch-local-model.mjs",
+    "benchmark:fetch": "node scripts/fetch-benchmark-corpus.mjs"
   },
   "keywords": [
     "ai",
@@ -175,6 +181,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
+    "onnxruntime-node": "^1.29.0",
     "uuid": "^14.0.2",
     "zod": "^4.6.2"
   },
