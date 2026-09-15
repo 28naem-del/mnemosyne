@@ -98,6 +98,10 @@ export interface CorpusBenchmarkOptions {
    * cross-encoder rescores it, 0-4. Defaults to 0, the feature off. Only the
    * `multi` granularity reads it; a `turn` run is unaffected at any value. */
   rerankContext?: number;
+  /** Candidates given the contextual pass, 1-1000. Defaults to the engine's own
+   * default. It is a latency valve: only these rows are submitted to the second
+   * model pass. Read only when `rerankContext` is above 0. */
+  rerankContextTopN?: number;
   /**
    * Competitor systems scored in the same loop, on the same chunks, with the same
    * packing budget and the same scorer. Each becomes a `system:<id>` condition.

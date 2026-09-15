@@ -666,10 +666,20 @@ export interface GranularityOptions {
    * and skipped when they do not fit; the candidate is never budgeted and never
    * truncated. */
   rerankContextTokens?: number;
-  /** Candidates given a contextual pass, 1-1000. Defaults to 1000, i.e. all of
-   * the rerank head. Exists only as a latency valve; lowering it is a second
-   * resort after `rerankContextTokens`, because it changes WHICH candidates get
-   * help rather than how much. */
+  /** Candidates given a contextual pass, 1-1000. Defaults to 14.
+   *
+   * The latency valve, and the one that actually bites: ONLY these rows are
+   * submitted to the second pass, so its cost is proportional to this number and
+   * not to the whole rerank head. Everything below the cut keeps the isolated
+   * pass's ordering in the contextual channel, so lowering this withholds help
+   * from a candidate rather than penalising it.
+   *
+   * 14 is not a taste call, it is the budget divided by the measured price. A
+   * windowed row costs ~11.9 ms on the bundled int8 cross-encoder (measured: 32
+   * rows add 379.5 ms to p95), and the p95 budget a multi run has over the turn
+   * path it must stay within twice of is ~162 ms on a quiet host. The cost is
+   * flat rather than tail-heavy — p50 and p95 move together — so this is a
+   * throughput cap and not a timeout. */
   rerankContextTopN?: number;
   /** Derived documents expanded per channel, 1-500. Defaults to 12. */
   expandDocs?: number;

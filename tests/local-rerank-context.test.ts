@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildContextPassage, contextBudget, type ContextNeighbour } from '../src/local/reranking/context.js';
+import { buildContextPassage, contextBudget, contextualChannel, type ContextNeighbour } from '../src/local/reranking/context.js';
 import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type StoreMemoryInput, type SyncMemoryEmbedder, type SyncMemoryReranker } from '../src/local/index.js';
 
 /**
@@ -171,6 +171,72 @@ describe('with the feature off, the reranker sees exactly what it sees today', (
   });
 });
 
+describe('the contextual channel, which is where the second pass is composed', () => {
+  const ranked = (...ids: string[]): { id: string }[] => ids.map(id => ({ id }));
+
+  it('permutes the re-read candidates over the slots they already held, and moves nothing else', () => {
+    const isolated = ranked('a', 'b', 'c', 'd', 'e');
+    // b, d and e were re-read; the second pass orders them e, b, d.
+    const channel = contextualChannel(ranked('e', 'b', 'd'), isolated);
+    expect(channel.map(entry => entry.id)).toEqual(['a', 'e', 'c', 'b', 'd']);
+  });
+
+  it('is exactly a full re-sort when every candidate was re-read', () => {
+    const isolated = ranked('a', 'b', 'c');
+    expect(contextualChannel(ranked('c', 'a', 'b'), isolated).map(entry => entry.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('is the isolated ranking itself when nothing was re-read', () => {
+    const isolated = ranked('a', 'b', 'c');
+    expect(contextualChannel([], isolated).map(entry => entry.id)).toEqual(['a', 'b', 'c']);
+    expect(contextualChannel([], isolated)).not.toBe(isolated);
+  });
+
+  it('carries the re-read candidates own entries, so the channel reports the score the second pass gave them', () => {
+    const windowed = [{ id: 'b', score: 0.9 }];
+    const channel = contextualChannel(windowed, [{ id: 'a', score: 0.4 }, { id: 'b', score: 0.1 }]);
+    expect(channel[1]).toBe(windowed[0]);
+  });
+});
+
+describe('rerankContextTopN is a latency valve: only the rows it admits are submitted', () => {
+  it('submits no more candidates than the valve allows', async () => {
+    const reranker = recordingReranker(() => 0);
+    const { db } = seeded({ reranker, granularity: { rerankContext: 2, rerankContextTopN: 3 } });
+    await db.indexGranularity({ embedder: stubEmbedder() });
+    db.recall({ query: QUERY, limit: 6, granularity: 'multi' });
+    const [isolated, windowed] = reranker.calls;
+    expect(isolated.length).toBeGreaterThan(3);
+    expect(windowed).toHaveLength(3);
+    // They are the FIRST three of the head, in the head's own order.
+    windowed.forEach((passage, index) => expect(passage.startsWith(isolated[index])).toBe(true));
+  });
+
+  it('never submits a candidate whose passage would be its own text', async () => {
+    const reranker = recordingReranker(() => 0);
+    const { db } = seeded({ reranker, granularity: { rerankContext: 2 } });
+    // Sessionless, so the derived index gives it no neighbours: a second scoring
+    // of it would buy a number the first pass already has.
+    const lonely = db.store({ text: 'Catalogue export approval owner, with nobody either side of it.', source, trust: 'observed' } satisfies StoreMemoryInput);
+    await db.indexGranularity({ embedder: stubEmbedder() });
+    db.recall({ query: QUERY, limit: 12, granularity: 'multi' });
+    const [isolated, windowed] = reranker.calls;
+    expect(isolated.some(passage => passage === lonely.text)).toBe(true);
+    expect(windowed.some(passage => passage.startsWith(lonely.text))).toBe(false);
+    expect(windowed.length).toBe(isolated.length - 1);
+  });
+
+  it('does not make the model call at all when no candidate has a neighbour', async () => {
+    const reranker = recordingReranker(() => 0);
+    const db = createLocalMemory({ path: ':memory:', workspaceId: 'project', agentId: 'alice', embedder: stubEmbedder(), reranker, granularity: { rerankContext: 2 } });
+    opened.push(db);
+    db.store({ text: 'Catalogue export approval owner, alone in the corpus.', source, trust: 'observed' } satisfies StoreMemoryInput);
+    await db.indexGranularity({ embedder: stubEmbedder() });
+    db.recall({ query: QUERY, limit: 6, granularity: 'multi' });
+    expect(reranker.calls).toHaveLength(1);
+  });
+});
+
 describe('with the feature on, a second pass scores each candidate in its neighbourhood', () => {
   it('makes a second call whose passages lead with the candidate and carry its neighbours', async () => {
     const reranker = recordingReranker(() => 0);
@@ -179,10 +245,13 @@ describe('with the feature on, a second pass scores each candidate in its neighb
     db.recall({ query: QUERY, limit: 6, granularity: 'multi' });
     expect(reranker.calls).toHaveLength(2);
     const [isolated, windowed] = reranker.calls;
+    // Every record here sits in a session, so every one of them gets a window and
+    // the two calls line up positionally. What is asserted is the alignment, not
+    // the count: the second call carries only the rows a window was built for.
     expect(windowed).toHaveLength(isolated.length);
     // Every windowed passage is its own isolated passage plus more, in that order.
     windowed.forEach((passage, index) => expect(passage.startsWith(isolated[index])).toBe(true));
-    expect(windowed.some((passage, index) => passage.length > isolated[index].length)).toBe(true);
+    expect(windowed.every((passage, index) => passage.length > isolated[index].length)).toBe(true);
     // A turn that is evidence only in context now arrives with the turns above it.
     const orphan = windowed.find(passage => passage.startsWith('Everything went out on the Friday in the end.'));
     expect(orphan).toBeDefined();

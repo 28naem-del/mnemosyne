@@ -49,7 +49,7 @@ export const GRANULARITY_DEFAULTS = Object.freeze({
   reserve: 16,
   rerankContext: 0,
   rerankContextTokens: 192,
-  rerankContextTopN: 1000,
+  rerankContextTopN: 14,
 });
 
 /** Iteration order for the derived levels, so a channel list is deterministic. */

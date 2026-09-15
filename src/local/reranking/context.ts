@@ -111,3 +111,35 @@ export function buildContextPassage(candidate: string, neighbours: readonly Cont
 export function contextBudget(queryTokens: number, candidateTokens: number, limit: number): number {
   return Math.max(0, Math.min(limit, PAIR_TOKENS - 3 - queryTokens - candidateTokens));
 }
+
+/**
+ * The contextual channel: the isolated pass's ranking with the candidates the
+ * SECOND pass actually read permuted among the slots they already held.
+ *
+ * `windowed` is those candidates in contextual order; `isolated` is the whole
+ * rescored set in isolated order. A candidate the second pass never saw keeps its
+ * exact position, and the ones it did see are redistributed over exactly the
+ * positions they occupied between them. Nothing moves that was not re-read.
+ *
+ * This is what makes `rerankContextTopN` a LATENCY valve and not a quality dial.
+ * The two alternatives both smuggle a judgement in:
+ *   - sorting the whole channel by score would compare two differently-composed
+ *     batches. A batch pads to its longest member, so the windowed rows and the
+ *     isolated rows are priced differently; measured on this checkpoint that is a
+ *     ~2.6 % systematic offset in logit space, and a score sort would launder it
+ *     into a ranking that nothing downstream corrects.
+ *   - putting the windowed rows first and the rest after would promote a
+ *     candidate for being ABOVE the cut rather than for what the model read,
+ *     which is a fused-rank bias wearing a cross-encoder's clothes.
+ *
+ * When every candidate is windowed this is exactly a full re-sort by contextual
+ * score, which is the unbounded shape this valve narrows — so turning the valve
+ * wide open recovers it, by construction rather than by coincidence.
+ */
+export function contextualChannel<T extends { readonly id: string }>(windowed: readonly T[], isolated: readonly T[]): T[] {
+  if (!windowed.length) return [...isolated];
+  const rescored = new Set(windowed.map(entry => entry.id));
+  let next = 0;
+  return isolated.map(entry => (rescored.has(entry.id) ? windowed[next++] : entry));
+}
+
