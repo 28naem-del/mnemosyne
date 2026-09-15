@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { gatedDescribe } from './env-gates.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ const LEXICAL_ONLY = 'vintage car repair manual, page 12.';
 const QUERY = 'vintage car repair';
 
 const cached = bundledModelStatus().present;
-const withModel = cached ? describe : describe.skip;
+const withModel = gatedDescribe('model', cached);
 
 describe('zero-model deterministic retrieval stays first class', () => {
   it('is selectable explicitly and reports that no model participates', () => {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { gatedDescribe } from './env-gates.js';
 import { connect } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -24,7 +25,7 @@ import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type Stor
 
 const cached = bundledRerankerStatus().present;
 /** The reranker cache is populated once by `npm run setup:reranker`. */
-const withModel = cached ? describe : describe.skip;
+const withModel = gatedDescribe('reranker', cached);
 const open: SyncMemoryReranker[] = [];
 const opened: LocalMemory[] = [];
 const roots: string[] = [];

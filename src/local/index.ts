@@ -16,10 +16,10 @@ import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared
 // after './ledger.js' and directly after './reranking/shared.js', and this gap
 // is the one place a third insertion merges without a conflict.
 import type { LedgerTemporalRouting } from './types.js';
-import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
+import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
-import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
+import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, noteLiveClock, seedLiveClockFromStore, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
 
 export type * from './types.js';
@@ -115,6 +115,16 @@ export class RollbackConflictError extends Error {
  * workspace/agent IDs are isolation selectors, not authentication credentials.
  * File access bypasses API isolation, so do not give hostile agents the DB file.
  */
+/** The `cacheSize` ceiling, 2 GiB, stated once per unit of SQLite's
+ * sign-encoded `PRAGMA cache_size`. A negative value is already a KiB budget,
+ * so the KiB form is the ceiling written directly; the page form is the same
+ * 2 GiB at SQLite's 4 KiB default `page_size`, which is what this engine opens
+ * with (it sets no `PRAGMA page_size` of its own). A caller running a larger
+ * page size and wanting a true 2 GiB should pass the negative form, which is
+ * the one SQLite honours in bytes regardless of page size. */
+const CACHE_SIZE_MAX_KIB = 2_097_152;
+const CACHE_SIZE_MAX_PAGES = CACHE_SIZE_MAX_KIB / 4;
+
 export class LocalMemory {
   readonly #db: DatabaseSync;
   readonly #workspaceId: string;
@@ -162,9 +172,10 @@ export class LocalMemory {
   /** See `./bm25-corpus-stats.js`. */
   #bm25StatsCache: CorpusStatsCache = new Map();
   #bm25TemporalBounds = { present: false };
-  /** Highest clock reading a live BM25 scope has been evaluated at on this
-   * connection; see `liveClockSteppedBack` for why caching below it is unsafe. */
-  #bm25LiveClock = { highWater: '' };
+  /** Highest clock reading this connection has taken at all — fed by `#time()`,
+   * so writes count as well as recalls; see `liveClockSteppedBack` for why
+   * caching below it is unsafe. */
+  #bm25LiveClock = { highWater: '', seeded: false };
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
@@ -205,11 +216,16 @@ export class LocalMemory {
     if (options.sqliteVecPath !== undefined) this.#sqliteVecPath = v.string(options.sqliteVecPath, 'sqliteVecPath', 4096);
     // SQLite's own PRAGMA cache_size sign convention: positive is a page count,
     // negative is a KiB budget (the size SQLite will actually respect, since page
-    // size varies). Bounded well below any value that could itself be a memory
-    // hazard; the default (applied below when this is unset) is -65536, 64 MiB.
+    // size varies). The ceiling is 2 GiB either way — but the two forms do not
+    // count in the same unit, so one `Math.abs()` bound cannot express it: the
+    // same magnitude that means 2 GiB as KiB means 2 GiB * page_size as pages,
+    // which at SQLite's 4 KiB default is 8 GiB, four times the documented
+    // intent. Each sign is therefore bounded in its own unit. The default
+    // (applied below when this is unset) is -65536, 64 MiB.
     if (options.cacheSize !== undefined) {
-      if (!Number.isSafeInteger(options.cacheSize) || options.cacheSize === 0 || Math.abs(options.cacheSize) > 2_097_152) {
-        throw new TypeError('cacheSize must be a nonzero integer of magnitude at most 2097152 (SQLite PRAGMA cache_size: positive = pages, negative = KiB)');
+      const bound = options.cacheSize > 0 ? CACHE_SIZE_MAX_PAGES : CACHE_SIZE_MAX_KIB;
+      if (!Number.isSafeInteger(options.cacheSize) || options.cacheSize === 0 || Math.abs(options.cacheSize) > bound) {
+        throw new TypeError(`cacheSize must be a nonzero integer within SQLite's PRAGMA cache_size convention: positive = pages, at most ${CACHE_SIZE_MAX_PAGES}; negative = KiB, at most ${CACHE_SIZE_MAX_KIB} in magnitude (2 GiB either way)`);
       }
       this.#cacheSize = options.cacheSize;
     }
@@ -452,10 +468,28 @@ export class LocalMemory {
     });
   }
 
+  /** The single place this engine reads its clock. Every reading feeds
+   * `#bm25LiveClock` — writes as much as reads — because the BM25 live-view
+   * cache guard has to know the highest instant this connection has *observed*,
+   * not merely the highest it has recalled at; see `noteLiveClock`. Only ever
+   * sees `this.#now()`, never a caller-supplied `asOf`. */
+  /** Whether live-view corpus statistics may be cached at `now`, which is this
+   * engine's own clock reading and never a caller-chosen `asOf`. Ordered:
+   * the workspace must have scheduled no boundary crossing at all, and this
+   * reading must not sit below the highest clock either this connection or the
+   * store has seen. */
+  #liveStatsCacheable(now: string): boolean {
+    if (hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds)) return false;
+    seedLiveClockFromStore(this.#db, this.#workspaceId, this.#bm25LiveClock);
+    return !liveClockSteppedBack(now, this.#bm25LiveClock);
+  }
+
   #time(): string {
     const date = this.#now();
     if (!(date instanceof Date) || !Number.isFinite(date.getTime())) throw new TypeError('now must return a valid Date');
-    return date.toISOString();
+    const iso = date.toISOString();
+    noteLiveClock(iso, this.#bm25LiveClock);
+    return iso;
   }
 
   #decode(row: unknown): MemoryRecord | null {
@@ -772,7 +806,10 @@ export class LocalMemory {
     if (v.enumeration(input.temporalRouting ?? 'off', ['auto', 'off'] as const, 'temporalRouting') === 'off') return null;
     const now = this.#time();
     const parse = parseTemporalQuery(v.string(input.query, 'query', 4096), { now });
-    if (!parse.window || parse.relation === 'none' || parse.grain === 'none' || parse.confidence < TEMPORAL_ROUTING_MIN_CONFIDENCE) return null;
+    // Strictly above the floor: the floor grade is the weakest reading the
+    // parser will emit (a bare year, a bare month, an unqualified part-of-month)
+    // and admitting it at equality let the weakest guess set a real `asOf`.
+    if (!parse.window || parse.relation === 'none' || parse.grain === 'none' || parse.confidence <= TEMPORAL_ROUTING_CONFIDENCE_FLOOR) return null;
     // A bound the caller states may sit in the future — that is explicit intent,
     // and the branch below already lets it win. A bound read out of a query may
     // not: "as of today" resolves to the last instant of today and "through
@@ -1566,11 +1603,10 @@ export class LocalMemory {
     const { documents, totalLength } = corpusStats({
       db: this.#db, cache: this.#bm25StatsCache, scope, parameters,
       key: corpusStatsCacheKey(input.includeUntrusted, kinds, time),
-      // `||` short-circuits, so the live-only guards below are never reached
-      // for a historical view — `liveClockSteppedBack` must not see a
-      // caller-chosen `asOf`, only a clock reading.
-      cacheable: time.historical || (!hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds)
-        && !liveClockSteppedBack(time.asOf, this.#bm25LiveClock)),
+      // `||` short-circuits, so the live-only guard below is never reached for
+      // a historical view — `liveClockSteppedBack` must not see a caller-chosen
+      // `asOf`, only a clock reading.
+      cacheable: time.historical || this.#liveStatsCacheable(time.asOf),
       // The instant this scope is evaluated at. For a live view `#temporal()`
       // sets `asOf === knownAt === #time()`, so this is the reader's own clock
       // read once, with no extra tick of an injected or monotonic one.

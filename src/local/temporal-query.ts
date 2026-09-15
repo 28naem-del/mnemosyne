@@ -81,14 +81,6 @@ export interface TemporalQueryOptions {
   now?: Date | string;
 }
 
-/**
- * The confidence at or above which a caller should act on a parse. A month or a
- * year named without further qualification sits exactly on this line: it is a
- * real constraint, but an easy one to mean loosely. Absolute dates sit well above
- * it, and anything the parser declines to read reports 0 and falls below it.
- */
-export const TEMPORAL_ROUTING_MIN_CONFIDENCE = 0.6;
-
 /** The two open ends a parsed window can carry, as epoch milliseconds: everything
  * before, and everything after. A caller that widens a window has to clamp to
  * these, because a date past year 9999 no longer sorts as an ISO string. */
@@ -101,6 +93,35 @@ const DAY_MS = 86_400_000;
 const MAX_UNITS = 1000;
 
 const CONFIDENCE = Object.freeze({ day: 0.95, month: 0.9, relative: 0.85, unqualified: 0.6 });
+
+/**
+ * The confidence a parse must **exceed** before a caller narrows on it —
+ * exclusive, not inclusive, and equal to {@link CONFIDENCE}.unqualified by
+ * construction rather than by coincidence.
+ *
+ * The parser emits exactly five confidences: `0.95` (an absolute day), `0.9` (a
+ * named month), `0.85` (a relative expression), `0.6` (unqualified — a bare
+ * year, a bare month, a bare day-of-month, an unqualified part-of-month, and
+ * the weaker endpoint of any `between`), and `0` for a query it declines to
+ * read at all. `0.6` is therefore not a threshold that happens to sit near the
+ * bottom of the scale: it *is* the bottom of the scale, the weakest reading the
+ * parser is willing to emit at all.
+ *
+ * Admitting at equality meant the weakest guess the parser can make routed on
+ * the same footing as an absolute date, and could set a real bound — "before
+ * 2023" narrowing `asOf` to 2022-12-31T23:59:59.999Z off a bare year. The gate
+ * is strict so that the floor grade is the one thing that does not clear it.
+ *
+ * Written as a strict comparison against a grade the table actually names,
+ * rather than as a nudged literal like `0.61`: nothing lies between `0.6` and
+ * `0.85`, so the two behave identically today, but `0.61` is a number the
+ * parser never produces and could not justify. It would sit in an empty gap
+ * looking like a tuned value, and would silently start admitting anything a
+ * later grade put in `(0.6, 0.61)`. Anchoring to `CONFIDENCE.unqualified`
+ * keeps the rule — "beat the weakest reading the parser will emit" — true
+ * however the table is retuned.
+ */
+export const TEMPORAL_ROUTING_CONFIDENCE_FLOOR: number = CONFIDENCE.unqualified;
 
 const MONTHS: Readonly<Record<string, number>> = Object.freeze({
   january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
@@ -361,8 +382,9 @@ const nothing = (query: string): TemporalQueryParse =>
  *
  * Returns `confidence: 0` and no window when the query carries no time
  * expression, when the only date-like token is ambiguous (`2/3/2026`), or when a
- * phrase names an impossible date (31 February). A caller should narrow only at
- * or above `TEMPORAL_ROUTING_MIN_CONFIDENCE`.
+ * phrase names an impossible date (31 February). A caller should narrow only
+ * *above* `TEMPORAL_ROUTING_CONFIDENCE_FLOOR`, which the weakest emittable
+ * reading sits exactly on and therefore does not clear.
  *
  * `asOf` is set only for exclusionary phrases, where the caller is saying later
  * evidence must not be visible. A scoping phrase reports its `window` and leaves
