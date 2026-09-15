@@ -1,0 +1,8 @@
+# The uncompressed raw reports are regenerable and large. What is committed is the
+# gzipped report for each part, which contains every per-question attempt record.
+#
+#   gunzip -k locomo-partA-k10.json.gz     # restore a full raw report
+#
+*.json
+# Derived LoCoMo parts are CC BY-NC 4.0 source data and are never committed.
+parts/

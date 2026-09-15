@@ -218,14 +218,20 @@ a fair comparison and a flattering one:
 | System | Status | Reason |
 |---|---|---|
 | Mem0 OSS, extraction off | **scored** | Ran to completion. Cost: **$0**. |
-| Mem0 OSS, LLM extraction (\`infer:true\`) | **not run — spend not authorised** | The write path calls an LLM per \`add()\`. Estimated below. No key was read. |
+| Mem0 OSS, LLM extraction (\`infer:true\`) | **not run here — spend not authorised on 14 September; measured since** | The write path calls an LLM per \`add()\`. Estimated below. No key was read for *this* run. The spend was authorised the next day and the path was measured on two LoCoMo parts: [matched-run-2026-09-15-llm-extraction.md](matched-run-2026-09-15-llm-extraction.md). |
 | Zep Cloud | **not run — no credential** | ${zepReason} |
-| Graphiti (Zep's engine, self-hosted) | **not run — spend not authorised** | \`add_episode\` always makes generative calls. Estimated below. |
+| Graphiti (Zep's engine, self-hosted) | **not run** | \`add_episode\` always makes generative calls. Estimated below. Spend for it was authorised on 15 September and it still did not run: this repository has no standalone Graphiti adapter, and the only path to it from here is paid Zep Cloud, which remains unauthorised. |
 
 ### The cost estimates, with their arithmetic
 
 These are **estimates, not measurements**, and they are the reason those rows are empty.
 Nothing was spent; no metered API was called at any point in this run.
+
+**Checked since.** The Mem0 estimate below was later tested against a measurement on two LoCoMo
+parts ([matched-run-2026-09-15-llm-extraction.md](matched-run-2026-09-15-llm-extraction.md)):
+measured **\$0.0007 per chunk** against the \$0.00048 assumed here, i.e. **≈ \$4.27** for the full
+corpus rather than ≈ \$2.80 — the right order of magnitude, 1.5x low. The Graphiti estimate below
+remains an estimate.
 
 Measured inputs, from the raw reports: LoCoMo is **5,882 turns / 5,882 ingested chunks /
 726,954 bytes** of turn text across 10 conversations.
