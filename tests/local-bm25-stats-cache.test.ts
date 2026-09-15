@@ -682,5 +682,78 @@ describe('BM25 corpus statistics cache', () => {
       db.recall({ query: 'widget', lexicalScoring: 'bm25' });
       expect(probe.calls()).toBe(2); // the past asOf never became the high-water mark
     });
+    it('does not serve statistics cached below a clock another connection wrote at', () => {
+      // The cross-connection carrier `noteLiveClock` cannot reach: the writer
+      // commits at day(12) and closes *before* the reader exists, so the
+      // reader's `writeSeq` is 0 and `PRAGMA data_version` is already final —
+      // neither counter can move. The reader's first clock reading is day(3),
+      // which is its own high-water mark, so nothing looks like a step back.
+      // The store's own `created_at` is the evidence that some engine read a
+      // clock that high, and seeding from it is what closes this.
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-writeclock-crossconn-'));
+      const path = join(root, 'memory.sqlite');
+      const shared = { path, workspaceId: 'test', retrieval: 'lexical' as const };
+
+      const writer = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(12)) });
+      writer.store(fact('widget alpha one', { visibility: 'workspace' }));
+      writer.store(fact('widget beta two', { visibility: 'workspace' }));
+      writer.close(); // gone before the reader opens
+
+      let current = 3; // the reader's clock is behind the writer's
+      const reader = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(current)) });
+      opened.push(reader);
+      expect(reader.recall({ query: 'widget', lexicalScoring: 'bm25' })).toHaveLength(0);
+
+      const probe = countCorpusStatsCalls();
+      current = 20; // the reader's clock corrects forward, past the writes
+      const after = reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      const recomputed = probe.calls();
+      vi.restoreAllMocks();
+
+      const cold = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(20)) });
+      opened.push(cold);
+      const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(truth).toHaveLength(2);
+      expect(after).toHaveLength(2); // the defect returned 0 here
+      expect(pairs(after)).toEqual(pairs(truth));
+      expect(recomputed).toBe(1);
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it('seeds the mark once per connection and still caches a workspace at rest', () => {
+      // The seed is a covering-index MAX on `memories_page`, but it must also
+      // not become a per-recall cost or a reason to stop caching: a reader
+      // whose clock is at or above everything in the store caches exactly as it
+      // did before the seed existed.
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-seed-once-'));
+      const path = join(root, 'memory.sqlite');
+      const shared = { path, workspaceId: 'test', retrieval: 'lexical' as const };
+      const writer = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(5)) });
+      writer.store(fact('widget alpha', { visibility: 'workspace' }));
+      writer.close();
+
+      let seeds = 0;
+      const prepare = DatabaseSync.prototype.prepare;
+      vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function(this: DatabaseSync, sql: string) {
+        if (sql.includes('MAX(created_at)')) seeds++;
+        return prepare.call(this, sql);
+      });
+      let current = 9; // ahead of everything already stored
+      const reader = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(current)) });
+      opened.push(reader);
+      expect(seeds).toBe(0); // nothing paid at open
+      expect(reader.recall({ query: 'widget', lexicalScoring: 'bm25' })).toHaveLength(1);
+      expect(seeds).toBe(1);
+      current = 10; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      current = 11; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(seeds).toBe(1); // once per connection, not once per recall
+      vi.restoreAllMocks();
+
+      const probe = countCorpusStatsCalls();
+      current = 12; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      current = 13; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(probe.calls()).toBe(0); // still served from the warm entry
+      rmSync(root, { recursive: true, force: true });
+    });
   });
 });

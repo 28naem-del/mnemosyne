@@ -19,7 +19,7 @@ import type { LedgerTemporalRouting } from './types.js';
 import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
-import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, noteLiveClock, type CorpusStatsCache } from './bm25-corpus-stats.js';
+import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, noteLiveClock, seedLiveClockFromStore, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
 
 export type * from './types.js';
@@ -165,7 +165,7 @@ export class LocalMemory {
   /** Highest clock reading this connection has taken at all — fed by `#time()`,
    * so writes count as well as recalls; see `liveClockSteppedBack` for why
    * caching below it is unsafe. */
-  #bm25LiveClock = { highWater: '' };
+  #bm25LiveClock = { highWater: '', seeded: false };
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
@@ -458,6 +458,17 @@ export class LocalMemory {
    * cache guard has to know the highest instant this connection has *observed*,
    * not merely the highest it has recalled at; see `noteLiveClock`. Only ever
    * sees `this.#now()`, never a caller-supplied `asOf`. */
+  /** Whether live-view corpus statistics may be cached at `now`, which is this
+   * engine's own clock reading and never a caller-chosen `asOf`. Ordered:
+   * the workspace must have scheduled no boundary crossing at all, and this
+   * reading must not sit below the highest clock either this connection or the
+   * store has seen. */
+  #liveStatsCacheable(now: string): boolean {
+    if (hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds)) return false;
+    seedLiveClockFromStore(this.#db, this.#workspaceId, this.#bm25LiveClock);
+    return !liveClockSteppedBack(now, this.#bm25LiveClock);
+  }
+
   #time(): string {
     const date = this.#now();
     if (!(date instanceof Date) || !Number.isFinite(date.getTime())) throw new TypeError('now must return a valid Date');
@@ -1574,11 +1585,10 @@ export class LocalMemory {
     const { documents, totalLength } = corpusStats({
       db: this.#db, cache: this.#bm25StatsCache, scope, parameters,
       key: corpusStatsCacheKey(input.includeUntrusted, kinds, time),
-      // `||` short-circuits, so the live-only guards below are never reached
-      // for a historical view — `liveClockSteppedBack` must not see a
-      // caller-chosen `asOf`, only a clock reading.
-      cacheable: time.historical || (!hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds)
-        && !liveClockSteppedBack(time.asOf, this.#bm25LiveClock)),
+      // `||` short-circuits, so the live-only guard below is never reached for
+      // a historical view — `liveClockSteppedBack` must not see a caller-chosen
+      // `asOf`, only a clock reading.
+      cacheable: time.historical || this.#liveStatsCacheable(time.asOf),
       // The instant this scope is evaluated at. For a live view `#temporal()`
       // sets `asOf === knownAt === #time()`, so this is the reader's own clock
       // read once, with no extra tick of an injected or monotonic one.

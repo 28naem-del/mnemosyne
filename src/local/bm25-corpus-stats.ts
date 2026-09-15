@@ -192,6 +192,43 @@ export function liveClockSteppedBack(now: string, state: { highWater: string }):
 }
 
 /**
+ * Seeds this connection's high-water mark, once, from the highest `created_at`
+ * the store itself carries for this workspace.
+ *
+ * {@link noteLiveClock} can only remember clocks *this* connection has read,
+ * which leaves the cross-connection carrier open: a writer at a high clock
+ * commits and closes, a reader then opens with its clock behind (NTP step,
+ * snapshot restore, a second machine), and the reader's first live recall is
+ * its own first clock reading — so nothing looks like a step back. The write
+ * landed before the reader existed, so `PRAGMA data_version` is already at its
+ * final value and `writeSeq` is 0: neither counter moves, the count computed
+ * at the low instant is cached, and forward advance serves it. Same silent
+ * total loss as the same-connection carrier, just across a process boundary.
+ *
+ * The store's own `created_at` column is the evidence that some engine's clock
+ * once read that high, so it is the right seed, and `memories_page`
+ * (`workspace_id, created_at, id`) makes it a covering-index MAX — measured at
+ * ~1.4us, paid once per connection on the first live corpus-stats computation
+ * rather than at open, so a connection that never runs a live BM25 recall
+ * never pays it at all.
+ *
+ * This cannot cost a workspace its live caching in the case the flag was
+ * carefully written to avoid. A record whose `createdAt` is above the *writer's*
+ * own clock is a future-dated import, and {@link markTemporalBoundsIfNeeded}
+ * already flags exactly that, so {@link hasTemporalBounds} has already turned
+ * live caching off for the workspace before this is ever consulted. What is
+ * left is honest clock skew between engines, and declining to cache while this
+ * reader is behind another writer's clock is the conservative answer for
+ * precisely as long as the skew lasts.
+ */
+export function seedLiveClockFromStore(db: DatabaseSync, workspaceId: string, state: { highWater: string; seeded: boolean }): void {
+  if (state.seeded) return;
+  state.seeded = true;
+  const row = db.prepare('SELECT MAX(created_at) AS high FROM memories WHERE workspace_id=?').get(workspaceId) as { high: string | null } | undefined;
+  if (typeof row?.high === 'string' && row.high > state.highWater) state.highWater = row.high;
+}
+
+/**
  * Marks a workspace as carrying a record whose scope membership can still
  * change from clock advance alone — see {@link hasTemporalBounds}.
  *
