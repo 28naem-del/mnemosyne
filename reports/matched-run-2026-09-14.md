@@ -270,6 +270,8 @@ terms. Neither is redistributed by this package; `npm run benchmark:fetch` retri
 ## Artifacts
 
 Raw per-question records for every system and every run are in
-[`reports/matched-run-2026-09-14/`](matched-run-2026-09-14/), stored gzipped (145 MB → 2.8 MB).
+[`reports/matched-run-2026-09-14/`](matched-run-2026-09-14/), stored gzipped:
+**76,141,738 bytes → 2,944,190 bytes, 25.9×**
+— measured from the committed `.json.gz` files at generation time, not typed.
 [`summary.json`](matched-run-2026-09-14/summary.json) holds the table above in machine-readable
 form; **this document is generated from it**, so the prose and the measurements cannot drift apart.
