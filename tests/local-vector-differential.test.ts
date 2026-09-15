@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { gatedIt } from './env-gates.js';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -197,6 +198,14 @@ function forbidden(fixture: Fixture, state: State, viewer: string): Map<string, 
 const MODES: DenseIndexMode[] = hnswAvailable() ? ['sqlite-vec', 'hnsw'] : ['sqlite-vec'];
 
 describe('the dense index preserves every filter the exact scan enforces', () => {
+  // MODES silently drops 'hnsw' on a bare host, so the differential tests below
+  // keep passing while covering one backend fewer. That loss happens *inside*
+  // tests that still run, which no skip count can see — so state it as its own
+  // gated test, which the env-gate guard can count.
+  gatedIt('hnsw', hnswAvailable())('is differentially compared in hnsw mode too, not just sqlite-vec', () => {
+    expect(MODES).toContain('hnsw');
+  });
+
   it('agrees with the exact scan, and leaks nothing, across 80 random states', () => {
     const path = location();
     const fixture = buildCorpus(path);
@@ -357,7 +366,7 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
     expect(survived.length, 'the poisoned rows were removed, so the post-filter was never the thing under test').toBe(saved.length);
   }, 120_000);
 
-  const withHnsw = hnswAvailable() ? it : it.skip;
+  const withHnsw = gatedIt('hnsw', hnswAvailable());
   withHnsw('withholds erased records when a pre-erasure hnsw index file is restored underneath it', () => {
     const path = location();
     const fixture = buildCorpus(path);

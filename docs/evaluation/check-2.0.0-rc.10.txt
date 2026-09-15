@@ -1,0 +1,52 @@
+npm run check — release/2.0.0-rc.10 line, branch docs/rc10-release-hygiene
+Recorded 2026-09-15. Host: macOS arm64, Node v26.4.0, two other builds running concurrently.
+
+This file exists so that the test count quoted in docs/EVALUATION.md has a committed source
+instead of being a number typed from memory (release audit finding F9).
+
+$ node --version
+v26.4.0
+
+$ git rev-parse HEAD
+c6cb084247bcb32170858a4aa5053262a8bfa372
+
+$ npm run check   # typecheck -> build -> vitest -> typecheck:examples
+exit code: 0
+
+ Test Files  69 passed (69)
+      Tests  1366 passed (1366)
+   Start at  09:00:30
+   Duration  35.90s (tests 94%, transform 3%, import 3%)
+
+----------------------------------------------------------------------
+Second run, close-out of the same branch. The first run above covered the
+CHANGELOG/report commits; this one covers the whole branch including the
+traceability pass, so the counts quoted in the docs are measured on the tree
+those docs ship with.
+
+$ git rev-parse HEAD
+a01e5dd  (plus one uncommitted wording change in CHANGELOG.md, committed
+          immediately after this run as the honesty-grep fix; no code, no test)
+
+$ npm run check
+exit code: 0
+
+ Test Files  69 passed (69)
+      Tests  1366 passed (1366)
+   Start at  09:07:00
+   Duration  46.66s (tests 94%, transform 3%, import 3%)
+
+typecheck:examples passed over all 15 example files.
+
+----------------------------------------------------------------------
+Honest note on flakiness, because it happened on the way to this file:
+an earlier run of the same command on the same tree failed with 2 of 1366
+tests timing out at ~5 s -
+  tests/bridge.test.ts            > ignores timed-out callbacks, demotes and
+                                    never persists provider error text
+  tests/migration-service.test.ts > accounts for a compact replay referencing
+                                    more than 4 MiB of prior exact originals
+Both are wall-clock-bounded tests and both passed on re-run (102/102 in 1.78 s
+when run alone), and the branch that produced this file changes no file under
+src/ or tests/. The failures track host load, not the tree. They are recorded
+here rather than omitted.

@@ -3,7 +3,32 @@
 // The table is computed, never typed. In a report whose entire value is that the
 // numbers are trustworthy, a hand-copied digit is the most likely way to publish
 // something false, and the least likely to be noticed.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+
+const ARTIFACT_DIR = 'reports/matched-run-2026-09-14';
+
+/**
+ * Size of the raw artifacts, measured from the files rather than typed into the prose.
+ * A gzip member stores its uncompressed length (mod 2^32) in the last four bytes,
+ * little-endian — the same field `gzip -l` reports — so this reproduces
+ * `gzip -l reports/matched-run-2026-09-14/*.json.gz` without shelling out.
+ *
+ * This used to be a hardcoded "145 MB -> 2.8 MB (23x)" sitting three lines above a
+ * sentence claiming the prose and the measurements cannot drift apart. They had.
+ */
+function rawArtifactSize() {
+  let compressed = 0;
+  let uncompressed = 0;
+  for (const name of readdirSync(ARTIFACT_DIR).filter(n => n.endsWith('.json.gz')).sort()) {
+    const buf = readFileSync(`${ARTIFACT_DIR}/${name}`);
+    compressed += statSync(`${ARTIFACT_DIR}/${name}`).size;
+    uncompressed += buf.readUInt32LE(buf.length - 4);
+  }
+  return { compressed, uncompressed, ratio: uncompressed / compressed };
+}
+
+const bytes = n => n.toLocaleString('en-US');
+const artifacts = rawArtifactSize();
 
 const summary = JSON.parse(readFileSync('reports/matched-run-2026-09-14/summary.json', 'utf8'));
 const run = (corpusStartsWith, k) => summary.runs.find(r => r.corpus.startsWith(corpusStartsWith) && r.topK === k);
@@ -310,7 +335,9 @@ terms. Neither is redistributed by this package; \`npm run benchmark:fetch\` ret
 ## Artifacts
 
 Raw per-question records for every system and every run are in
-[\`reports/matched-run-2026-09-14/\`](matched-run-2026-09-14/), stored gzipped (145 MB → 2.8 MB).
+[\`reports/matched-run-2026-09-14/\`](matched-run-2026-09-14/), stored gzipped:
+**${bytes(artifacts.uncompressed)} bytes → ${bytes(artifacts.compressed)} bytes, ${artifacts.ratio.toFixed(1)}×**
+— measured from the committed \`.json.gz\` files at generation time, not typed.
 [\`summary.json\`](matched-run-2026-09-14/summary.json) holds the table above in machine-readable
 form; **this document is generated from it**, so the prose and the measurements cannot drift apart.
 `;

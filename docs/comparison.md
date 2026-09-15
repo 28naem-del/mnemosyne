@@ -1,6 +1,8 @@
 # Choose a memory path
 
-Mnemosyne offers several ways to add persistent evidence to an agent. Choose by the control and integration your application needs. This page compares implemented paths and their tradeoffs; it is not a ranking against another product.
+Mnemosyne offers several ways to add persistent evidence to an agent. Choose by the control and integration your application needs. This page compares implemented *paths within Mnemosyne* and their tradeoffs; it is not a ranking against another product.
+
+For a measured head-to-head against another memory system — a matched competitor benchmark against Mem0 OSS on LoCoMo and LongMemEval-S, with the places we lose published in the same tables as the places we win — see [COMPARISON.md](../COMPARISON.md).
 
 ## Capability overview
 

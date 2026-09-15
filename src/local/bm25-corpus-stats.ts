@@ -37,10 +37,10 @@ import type { DatabaseSync } from 'node:sqlite';
  * All of that reasoning — and {@link markTemporalBoundsIfNeeded}'s "already
  * `<= now` at insert, so no later `asOf` can push it out" argument in
  * particular — holds only while the reader's clock runs *forwards*. Nothing
- * guarantees that: `#time()` does not check it and `LocalMemoryOptions.now`
- * is a public constructor option with no monotonicity contract, so an NTP
- * step, a sleep/resume, a VM snapshot restore or simply a caller's own clock
- * can move `now` backwards across a warm entry. A backward step re-opens
+ * guarantees that: `LocalMemoryOptions.now` is a public constructor option
+ * with no monotonicity contract, so an NTP step, a sleep/resume, a VM snapshot
+ * restore or simply a caller's own clock can move `now` backwards across a
+ * warm entry. A backward step re-opens
  * every boundary the flag declined to record precisely *because* it was
  * already crossed, and no write happens, so neither `writeSeq` nor
  * `dataVersion` moves and no sticky flag can fire. Hence {@link
@@ -133,9 +133,35 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
 }
 
 /**
- * Records this engine's high-water clock reading and answers whether `now` is
- * *below* it — i.e. whether the reader's clock has moved backwards at some
- * point in this connection's life.
+ * Raises this connection's high-water clock mark to `now`, unless `now` is
+ * already below it.
+ *
+ * **Every** reading of the engine's clock must come through here, which is why
+ * `LocalMemory` calls it from `#time()` itself rather than from any one
+ * consumer. The mark's job is to remember the highest instant this connection
+ * has ever *observed*, and a write observes the clock exactly as a read does:
+ * `#insert` stamps `createdAt`, `#updateStatus` stamps `updatedAt`, `#audit`
+ * stamps its row. Feeding the mark only from the recall path — as the first
+ * version of this guard did — leaves every one of those readings invisible, so
+ * a write at a high instant followed by a backward step is not seen as a step
+ * back at all, and the stats computed at the low instant are cached and then
+ * served on the way back up. That is a silent, total loss of recall for the
+ * query: `documents` runs stale-low, `log1p((documents - df + 0.5) / (df + 0.5))`
+ * goes negative, and `#bm25Recall`'s `score > 0` gate drops every row.
+ *
+ * Raising only on `>=` is what keeps {@link liveClockSteppedBack} a pure
+ * comparison at the call site: the mark never records a reading that was itself
+ * below the mark, so testing the reading against the mark it just fed still
+ * answers "was this below some earlier reading?".
+ */
+export function noteLiveClock(now: string, state: { highWater: string }): void {
+  if (now > state.highWater) state.highWater = now;
+}
+
+/**
+ * Answers whether `now` is *below* this connection's high-water clock mark —
+ * i.e. whether the reader's clock has moved backwards at some point in this
+ * connection's life. Pure: {@link noteLiveClock} owns the mark.
  *
  * {@link CorpusStatsEntry.computedAt} keeps a single entry from being served
  * at an instant before the one it was computed for. That is necessary but not
@@ -151,20 +177,55 @@ export function hasTemporalBounds(db: DatabaseSync, workspaceId: string, state: 
  * cacheable, so a clock that steps back and then catches up returns to normal
  * caching rather than giving it up for good.
  *
- * Mutating: the caller owns the holder (a `LocalMemory` instance field, same
- * shape as {@link hasTemporalBounds}'s) so the mark survives across calls
- * without this module holding per-connection state. Call for **live views
- * only** — a historical `asOf` is a caller-chosen literal, not a clock
- * reading, and pinning the mark to it would disable live caching for the rest
- * of the connection. Historical entries do not need the mark anyway, since
- * {@link corpusStatsCacheKey} already puts their instants in the key.
+ * The caller owns the holder (a `LocalMemory` instance field, same shape as
+ * {@link hasTemporalBounds}'s) so the mark survives across calls without this
+ * module holding per-connection state. Test for **live views only** — a
+ * historical `asOf` is a caller-chosen literal, not a clock reading, and it is
+ * routinely far below the mark on purpose. Historical entries do not need the
+ * mark anyway, since {@link corpusStatsCacheKey} already puts their instants in
+ * the key.
  *
  * On a monotone clock this returns false every time and nothing changes.
  */
 export function liveClockSteppedBack(now: string, state: { highWater: string }): boolean {
-  if (now < state.highWater) return true;
-  state.highWater = now;
-  return false;
+  return now < state.highWater;
+}
+
+/**
+ * Seeds this connection's high-water mark, once, from the highest `created_at`
+ * the store itself carries for this workspace.
+ *
+ * {@link noteLiveClock} can only remember clocks *this* connection has read,
+ * which leaves the cross-connection carrier open: a writer at a high clock
+ * commits and closes, a reader then opens with its clock behind (NTP step,
+ * snapshot restore, a second machine), and the reader's first live recall is
+ * its own first clock reading — so nothing looks like a step back. The write
+ * landed before the reader existed, so `PRAGMA data_version` is already at its
+ * final value and `writeSeq` is 0: neither counter moves, the count computed
+ * at the low instant is cached, and forward advance serves it. Same silent
+ * total loss as the same-connection carrier, just across a process boundary.
+ *
+ * The store's own `created_at` column is the evidence that some engine's clock
+ * once read that high, so it is the right seed, and `memories_page`
+ * (`workspace_id, created_at, id`) makes it a covering-index MAX — measured at
+ * ~1.4us, paid once per connection on the first live corpus-stats computation
+ * rather than at open, so a connection that never runs a live BM25 recall
+ * never pays it at all.
+ *
+ * This cannot cost a workspace its live caching in the case the flag was
+ * carefully written to avoid. A record whose `createdAt` is above the *writer's*
+ * own clock is a future-dated import, and {@link markTemporalBoundsIfNeeded}
+ * already flags exactly that, so {@link hasTemporalBounds} has already turned
+ * live caching off for the workspace before this is ever consulted. What is
+ * left is honest clock skew between engines, and declining to cache while this
+ * reader is behind another writer's clock is the conservative answer for
+ * precisely as long as the skew lasts.
+ */
+export function seedLiveClockFromStore(db: DatabaseSync, workspaceId: string, state: { highWater: string; seeded: boolean }): void {
+  if (state.seeded) return;
+  state.seeded = true;
+  const row = db.prepare('SELECT MAX(created_at) AS high FROM memories WHERE workspace_id=?').get(workspaceId) as { high: string | null } | undefined;
+  if (typeof row?.high === 'string' && row.high > state.highWater) state.highWater = row.high;
 }
 
 /**

@@ -8,6 +8,9 @@ dist/
 coverage/
 .nyc_output/
 
+# vitest JSON report, read by scripts/check-env-gated-tests.mjs
+.vitest-report.json
+
 # IDE
 .idea/
 .vscode/

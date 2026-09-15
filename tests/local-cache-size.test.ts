@@ -52,15 +52,42 @@ describe('cacheSize (PRAGMA cache_size)', () => {
   });
 
   it('rejects zero, non-integers, and magnitudes past the bound, without opening the database', () => {
-    const bad = [0, 1.5, NaN, Infinity, 2_097_153, -2_097_153];
+    const bad = [0, 1.5, NaN, Infinity, 524_289, -2_097_153];
     for (const cacheSize of bad) {
       expect(() => createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize })).toThrow('cacheSize');
     }
   });
 
-  it('accepts the boundary magnitude in both directions', () => {
-    opened.push(createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize: 2_097_152 }));
+  /**
+   * The bound is 2 GiB, but `cache_size` encodes its unit in the sign, so a
+   * single `Math.abs()` test cannot express that: 2_097_152 as a KiB budget is
+   * 2 GiB, while the same magnitude as a *page count* is 2_097_152 * page_size
+   * — 8 GiB at SQLite's 4 KiB default, four times the documented ceiling. The
+   * positive boundary therefore tightened from 2_097_152 to 524_288; the
+   * negative one is unchanged. Both signs are pinned here, on both sides.
+   */
+  it('bounds each sign in its own unit: 524288 pages and 2097152 KiB are both 2 GiB', () => {
+    opened.push(createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize: 524_288 }));
     opened.push(createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize: -2_097_152 }));
+    // One past each boundary, in each unit.
+    expect(() => createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize: 524_289 })).toThrow('cacheSize');
+    expect(() => createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize: -2_097_153 })).toThrow('cacheSize');
+    // The old positive ceiling: accepted before this fix, 8 GiB of pages.
+    expect(() => createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize: 2_097_152 })).toThrow('cacheSize');
+  });
+
+  it('states both units and both ceilings in the error it throws', () => {
+    expect(() => createLocalMemory({ path: ':memory:', workspaceId: 'w', agentId: 'a', retrieval: 'lexical', cacheSize: 2_097_152 }))
+      .toThrow(/positive = pages, at most 524288; negative = KiB, at most 2097152 in magnitude/);
+  });
+
+  it('opens at the default page size the page-count ceiling is derived from', () => {
+    // 524288 pages is 2 GiB only while a page is 4 KiB. This engine sets no
+    // `PRAGMA page_size`, so if that default ever moved the ceiling would mean
+    // a different number of bytes and this test is the tripwire.
+    const db = new DatabaseSync(':memory:');
+    expect((db.prepare('PRAGMA page_size').get() as { page_size: number }).page_size).toBe(4096);
+    db.close();
   });
 
   it('rejects an unknown option the same way it always has, and still accepts cacheSize', () => {
