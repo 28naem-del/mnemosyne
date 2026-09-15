@@ -144,8 +144,8 @@ describe('conditional private record rollback', () => {
       expect(JSON.stringify(outcome)).toContain('outcomes_memory_workspace');
       const deletion = inspect.prepare('EXPLAIN QUERY PLAN DELETE FROM memories WHERE id=? AND workspace_id=? AND agent_id=?').all('id', 'fixture', 'alice');
       const plan = JSON.stringify(deletion);
-      for (const table of ['outcomes', 'audit', 'idempotency', 'dependencies']) expect(plan).not.toContain(`SCAN ${table}`);
-      for (const index of ['outcomes_memory_workspace', 'audit_memory', 'idempotency_memory', 'dependencies_target']) expect(plan).toContain(index);
+      for (const table of ['outcomes', 'audit', 'idempotency', 'dependencies', 'local_granularity_members']) expect(plan).not.toContain(`SCAN ${table}`);
+      for (const index of ['outcomes_memory_workspace', 'audit_memory', 'idempotency_memory', 'dependencies_target', 'local_granularity_members_memory']) expect(plan).toContain(index);
     } finally { inspect.close(); }
   });
 

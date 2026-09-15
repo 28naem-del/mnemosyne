@@ -36,6 +36,14 @@ export function retrievalConfigSha256(config: LedgerRetrievalConfig): string {
  * an outcome attributable to a ranking decision rather than to the result set
  * alone. It cascades on the same two foreign keys, so widening what the ledger
  * remembers does not widen what survives `forget()`.
+ *
+ * Its `granularity` column names which index nominated a candidate. It is
+ * nullable because entries written before the multi-granularity index exist and
+ * genuinely did not record it; they read back as `'turn'`, which is what they
+ * were. Derived documents are deliberately NOT recorded as candidate rows:
+ * `memory_id` is a foreign key into `memories`, and a synthetic document identity
+ * there would both break that key and put a row in this table that no `forget()`
+ * could ever reach. The level travels on the real candidate instead.
  */
 export const LEDGER_SCHEMA = `
   CREATE TABLE IF NOT EXISTS local_ledger(
@@ -65,6 +73,7 @@ export const LEDGER_SCHEMA = `
     stage TEXT NOT NULL,
     rank INTEGER NOT NULL,
     score REAL NOT NULL,
+    granularity TEXT,
     PRIMARY KEY(ledger_id,stage,memory_id)
   ) WITHOUT ROWID;
   CREATE INDEX IF NOT EXISTS local_ledger_candidates_memory ON local_ledger_candidates(memory_id);

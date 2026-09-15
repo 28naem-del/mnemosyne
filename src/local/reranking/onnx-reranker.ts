@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import type { SyncMemoryReranker } from '../types.js';
-import { encodeWordPiecePair, loadWordPieceVocabulary, type WordPieceVocabulary } from '../embedding/wordpiece.js';
+import { countWordPieces, encodeWordPiecePair, loadWordPieceVocabulary, type WordPieceVocabulary } from '../embedding/wordpiece.js';
 import { BUNDLED_RERANKER_ID, BUNDLED_RERANKER_MODEL, bundledRerankerFilePath, bundledRerankerStatus, verifyBundledReranker } from './model-assets.js';
 
 /**
@@ -98,6 +98,12 @@ class BundledRerankerEngine {
 
   #assertOpen(): void { if (this.#closed) throw new Error('Local reranker is closed'); }
 
+  /** Exact, because it runs the same `pieces()` path `encodeWordPiecePair` runs. */
+  countTokens(text: string): number {
+    this.#assertOpen();
+    return countWordPieces(text, this.#vocabulary);
+  }
+
   rerankSync(query: string, passages: readonly string[]): number[] {
     this.#assertOpen();
     if (typeof query !== 'string' || !query.trim() || query.includes('\0')) throw new TypeError('Rerank query must be a non-empty string without NUL');
@@ -161,6 +167,10 @@ export function createBundledReranker(options: BundledRerankerOptions = {}): Syn
   return Object.freeze({
     model: engine.model,
     rerankSync: (query: string, passages: readonly string[]) => engine.rerankSync(query, passages),
+    // Forwarded, not omitted: a caller that budgets a passage needs this model's
+    // own unit, and a facade that quietly dropped it would make context-aware
+    // reranking stand down without saying so.
+    countTokens: (text: string) => engine.countTokens(text),
     close: () => engine.close(),
   });
 }

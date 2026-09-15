@@ -84,6 +84,25 @@ export interface CorpusBenchmarkOptions {
   temporalRouting?: boolean;
   hybridLexicalScoring?: 'overlap' | 'bm25';
   /**
+   * Retrieval granularity for the hybrid conditions.
+   *
+   * `turn` is the default and is exactly the run this harness has always done.
+   * `multi` additionally derives a session and summary index over the same chunks
+   * — keyed on the turn date each chunk already carries — and fuses it into the
+   * hybrid ranking. The zero-model conditions never see it, so their numbers stay
+   * comparable across runs, and a `multi` run reports its index build time beside
+   * its embedding time rather than hiding it inside retrieval latency.
+   */
+  granularity?: 'turn' | 'multi';
+  /** In-session neighbours concatenated either side of a candidate when the
+   * cross-encoder rescores it, 0-4. Defaults to 0, the feature off. Only the
+   * `multi` granularity reads it; a `turn` run is unaffected at any value. */
+  rerankContext?: number;
+  /** Candidates given the contextual pass, 1-1000. Defaults to the engine's own
+   * default. It is a latency valve: only these rows are submitted to the second
+   * model pass. Read only when `rerankContext` is above 0. */
+  rerankContextTopN?: number;
+  /**
    * Competitor systems scored in the same loop, on the same chunks, with the same
    * packing budget and the same scorer. Each becomes a `system:<id>` condition.
    */
@@ -152,7 +171,10 @@ export interface CorpusBenchmarkReport {
    */
   systems?: { id: string; condition: MatchedConditionId; revision: string; mode: string; status: 'scored' | 'ingest-failed'; reason?: string; ingestMilliseconds: number }[];
   answerQuality: 'not-evaluated'; complete: boolean;
-  ingestion: { corpusId: string; turns: number; chunks: number; bytes: number; milliseconds: number; embeddingMilliseconds: number }[];
+  ingestion: { corpusId: string; turns: number; chunks: number; bytes: number; milliseconds: number; embeddingMilliseconds: number;
+    /** Present only on a multi-granularity run: what the derived index cost to
+     * build and how much of it there is. Absent means it was never built. */
+    granularity?: { milliseconds: number; sessions: number; documents: number; embedded: number; unsessioned: number } }[];
   attempts: CorpusAttempt[]; summaries: Partial<Record<BenchmarkConditionId, CorpusSummary>>;
   /** The same summary computed over each question category separately, keyed
    * condition then category. Present only when a run asks for a per-category

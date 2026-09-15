@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { adaptLoCoMoCorpus, runCorpusBenchmark, type CorpusCondition } from './corpus-benchmark.js';
+import { adaptLoCoMoCorpus, runCorpusBenchmark, type CorpusBenchmarkReport, type CorpusCondition } from './corpus-benchmark.js';
 import { createBundledEmbedder, type SyncMemoryEmbedder } from '../local/embedding/index.js';
 import { asMemoryReranker, createBundledReranker, type SyncMemoryReranker } from '../local/reranking/index.js';
 
@@ -18,19 +18,47 @@ import { asMemoryReranker, createBundledReranker, type SyncMemoryReranker } from
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CORPUS = resolve(HERE, '..', '..', 'benchmarks', 'data', 'locomo10.json');
 
+/** The derived index is an ingestion cost, so it is reported with the other
+ * ingestion costs and never folded into a retrieval latency. Silent on a
+ * turn-level run, where there is nothing to report. */
+function derivedIndex(report: CorpusBenchmarkReport): string {
+  const built = report.ingestion.flatMap(entry => entry.granularity ? [entry.granularity] : []);
+  if (!built.length) return '';
+  const total = (get: (entry: (typeof built)[number]) => number): number => built.reduce((sum, entry) => sum + get(entry), 0);
+  return `  —  ${total(entry => entry.documents)} documents over ${total(entry => entry.sessions)} sessions, `
+    + `${total(entry => entry.embedded)} embedded, ${total(entry => entry.unsessioned)} records left turn-only, `
+    + `built in ${(total(entry => entry.milliseconds) / 1000).toFixed(1)}s across ${built.length} conversations`;
+}
+
 export async function locomoBenchmark(args = process.argv.slice(2)): Promise<void> {
   const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: {
     file: { type: 'string' }, out: { type: 'string' }, 'top-k': { type: 'string' },
     'min-recall': { type: 'string' }, 'max-questions': { type: 'string' }, lexical: { type: 'boolean' }, help: { type: 'boolean' },
-    'no-rerank': { type: 'boolean' }, 'rerank-top-n': { type: 'string' },
+    'no-rerank': { type: 'boolean' }, 'rerank-top-n': { type: 'string' }, granularity: { type: 'string' }, 'rerank-context': { type: 'string' }, 'rerank-context-top-n': { type: 'string' }, 'corpus-index-base': { type: 'string' },
     'temporal-routing': { type: 'boolean' }, 'temporal-category': { type: 'string' }, 'min-temporal-gain': { type: 'string' },
   } });
+  const granularity = values.granularity ?? 'turn';
+  if (granularity !== 'turn' && granularity !== 'multi') throw new Error('--granularity must be turn or multi');
+  const rerankContext = values['rerank-context'] === undefined ? 0 : Number(values['rerank-context']);
+  if (!Number.isSafeInteger(rerankContext) || rerankContext < 0 || rerankContext > 4) throw new Error('--rerank-context must be an integer between 0 and 4');
+  const rerankContextTopN = values['rerank-context-top-n'] === undefined ? undefined : Number(values['rerank-context-top-n']);
+  if (rerankContextTopN !== undefined && (!Number.isSafeInteger(rerankContextTopN) || rerankContextTopN < 1 || rerankContextTopN > 1000)) throw new Error('--rerank-context-top-n must be an integer between 1 and 1000');
   if (values.help) {
-    console.log('node dist/evaluation/locomo-benchmark.js [--file CORPUS.json] [--out REPORT.json] [--top-k 10] [--min-recall 70] [--max-questions N] [--lexical] [--no-rerank] [--rerank-top-n 50]\n'
+    console.log('node dist/evaluation/locomo-benchmark.js [--file CORPUS.json] [--out REPORT.json] [--top-k 10] [--min-recall 70] [--max-questions N] [--lexical] [--no-rerank] [--rerank-top-n 50] [--granularity turn|multi] [--rerank-context 2] [--rerank-context-top-n 32]\n'
       + 'Defaults to benchmarks/data/locomo10.json, or $MNEMOSYNE_LOCOMO_PATH. --lexical skips both models and reports the zero-model baselines only.\n'
       + '--no-rerank measures the fused ranking without the cross-encoder, which is the T1.1 configuration.\n'
       + '--temporal-routing [--temporal-category locomo:2] [--min-temporal-gain 3.0] scores a hybrid-temporal condition with the engine\'s\n'
-      + 'temporal query routing enabled beside the unrouted hybrid one, from a single ingestion, and reports every question category separately.');
+      + 'temporal query routing enabled beside the unrouted hybrid one, from a single ingestion, and reports every question category separately.\n'
+      + '--granularity multi also derives a session and summary index over the same chunks and fuses it into the hybrid condition.\n'
+      + '--rerank-context K rescores each candidate a second time against a passage that leads with its own text and continues with\n'
+      + 'its K in-session neighbours either side, and fuses that ordering as one more channel. It needs --granularity multi; at 0 or on\n'
+      + 'a turn run nothing about the pipeline changes. K=2 is the measured knee on this corpus.\n'
+      + '--rerank-context-top-n N caps how many candidates that second pass is given, which is the latency valve: only those N rows are\n'
+      + 'submitted to it, and the rest keep the isolated pass ordering in the contextual channel. Defaults to 14, which is the\n'
+      + 'measured p95 budget divided by the measured cost of a windowed row, not a round number.\n'
+      + 'The zero-model conditions are unaffected either way, so the baselines stay comparable across the two settings.\n'
+      + '--corpus-index-base gives the ordinal of this run\'s first conversation within the whole dataset. A run split into parts\n'
+      + 'must set it, or each part numbers its conversations from zero, mints different chunk identities and breaks ties differently.');
     return;
   }
   const file = resolve(values.file ?? process.env.MNEMOSYNE_LOCOMO_PATH ?? DEFAULT_CORPUS);
@@ -67,6 +95,8 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
       console.error(`${error instanceof Error ? error.message : 'Local reranker unavailable'}\nReporting the fused ranking without reranking.`);
     }
   }
+  const corpusIndexBase = Number(values['corpus-index-base'] ?? 0);
+  if (!Number.isSafeInteger(corpusIndexBase) || corpusIndexBase < 0 || corpusIndexBase > 1_000_000) throw new Error('--corpus-index-base must be a nonnegative integer');
   const rerankTopN = Number(values['rerank-top-n'] ?? 50);
   if (!Number.isSafeInteger(rerankTopN) || rerankTopN < 1 || rerankTopN > 1000) throw new Error('--rerank-top-n must be between 1 and 1000');
   // LoCoMo category 2 is its temporal-reasoning subset; the adapter emits the
@@ -84,7 +114,8 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
     ...(model ? { embedder: model.forPassages(), queryEmbedder: model.forQueries() } : {}),
     ...(reranker ? { reranker: asMemoryReranker(reranker), rerankTopN } : {}),
     ...(temporalRouting ? { temporalRouting: true } : {}),
-    maxEmbeddingCalls: 1_000_000, timeoutMs: 3_600_000,
+    maxEmbeddingCalls: 1_000_000, timeoutMs: 3_600_000, granularity, corpusIndexBase, rerankContext,
+    ...(rerankContextTopN === undefined ? {} : { rerankContextTopN }),
   });
   model?.close();
   reranker?.close();
@@ -102,6 +133,8 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   console.log(`runtime ${report.runtime.node} ${report.runtime.platform}  elapsed ${((Date.now() - started) / 1000).toFixed(1)}s  complete=${report.complete}`);
   if (report.embedding) console.log(`embedder ${report.embedding.model} (${report.embedding.dimensions}d, asymmetric=${report.embedding.asymmetric})`);
   console.log(`reranker ${reranker ? `${reranker.model} (top-${rerankTopN})` : 'disabled'}`);
+  console.log(`granularity ${granularity}${derivedIndex(report)}`);
+  console.log(`rerank context ${rerankContext ? `+/-${rerankContext} in-session turns over the top ${report.settings.rerankContextTopN} candidates${reranker?.countTokens ? '' : ' — INACTIVE: this reranker does not report token counts'}` : 'off'}`);
   console.log(line('lexical', 'zero-model overlap'));
   console.log(line('bm25', 'zero-model BM25'));
   console.log(line('hybrid', reranker ? 'hybrid dense + BM25 + rerank' : 'hybrid dense + BM25 (RRF)'));
