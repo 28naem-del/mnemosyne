@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { gatedDescribe } from './env-gates.js';
 import { connect } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -13,7 +14,7 @@ import { bundledModelFilePath } from '../src/local/embedding/model-assets.js';
 
 const cached = bundledModelStatus().present;
 /** The model cache is populated once by `npm run setup:embedder`. */
-const withModel = cached ? describe : describe.skip;
+const withModel = gatedDescribe('model', cached);
 const open: SyncMemoryEmbedder[] = [];
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); open.splice(0).forEach(embedder => embedder.close()); });
 

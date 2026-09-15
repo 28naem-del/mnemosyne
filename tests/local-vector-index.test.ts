@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { gatedIt } from './env-gates.js';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -262,7 +263,7 @@ describe('sqlite-vec extension path resolution', () => {
 });
 
 describe('hnsw dense index', () => {
-  const withHnsw = hnswAvailable() ? it : it.skip;
+  const withHnsw = gatedIt('hnsw', hnswAvailable());
 
   withHnsw('is never selected on your behalf', () => {
     const db = memory();
@@ -370,7 +371,7 @@ describe('hnsw dense index', () => {
  * directly before it is reproduced through `LocalMemory`.
  */
 describe('hnsw size and count accounting', () => {
-  const withHnsw = hnswAvailable() ? it : it.skip;
+  const withHnsw = gatedIt('hnsw', hnswAvailable());
   const point = (n: number): Float32Array => new Float32Array([n, n + 1, n + 2, n + 3]);
 
   withHnsw('size() counts distinct labels, not upsert() calls', () => {
