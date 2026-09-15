@@ -138,16 +138,21 @@ describe('isolated retrieval-only baselines', () => {
     expect(readdirSync(tempParent)).toEqual([]);
   });
 
-  it('retains nearest semantic evidence across full eligible history even with one retained candidate', async () => {
+  it('bounds the dense channel to the maxCandidates most recent turns while the lexical index keeps full history', async () => {
     const row = question({ question: 'orchid', haystack_session_ids: ['recent', 'older'], answer_session_ids: ['older'],
       haystack_sessions: [[{ role: 'user', content: 'Desert hiking' }], [{ role: 'user', content: 'Greenhouse preference' }]] });
     const embedder: MemoryEmbedder = { ...vectors, async embed(texts) { return texts.map(text => /orchid|Greenhouse/.test(text) ? [1, 0] : [0, 1]); } };
     const narrow = await runLongMemEval([row], { embedder, maxCandidates: 1 });
     const wider = await runLongMemEval([row], { embedder, maxCandidates: 2 });
+    // Full history is imported and lexically indexed in both runs; only the dense window is bounded.
     expect(narrow.results[0].indexedTurns).toBe(2);
+    expect(wider.results[0].indexedTurns).toBe(2);
     expect(narrow.limits.maxCandidates).toBe(1);
-    expect(narrow.results[0].baselines.hybrid!.retrievedSessionIds).toEqual(['older']);
-    expect(narrow.results[0].baselines.hybrid!.evidenceSessionRecall).toBe(1);
+    // The one perfectly-matching turn lies outside the 1-turn recent window, so the dense channel must not surface it.
+    expect(narrow.results[0].baselines.hybrid!.retrievedSessionIds).toEqual([]);
+    expect(narrow.results[0].baselines.hybrid!.evidenceSessionRecall).toBe(0);
+    // Widening the window to cover it brings it back: the bound is a recency window, not a score filter.
+    expect(wider.results[0].baselines.hybrid!.retrievedSessionIds).toEqual(['older']);
     expect(wider.results[0].baselines.hybrid!.evidenceSessionRecall).toBe(1);
     await expect(runLongMemEval([row], { maxCandidates: 10001 })).rejects.toThrow('maxCandidates');
   });
