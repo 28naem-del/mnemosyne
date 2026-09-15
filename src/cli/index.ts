@@ -42,6 +42,8 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
                    Reconstruct the belief state at a bitemporal cut point
   mnemosy replay [scope] --known-at ISO --diff ISO [--json '{"knownAt":"ISO"}']
                    Belief diff between two cut points, with each change's source
+  mnemosy bisect [scope] --file TASKS.json --task ID [--limit K] [--exact]
+                   Delta-debug memory to the minimal record set behind a retrieval failure
   mnemosy correct [scope] --id ID --text TEXT --source URI --reason TEXT
   mnemosy forget [scope] --id ID --confirm
   mnemosy export [scope] --out FILE
@@ -130,6 +132,40 @@ function jsonInput(value?: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+/**
+ * A bisect task: the query that failed, the evidence that should have been
+ * found, and the cut point it failed at. Taken from `--file` (a JSON array,
+ * selected by `--task`) or inline from `--json`. The shape is validated here so
+ * a malformed task is a CLI error rather than a confusing retrieval result.
+ */
+const BISECT_TASK = z.object({
+  id: z.string().min(1),
+  query: z.string().min(1),
+  asOf: z.string().optional(),
+  knownAt: z.string().optional(),
+  k: z.number().int().min(1).max(100).optional(),
+  gold: z.array(z.string().min(1)).min(1),
+  require: z.enum(['any', 'all']).optional(),
+  lexicalScoring: z.enum(['overlap', 'bm25']).optional(),
+  depth: z.number().int().min(1).max(100).optional(),
+  includeUntrusted: z.boolean().optional(),
+}).strict();
+
+function bisectTask(values: CliValues): z.infer<typeof BISECT_TASK> & { k: number } {
+  const limit = values.limit === undefined ? undefined : integer(values.limit as string, 10, 100);
+  const selected = values.file === undefined
+    ? BISECT_TASK.parse(jsonInput(values.json as string | undefined))
+    : (() => {
+      const id = required(values.task as string | undefined, '--task');
+      const file = z.array(BISECT_TASK).parse(JSON.parse(readLocalText(required(values.file as string | undefined, '--file'), 16_777_216)));
+      const match = file.find(entry => entry.id === id);
+      if (!match) throw new Error(`No bisect task with id ${id} in ${values.file as string}.`);
+      return match;
+    })();
+  // --limit is the top-k the outcome is judged at, and overrides the task's own.
+  return { ...selected, k: limit ?? selected.k ?? 10 };
+}
+
 type CliAccess = 'read' | 'write' | 'erase';
 type CliValues = Record<string, string | boolean | undefined>;
 
@@ -140,8 +176,8 @@ type CliValues = Record<string, string | boolean | undefined>;
 const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
   store: ['write'], import: ['write'],
   recall: ['read'], context: ['read'], inspect: ['read'], export: ['read'], jobs: ['read'],
-  // Replay reconstructs past state; it reads and never writes.
-  replay: ['read'],
+  // Replay reconstructs past state and bisect re-runs retrieval against it; both read, neither writes.
+  replay: ['read'], bisect: ['read'],
   correct: ['read', 'write'], forget: ['erase'], capture: ['read', 'write'],
   observe: ['read', 'write'], 'run-jobs': ['read', 'write'], index: ['read', 'write'],
   // These routes enforce per-request policies and must accept valid combinations.
@@ -280,7 +316,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     share: { type: 'boolean' }, confirm: { type: 'boolean' }, history: { type: 'boolean' },
     record: { type: 'string' }, 'read-only': { type: 'boolean' },
     'as-of': { type: 'string' }, 'known-at': { type: 'string' }, diff: { type: 'string' },
-    hash: { type: 'boolean' }, records: { type: 'boolean' },
+    hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' },
     'allow-destructive': { type: 'boolean' }, 'include-untrusted': { type: 'boolean' },
     'provider-config': { type: 'string' }, 'token-file': { type: 'string' }, port: { type: 'string' },
     json: { type: 'string' }, action: { type: 'string' }, key: { type: 'string' },
@@ -444,6 +480,21 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         // --hash prints the digest alone, for `test "$(mnemosy replay ... --hash)" = ...`.
         if (values.hash && !values.records) { process.stdout.write(`${state.stateSha256}\n`); break; }
         print(state); break;
+      }
+      case 'bisect': {
+        if (!runtime.recallEnabled) throw new Error('Runtime recall is disabled.');
+        // Loaded here, not at module scope: a caller who never bisects never pays for it.
+        const { bisect } = await import('../local/bisect.js');
+        const task = bisectTask(values);
+        // Its own read handle, on the deterministic lexical path and with the
+        // ledger off: the oracles must re-run retrieval the same way every time,
+        // and an audit has no business writing recall entries into what it audits.
+        const auditor = createLocalMemory({
+          path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'),
+          agentId: required(values.agent, '--agent'), retrieval: 'lexical', ledger: false,
+        });
+        try { print(bisect(auditor, task, { exact: values.exact === true })); } finally { auditor.close(); }
+        break;
       }
       case 'correct': {
         const id = required(values.id, '--id'); const record = memory.get(id);

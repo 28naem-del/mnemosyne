@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createLocalMemory } from '../src/local/index.js';
 
 /**
- * The `replay` CLI route (and, from the next unit, `bisect`).
+ * The `replay` and `bisect` CLI routes.
  *
- * Read-only, and it may not exist for a caller who does not ask for it: the
- * surface here is exactly the surface the help text promises, and nothing else
- * changes shape.
+ * Both read-only, and neither may exist for a caller who does not ask for it:
+ * the surface here is exactly the surface the help text promises, and nothing
+ * else changes shape.
  */
 
 const cli = resolve('dist/cli/index.js');
@@ -126,18 +126,89 @@ describe('mnemosy replay', { timeout: 60_000 }, () => {
     const help = run(['--help']);
     expect(help.status).toBe(0);
     expect(help.stdout).toContain('mnemosy replay [scope]');
+    expect(help.stdout).toContain('mnemosy bisect [scope]');
   });
 
-  it('does not advertise or accept a command that has no implementation', () => {
-    // `bisect` lands in the next unit. Until it does, it must not be in the help
-    // text and must not be in the policy allowlist: a command that is allowlisted
-    // but has no switch arm falls through and exits 0 with no output, which reads
-    // as success. Verified by the v2 verifier lane; pinned here so it stays fixed.
+  it('never lets an allowlisted command succeed silently', () => {
+    // A command in COMMAND_ACCESS with no switch arm passes the unknown-command
+    // guard, falls through, and exits 0 with no output — which reads as success.
+    // `bisect` shipped that way once. Both halves are pinned: an unknown command
+    // is refused, and every advertised command produces output or an error.
     const f = fixture();
-    expect(run(['--help']).stdout).not.toContain('bisect');
-    const absent = run(['bisect', ...f.scope]);
-    expect(absent.status).toBe(1);
-    expect(absent.stderr).toContain('Unknown command: bisect');
-    expect(absent.stdout).toBe('');
+    const unknown = run(['frobnicate', ...f.scope]);
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toContain('Unknown command: frobnicate');
+    for (const command of ['replay', 'bisect']) {
+      const bare = run([command, ...f.scope]);
+      expect(bare.status, `${command} exited ${bare.status}`).toBe(1);
+      expect(bare.stdout).toBe('');
+      expect(bare.stderr).not.toBe('');
+    }
+  });
+});
+
+describe('mnemosy bisect', { timeout: 60_000 }, () => {
+  /** A store where two unattributed claims outrank the sourced answer. */
+  function poisoned(): { scope: string[]; tasks: string; gold: string; poison: string[]; root: string } {
+    const root = mkdtempSync(join(tmpdir(), 'mnemosyne-cli-bisect-'));
+    directories.push(root);
+    const db = join(root, 'memory.sqlite');
+    const memory = createLocalMemory({ path: db, workspaceId: 'bisect-cli', agentId: 'auditor', retrieval: 'lexical', now: () => new Date(T0) });
+    let gold = '';
+    const poison: string[] = [];
+    try {
+      gold = memory.store({
+        text: 'the incident review was signed off by the platform team',
+        kind: 'fact', trust: 'verified', evidence: 'review://signoff', source: { uri: 'doc://review' },
+      }).id;
+      for (let index = 0; index < 2; index++) {
+        poison.push(memory.store({ text: 'the incident review was signed off', trust: 'observed', source: { uri: `doc://rumour-${index}` } }).id);
+      }
+    } finally { memory.close(); }
+    const tasks = join(root, 'tasks.json');
+    writeFileSync(tasks, JSON.stringify([{ id: 'incident', query: 'incident review signed off', k: 1, gold: [gold] }]));
+    return { scope: ['--db', db, '--workspace', 'bisect-cli', '--agent', 'auditor'], tasks, gold, poison, root };
+  }
+
+  it('reports the minimal blame set for a task in a task file', () => {
+    const f = poisoned();
+    const result = run(['bisect', ...f.scope, '--file', f.tasks, '--task', 'incident']);
+    expect(result.status, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout) as { outcome: string; reason: string; blame: string[]; exactConfirmed: boolean; elapsedMs: number };
+    expect(report.outcome).toBe('blamed');
+    expect(report.reason).toBe('displaced');
+    expect([...report.blame].sort()).toEqual([...f.poison].sort());
+    expect(report.blame).not.toContain(f.gold);
+    expect(report.exactConfirmed).toBe(true);
+    expect(report.elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('takes a task inline and judges it at --limit', () => {
+    const f = poisoned();
+    const task = JSON.stringify({ id: 'inline', query: 'incident review signed off', gold: [f.gold] });
+    const passing = run(['bisect', ...f.scope, '--json', task, '--limit', '10']);
+    expect(passing.status, passing.stderr).toBe(0);
+    expect((JSON.parse(passing.stdout) as { outcome: string }).outcome).toBe('passing');
+    const failing = run(['bisect', ...f.scope, '--json', task, '--limit', '1']);
+    expect((JSON.parse(failing.stdout) as { outcome: string }).outcome).toBe('blamed');
+  });
+
+  it('refuses an unknown task id, a missing task file and a malformed task', () => {
+    const f = poisoned();
+    const missing = run(['bisect', ...f.scope, '--file', f.tasks, '--task', 'nope']);
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toContain('No bisect task with id nope');
+    expect(run(['bisect', ...f.scope, '--file', f.tasks]).stderr).toContain('--task');
+    const malformed = run(['bisect', ...f.scope, '--json', JSON.stringify({ id: 'x', query: 'y' })]);
+    expect(malformed.status).toBe(1);
+    expect(malformed.stdout).toBe('');
+  });
+
+  it('is refused under --no-recall and allowed under --read-only', () => {
+    const f = poisoned();
+    const denied = run(['bisect', ...f.scope, '--file', f.tasks, '--task', 'incident', '--no-recall']);
+    expect(denied.status).toBe(1);
+    expect(denied.stderr).toContain('disabled by --no-recall');
+    expect(run(['bisect', ...f.scope, '--file', f.tasks, '--task', 'incident', '--read-only']).status).toBe(0);
   });
 });
