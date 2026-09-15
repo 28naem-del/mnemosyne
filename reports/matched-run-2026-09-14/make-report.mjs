@@ -229,7 +229,7 @@ Nothing was spent; no metered API was called at any point in this run.
 
 **Checked since.** The Mem0 estimate below was later tested against a measurement on two LoCoMo
 parts ([matched-run-2026-09-15-llm-extraction.md](matched-run-2026-09-15-llm-extraction.md)):
-measured **\$0.0007 per chunk** against the \$0.00048 assumed here, i.e. **≈ \$4.27** for the full
+measured **\$0.000726 per chunk** against the \$0.00048 assumed here, i.e. **≈ \$4.27** for the full
 corpus rather than ≈ \$2.80 — the right order of magnitude, 1.5x low. The Graphiti estimate below
 remains an estimate.
 

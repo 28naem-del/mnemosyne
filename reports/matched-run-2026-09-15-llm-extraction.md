@@ -108,18 +108,22 @@ A reader with a generative reader downstream would weigh the MRR gain differentl
 
 Mem0's `infer:true` write path makes its LLM calls **one `add()` at a time, sequentially** — the
 adapter deliberately does not batch, because memories extracted from a batch cannot be attributed
-back to a source chunk and therefore cannot be scored. Measured on this run: **1.87 and 1.85 seconds
-per chunk**. The full LoCoMo corpus is 5,882 chunks:
+back to a source chunk and therefore cannot be scored. Measured on this run: 1.87 s/chunk in part A
+and 1.85 s/chunk in part B, **1.86 s/chunk blended**. The full LoCoMo corpus is 5,882 chunks:
 
 | | measured here | full corpus, projected |
 |---|---:|---:|
 | Chunks ingested with `infer:true` | 427 | 5,882 |
-| Wall-clock ingestion | 794 s (13 min) | **≈ 3 h 3 min** |
-| OpenRouter spend | $0.300 | **≈ $4.27** |
+| Wall-clock ingestion | 794.1 s (13 min) | **≈ 3 h 2 min** |
+| OpenRouter spend | $0.309895 | **≈ $4.27** |
+
+The spend figure is the two scored parts plus the $0.009802 that posted after part B finished; using
+only the two instantaneous post-run readings ($0.300) the projection would read $4.13, which would be
+an artefact of OpenRouter's accounting lag rather than a cheaper run.
 
 The binding limit is **time, not money** — the projected full-corpus cost sits well inside the
 authorised ceiling. The 14 September estimate of ~$2.80 for this path had the right order of
-magnitude; the measured rate is $0.0007 per chunk against that estimate's $0.00048.
+magnitude; the measured rate is $0.000726 per chunk against that estimate's $0.00048.
 
 ## Spend
 

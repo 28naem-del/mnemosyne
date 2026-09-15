@@ -25,8 +25,9 @@ node -e 'const r=require("./locomo-partA-k10.json");console.log(r.summaries["sys
 ## Why two parts instead of one full-corpus run
 
 Mem0's `infer:true` write path makes one LLM call chain per `add()`, sequentially, at a measured
-1.87 s per chunk. The full 5,882-chunk corpus would take ≈ 3 h of wall clock — beyond this job's
-budget — for ≈ $4.27, which was well inside the authorised ceiling. The limit was time, not money.
+1.86 s per chunk blended over the two parts. The full 5,882-chunk corpus would take ≈ 3 h 2 min of
+wall clock — beyond this job's budget — for ≈ $4.27, which was well inside the authorised ceiling.
+The limit was time, not money.
 The published report says so in the same words.
 
 ## Reproducing the parts
