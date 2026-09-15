@@ -256,6 +256,10 @@ The 30 abstention questions remain in attempt counts without a positive retrieva
 
 These results measure retrieval coverage against the earlier local scorer. They do not establish generated-answer accuracy or superiority over other systems. [Raw reports and fingerprints](docs/evaluation/BENCHMARKS.md) · [Reproduction protocol](docs/evaluation/CORPUS_PROTOCOL.md).
 
+### Against another memory system
+
+A **matched competitor benchmark** against Mem0 OSS is published in **[COMPARISON.md](COMPARISON.md)** — same corpus, same chunks, same K, same packing budget, all scored inside one process, with the results where Mem0 beats us printed in the same tables as the results where it does not. In short: our reranked path takes the LoCoMo headline at 73.57 recall@10 against Mem0's 63.72, our *unreranked* hybrid loses to Mem0 at every K on both recall and MRR, and on LongMemEval-S the two tie on recall@20 while Mem0 takes MRR. Zep and Graphiti carry a reason rather than a number: neither could be run without paid credentials. These are retrieval-coverage numbers with no reader and no judge, not answer accuracy.
+
 A separate [evidence lifecycle diagnostic](docs/evaluation/EVIDENCE-PROTOCOL.md) tests correction, time, conflicts, failure, erasure and scope behavior. It deliberately retains a failing case: changing an unrelated field can retire a still-valid dependent rule. The [engineering review](docs/EXTERNAL-REVIEW.md) and [release status](docs/UPGRADE-STATUS.md) track this and other remaining work.
 
 ## Operational boundaries

@@ -15,10 +15,12 @@ from a vendor:
   default, on two whole LoCoMo conversations. Report:
   [`reports/matched-run-2026-09-15-llm-extraction.md`](reports/matched-run-2026-09-15-llm-extraction.md).
 
-The `reports/` directory is **not** part of the npm package (its raw artifacts are 76 MB
-uncompressed). Every number a reader needs is reproduced on this page, which does ship; the raw
-gzipped reports, their hashes and the generators live in the
-[repository](https://github.com/28naem-del/mnemosyne/tree/main/reports).
+Both `reports/` links above are **repository paths, deliberately not shipped in the npm package**:
+the raw artifacts behind them are 76 MB uncompressed (2.9 MB gzipped) of per-question benchmark
+records, which do not belong in a package tarball. Every number a reader needs is reproduced on this
+page, and this page *is* in the package. If you installed from npm, the reports, their SHA-256
+fingerprints and the generators that produce them are at
+<https://github.com/28naem-del/mnemosyne/tree/main/reports>.
 
 ## LoCoMo — 1,986 questions, K = 10 (headline), 14 September
 
