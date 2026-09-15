@@ -16,7 +16,7 @@ import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared
 // after './ledger.js' and directly after './reranking/shared.js', and this gap
 // is the one place a third insertion merges without a conflict.
 import type { LedgerTemporalRouting } from './types.js';
-import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
+import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
 import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, noteLiveClock, seedLiveClockFromStore, type CorpusStatsCache } from './bm25-corpus-stats.js';
@@ -806,7 +806,10 @@ export class LocalMemory {
     if (v.enumeration(input.temporalRouting ?? 'off', ['auto', 'off'] as const, 'temporalRouting') === 'off') return null;
     const now = this.#time();
     const parse = parseTemporalQuery(v.string(input.query, 'query', 4096), { now });
-    if (!parse.window || parse.relation === 'none' || parse.grain === 'none' || parse.confidence < TEMPORAL_ROUTING_MIN_CONFIDENCE) return null;
+    // Strictly above the floor: the floor grade is the weakest reading the
+    // parser will emit (a bare year, a bare month, an unqualified part-of-month)
+    // and admitting it at equality let the weakest guess set a real `asOf`.
+    if (!parse.window || parse.relation === 'none' || parse.grain === 'none' || parse.confidence <= TEMPORAL_ROUTING_CONFIDENCE_FLOOR) return null;
     // A bound the caller states may sit in the future — that is explicit intent,
     // and the branch below already lets it win. A bound read out of a query may
     // not: "as of today" resolves to the last instant of today and "through

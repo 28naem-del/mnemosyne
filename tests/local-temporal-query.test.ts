@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE } from '../src/local/temporal-query.js';
+import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR } from '../src/local/temporal-query.js';
 
 // A Sunday, deliberately: ISO weeks start on Monday, so a Sunday reference is
 // the day most likely to expose an off-by-one in week arithmetic.
@@ -43,7 +43,7 @@ describe('temporal query parsing — absolute dates', () => {
     expect(at('what happened in June 2025').confidence).toBeGreaterThan(at('what happened in June').confidence);
     // A bare year is a real constraint but the loosest one, so it sits exactly on
     // the line a caller is told to act at, never above it.
-    expect(at('what did we ship in 2025').confidence).toBe(TEMPORAL_ROUTING_MIN_CONFIDENCE);
+    expect(at('what did we ship in 2025').confidence).toBe(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
     expect(span('what did we ship in 2025')).toEqual(['2025-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z']);
   });
 
@@ -75,7 +75,7 @@ describe('temporal query parsing — absolute dates', () => {
     // The slice is only as certain as the month it names: a year makes it a
     // month-grade reading, a bare month leaves it a guess about which year.
     expect(at('notes from the first week of March 2026').confidence).toBe(0.9);
-    expect(at('notes from the first week of March').confidence).toBe(TEMPORAL_ROUTING_MIN_CONFIDENCE);
+    expect(at('notes from the first week of March').confidence).toBe(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
     expect(at('notes from the first week of March 2026').grain).toBe('week');
   });
 
@@ -206,7 +206,7 @@ describe('temporal query parsing — declining to narrow', () => {
   const declines = (query: string) => {
     const parse = at(query);
     expect(parse.confidence).toBe(0);
-    expect(parse.confidence).toBeLessThan(TEMPORAL_ROUTING_MIN_CONFIDENCE);
+    expect(parse.confidence).toBeLessThan(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
     expect(parse.window).toBeUndefined();
     expect(parse.asOf).toBeUndefined();
     expect(parse.knownAt).toBeUndefined();
@@ -311,6 +311,44 @@ describe('temporal query parsing — contract', () => {
       expect(new Date(window!.from).getTime()).toBeLessThan(new Date(window!.to).getTime());
       expect(window!.from).toBe(new Date(window!.from).toISOString());
       expect(window!.to).toBe(new Date(window!.to).toISOString());
+    }
+  });
+});
+
+describe('the routing confidence floor is the parser\'s own weakest grade', () => {
+  /**
+   * F14: the gate used to admit at equality, so the weakest reading the parser
+   * can emit routed on the same footing as an absolute date. The floor is now
+   * exclusive — but that is only meaningful while the floor really is the
+   * bottom of the parser's scale. This walks a broad set of expressions, one
+   * per shape the parser recognises, and pins two things: nothing non-zero is
+   * emitted below the floor, and the unqualified shapes land exactly on it.
+   */
+  const NOW = new Date('2026-03-15T12:30:00.000Z');
+  const at = (query: string) => parseTemporalQuery(query, { now: NOW });
+
+  it('emits nothing between zero and the floor', () => {
+    const queries = [
+      'what did we ship in 2025', 'notes from March', 'the 14th', 'notes from the first week of March',
+      'what happened last week', 'anything from yesterday', 'the June 2024 review', 'on 2024-06-01',
+      'between 2024 and June 2025', 'before 2023', 'through 2026', 'this month', 'next year',
+      'the quota', 'some ambiguous 2/3/2026 date', 'on 31 February 2025',
+    ];
+    const seen = new Set(queries.map(query => at(query).confidence));
+    const below = [...seen].filter(value => value > 0 && value < TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
+    expect(below).toEqual([]);
+    expect(Math.min(...[...seen].filter(value => value > 0))).toBe(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
+  });
+
+  it('puts the unqualified shapes exactly on the floor, so a strict gate rejects them', () => {
+    for (const query of ['what did we ship in 2025', 'notes from March', 'through 2026', 'before 2023', 'between 2024 and June 2025', 'notes from the first week of March']) {
+      expect(at(query).confidence).toBe(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
+    }
+  });
+
+  it('keeps every stronger grade strictly above the floor', () => {
+    for (const query of ['on 2024-06-01', 'the June 2024 review', 'what happened last week']) {
+      expect(at(query).confidence).toBeGreaterThan(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
     }
   });
 });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type StoreMemoryInput, type SyncMemoryEmbedder, type SyncMemoryReranker } from '../src/local/index.js';
-import { parseTemporalQuery } from '../src/local/temporal-query.js';
+import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR } from '../src/local/temporal-query.js';
 
 /**
  * Temporal routing at the recall and compile entry points (master plan T1.4).
@@ -303,13 +303,31 @@ describe('a bound read out of a query never reaches past now', () => {
     expect(ids(db.recall({ query: 'what is the Atlas quota as of today', limit: 10, temporalRouting: 'auto' }))).toEqual([id]);
   });
 
-  it('holds at the confidence gate itself, where a bare year is enough to set a bound', () => {
+  it('declines to route at the confidence floor, where a bare year would otherwise set a bound', () => {
     const db = memory();
     expiringToday(db);
-    // "through 2026" parses at exactly TEMPORAL_ROUTING_MIN_CONFIDENCE, so it is
-    // the weakest parse that can still apply one — and it reaches to December.
-    expect(parseTemporalQuery('Atlas quota through 2026', { now: new Date(NOW) }).confidence).toBe(0.6);
+    // "through 2026" parses at exactly the floor — the weakest reading the
+    // parser will emit — and it is exclusionary, so admitting it would narrow
+    // `asOf` to the last instant of December off nothing but a bare year. The
+    // gate is strict, so it does not clear, and routing decides nothing here.
+    expect(parseTemporalQuery('Atlas quota through 2026', { now: new Date(NOW) }).confidence).toBe(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
+    db.recall({ query: 'Atlas quota through 2026', limit: 10, temporalRouting: 'auto' });
+    expect(retrievalOf(db).temporalRouting).toBeUndefined(); // nothing was routed, so nothing was written down
     expect(counts(db, 'Atlas quota through 2026')).toEqual({ off: 1, on: 1 });
+  });
+
+  it('still routes the grade immediately above the floor', () => {
+    // The floor must reject the weakest reading and nothing else: the next
+    // grade up (a relative expression, 0.85) still routes and still writes down
+    // the bound it applied. Without this, "reject the weakest parse" could be
+    // satisfied by disabling routing altogether.
+    const db = memory();
+    expiringToday(db);
+    const parse = parseTemporalQuery('what is the Atlas quota as of today', { now: new Date(NOW) });
+    expect(parse.confidence).toBeGreaterThan(TEMPORAL_ROUTING_CONFIDENCE_FLOOR);
+    db.recall({ query: 'what is the Atlas quota as of today', limit: 10, temporalRouting: 'auto' });
+    expect(retrievalOf(db).temporalRouting).toBeDefined();
+    expect(retrievalOf(db).temporalRouting!.appliedAsOf).toBe(NOW);
   });
 
   it('writes down the bound it applied, not the one it read', () => {
