@@ -47,6 +47,9 @@ export const GRANULARITY_DEFAULTS = Object.freeze({
   expandDocs: 12,
   expandTurns: 24,
   reserve: 16,
+  rerankContext: 0,
+  rerankContextTokens: 192,
+  rerankContextTopN: 1000,
 });
 
 /** Iteration order for the derived levels, so a channel list is deterministic. */
@@ -55,6 +58,7 @@ export const GRANULARITY_LEVELS: readonly GranularityLevel[] = Object.freeze(['s
 export type ResolvedGranularityOptions = {
   sessionKeys: readonly string[]; windowTurns: number; windowStride: number; summarySentences: number;
   summaryKeywords: number; weight: number; expandDocs: number; expandTurns: number; reserve: number;
+  rerankContext: number; rerankContextTokens: number; rerankContextTopN: number;
 };
 
 /**
@@ -444,6 +448,67 @@ export function membersOf(db: DatabaseSync, ids: string[]): Map<string, string[]
   return result;
 }
 
+/** A turn adjacent to a candidate inside a derived session window. */
+export interface SessionNeighbour { id: string; offset: number }
+
+/**
+ * The in-session neighbours of each id, out to `radius` turns either side.
+ *
+ * This reads the derived layer for its ADJACENCY, never for its text. The stored
+ * window text cannot be reused verbatim for reranking: every member of one window
+ * would get an identical passage and therefore an identical score, which is the
+ * already-rejected session-endorsement variant wearing a different coat.
+ *
+ * Because `windowStride` is smaller than `windowTurns`, an interior turn belongs
+ * to two overlapping windows. Taking the UNION across every window that contains
+ * it — rather than picking one "most centred" window — is what makes the
+ * neighbourhood symmetric: a turn sitting at the edge of one window sits in the
+ * middle of the next, and the rows are already in hand, so the union costs no
+ * extra query. Each neighbour keeps the SMALLEST distance any window gives it.
+ *
+ * Scoping is the same `SCOPE_SQL` every other derived read uses. Without it this
+ * would be the one query in the file that can see another workspace's documents.
+ */
+export function sessionNeighbours(db: DatabaseSync, ids: readonly string[], scan: DerivedScan, radius: number): Map<string, SessionNeighbour[]> {
+  const result = new Map<string, SessionNeighbour[]>();
+  if (!ids.length || radius < 1) return result;
+  const placements = new Map<string, { docId: string; position: number }[]>();
+  const documents = new Set<string>();
+  // Chunked because the rerank head can exceed SQLite's variable limit on its own.
+  for (let offset = 0; offset < ids.length; offset += 256) {
+    const chunk = ids.slice(offset, offset + 256);
+    for (const value of db.prepare(`SELECT m.memory_id AS memory_id,m.doc_id AS doc_id,m.position AS position
+      FROM local_granularity_members m JOIN local_granularity_docs d ON d.id=m.doc_id
+      WHERE d.granularity='session' AND m.memory_id IN (${chunk.map(() => '?').join(',')}) AND ${SCOPE_SQL}
+      ORDER BY m.doc_id,m.position`).iterate(...chunk, ...scopeParameters(scan))) {
+      const row = value as { memory_id: string; doc_id: string; position: number };
+      const list = placements.get(row.memory_id) ?? [];
+      list.push({ docId: row.doc_id, position: row.position }); placements.set(row.memory_id, list);
+      documents.add(row.doc_id);
+    }
+  }
+  if (!documents.size) return result;
+  const members = membersOf(db, [...documents].sort());
+  for (const [id, sites] of placements) {
+    const nearest = new Map<string, number>();
+    for (const site of sites) {
+      const ordered = members.get(site.docId);
+      if (!ordered) continue;
+      for (let step = -radius; step <= radius; step++) {
+        const neighbour = step === 0 ? undefined : ordered[site.position + step];
+        if (neighbour === undefined || neighbour === id) continue;
+        const previous = nearest.get(neighbour);
+        if (previous === undefined || Math.abs(step) < Math.abs(previous)) nearest.set(neighbour, step);
+      }
+    }
+    if (nearest.size) {
+      result.set(id, [...nearest].map(([neighbour, offset]) => ({ id: neighbour, offset }))
+        .sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset) || Math.sign(a.offset) - Math.sign(b.offset) || a.id.localeCompare(b.id)));
+    }
+  }
+  return result;
+}
+
 export function resolveOptions(options: GranularityOptions | undefined): ResolvedGranularityOptions {
   const input = options ?? {};
   const integer = (value: number | undefined, fallback: number, min: number, max: number, label: string): number => {
@@ -468,5 +533,8 @@ export function resolveOptions(options: GranularityOptions | undefined): Resolve
     expandDocs: integer(input.expandDocs, GRANULARITY_DEFAULTS.expandDocs, 1, 500, 'expandDocs'),
     expandTurns: integer(input.expandTurns, GRANULARITY_DEFAULTS.expandTurns, 1, 2000, 'expandTurns'),
     reserve: integer(input.reserve, GRANULARITY_DEFAULTS.reserve, 0 as number, 500, 'reserve'),
+    rerankContext: integer(input.rerankContext, GRANULARITY_DEFAULTS.rerankContext, 0 as number, 4, 'rerankContext'),
+    rerankContextTokens: integer(input.rerankContextTokens, GRANULARITY_DEFAULTS.rerankContextTokens, 0 as number, 448, 'rerankContextTokens'),
+    rerankContextTopN: integer(input.rerankContextTopN, GRANULARITY_DEFAULTS.rerankContextTopN, 1, 1000, 'rerankContextTopN'),
   };
 }

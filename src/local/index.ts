@@ -12,7 +12,7 @@ import type {
 } from './types.js';
 import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, type LedgerRow } from './ledger.js';
 import {
-  denseDerived, deriveDocuments, expand, GRANULARITY_LEVELS, GRANULARITY_SCHEMA, lexicalDerived, membersOf, resolveOptions, resolveSessionKey, tokenize, writeDocuments,
+  denseDerived, deriveDocuments, expand, GRANULARITY_LEVELS, GRANULARITY_SCHEMA, lexicalDerived, membersOf, resolveOptions, resolveSessionKey, sessionNeighbours, tokenize, writeDocuments,
   type DerivationMember, type DerivedScan, type DerivedScore, type GranularityIndexCounts, type ResolvedGranularityOptions,
 } from './granularity.js';
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
@@ -23,6 +23,7 @@ import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared
 import type { LedgerTemporalRouting } from './types.js';
 import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
+import { buildContextPassage, contextBudget, type ContextNeighbour } from './reranking/context.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
 import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
@@ -205,7 +206,7 @@ export class LocalMemory {
     this.#rerankTopN = v.limit(options.rerankTopN, 50, 200);
     this.#minSimilarity = this.#similarity(options.minSimilarity, 0);
     this.#rrfK = v.limit(options.rrfK, 10, 1000);
-    if (options.granularity !== undefined) v.keys(v.object(options.granularity, 'granularity'), ['sessionKeys', 'windowTurns', 'windowStride', 'summarySentences', 'summaryKeywords', 'weight', 'expandDocs', 'expandTurns', 'reserve'], 'granularity');
+    if (options.granularity !== undefined) v.keys(v.object(options.granularity, 'granularity'), ['sessionKeys', 'windowTurns', 'windowStride', 'summarySentences', 'summaryKeywords', 'weight', 'expandDocs', 'expandTurns', 'reserve', 'rerankContext', 'rerankContextTokens', 'rerankContextTopN'], 'granularity');
     this.#granularity = resolveOptions(options.granularity);
     const ledger = options.ledger === undefined ? {} : options.ledger;
     if (ledger !== false) v.keys(v.object(ledger, 'ledger'), ['enabled', 'queries', 'candidates', 'maxCandidates'], 'ledger');
@@ -1175,7 +1176,66 @@ export class LocalMemory {
    * cross-encoder's ordering and the ledger's training signal, and it keeps
    * `RecallResult.score` monotonically decreasing down the returned list.
    */
-  #rerankSync(input: RecallInput, ranked: ScoredId[], time: TemporalView, reserved = 0): ScoredId[] | null {
+  /**
+   * The passages for a SECOND, context-aware rerank of the same candidates, or
+   * null when this recall does not get one.
+   *
+   * A cross-encoder scores each turn against the query in isolation, which is the
+   * judgement the session index exists to correct: a turn that is evidence only in
+   * context is pulled into the pool by session expansion and then rescored to the
+   * floor. Here each candidate is paired with a passage that LEADS WITH ITS OWN
+   * TEXT and continues with its in-session neighbours, so the model reads what
+   * made it evidence without losing which turn it is being asked about.
+   *
+   * Returns one passage per entry, in the same order, so the caller can hand the
+   * array to the same reranker and read the scores back positionally.
+   *
+   * Every neighbour is rehydrated and re-gated through the SAME check the result
+   * loop applies, so a passage can only ever contain text this recall was already
+   * allowed to return. Nothing here surfaces a record: the neighbours are read for
+   * their text and are not candidates.
+   */
+  #contextPassages(query: string, entries: readonly { id: string; text: string }[], reranker: { countTokens?(text: string): number }, time: TemporalView, eligible: (memory: MemoryRecord) => boolean): string[] | null {
+    const radius = this.#granularity.rerankContext;
+    // Two independent gates, and the count is exact or the feature stands down:
+    // a budget measured in anything but the encoder's own pieces would be a guess.
+    if (radius < 1 || !entries.length || !reranker.countTokens) return null;
+    const count = (text: string): number => reranker.countTokens!(text);
+    const head = entries.slice(0, this.#granularity.rerankContextTopN);
+    const scan: DerivedScan = { workspaceId: this.#workspaceId, agentId: this.#agentId, asOf: time.asOf, knownAt: time.knownAt };
+    const neighbours = sessionNeighbours(this.#db, head.map(entry => entry.id), scan, radius);
+    if (!neighbours.size) return null;
+    // Windows overlap, so the same neighbour is asked for repeatedly; resolving it
+    // once per recall keeps the added work proportional to the session, not to the
+    // head. `null` is a cached miss, not an absent entry.
+    const texts = new Map<string, string | null>();
+    const textOf = (id: string): string | null => {
+      if (texts.has(id)) return texts.get(id)!;
+      const stored = this.get(id), memory = stored && this.#at(stored, time);
+      const text = memory && eligible(memory) ? memory.text : null;
+      texts.set(id, text); return text;
+    };
+    const queryTokens = count(query);
+    let windowed = 0;
+    const passages = entries.map((entry, index) => {
+      const adjacent = index < head.length ? neighbours.get(entry.id) : undefined;
+      if (!adjacent) return entry.text;
+      const resolved: ContextNeighbour[] = [];
+      for (const neighbour of adjacent) {
+        const text = textOf(neighbour.id);
+        if (text) resolved.push({ id: neighbour.id, offset: neighbour.offset, text });
+      }
+      const passage = buildContextPassage(entry.text, resolved,
+        { maxTokens: contextBudget(queryTokens, count(entry.text), this.#granularity.rerankContextTokens), count });
+      if (passage !== entry.text) windowed++;
+      return passage;
+    });
+    // Nothing was added, so a second pass would score the same passages twice and
+    // contribute a channel identical to the first. Skip the model call outright.
+    return windowed ? passages : null;
+  }
+
+  #rerankSync(input: RecallInput, ranked: ScoredId[], time: TemporalView, reserved = 0, eligible?: (memory: MemoryRecord) => boolean): { isolated: ScoredId[]; contextual: ScoredId[] | null } | null {
     const reranker = this.#resolveReranker();
     if (!reranker || !ranked.length) return null;
     // The rescoring budget grows by exactly the number of records the derived
@@ -1193,16 +1253,24 @@ export class LocalMemory {
       passages.push(memory.text); scored.push(entry);
     }
     if (!passages.length) return null;
-    const scores = reranker.rerankSync(v.string(input.query, 'query', 4096), passages);
-    if (!Array.isArray(scores) || scores.length !== passages.length) throw new TypeError('Reranker must return one score per passage');
-    const rescored = scored.map((entry, index) => {
-      const score = scores[index];
-      if (typeof score !== 'number' || !Number.isFinite(score)) throw new TypeError('Reranker returned a non-finite score');
-      return { id: entry.id, score: 0.5 + 0.5 / (1 + Math.exp(-score)) };
-    }).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    const query = v.string(input.query, 'query', 4096);
+    const rescore = (values: number[], label: string): ScoredId[] => {
+      if (!Array.isArray(values) || values.length !== passages.length) throw new TypeError(`Reranker must return one ${label} per passage`);
+      return scored.map((entry, index) => {
+        const score = values[index];
+        if (typeof score !== 'number' || !Number.isFinite(score)) throw new TypeError('Reranker returned a non-finite score');
+        return { id: entry.id, score: 0.5 + 0.5 / (1 + Math.exp(-score)) };
+      }).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    };
+    const rescored = rescore(reranker.rerankSync(query, passages), 'score');
+    // Two calls, never one mixed call: a batch pads every row to its longest
+    // member, so folding the windowed passages into the isolated array would make
+    // every isolated candidate pay the windowed width for nothing.
+    const windows = eligible ? this.#contextPassages(query, scored.map((entry, index) => ({ id: entry.id, text: passages[index] })), reranker, time, eligible) : null;
+    const contextual = windows ? rescore(reranker.rerankSync(query, windows), 'context score') : null;
     const best = ranked[0].score;
     const demote = (entry: ScoredId): ScoredId => ({ id: entry.id, score: best > 0 ? 0.5 * (entry.score / best) : 0 });
-    return [...rescored, ...carried.map(demote), ...tail.map(demote)];
+    return { isolated: [...rescored, ...carried.map(demote), ...tail.map(demote)], contextual };
   }
 
   /** RRF over the lexical channel and an exact cosine scan, on one synchronous call path. */
@@ -1236,8 +1304,12 @@ export class LocalMemory {
     // never sees the in-window candidate cannot rank it, and the slice is where
     // that candidate would otherwise be lost.
     if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
-    const reranked = this.#rerankSync(input, ranked, time, multi?.reserved ?? 0);
-    if (reranked) { ranked = multi ? this.#withReranker(ranked, reranked) : reranked; trace?.push({ stage: 'reranked', candidates: ranked }); }
+    // The contextual pass is offered only on the multi path, and only there does
+    // #withReranker compose rather than replace: on the turn path the
+    // cross-encoder's verdict is still the ranking, exactly as it always has been.
+    const reranked = this.#rerankSync(input, ranked, time, multi?.reserved ?? 0,
+      multi ? (memory) => this.#eligibleAt(memory.id, time, includeUntrusted) : undefined);
+    if (reranked) { ranked = multi ? this.#withReranker(ranked, reranked.isolated, reranked.contextual) : reranked.isolated; trace?.push({ stage: 'reranked', candidates: ranked }); }
     // Blend BEFORE prioritise: prioritisation re-orders whichever candidate list exists,
     // and the granularity blend is what defines that list. Prioritising first would let
     // the blend undo it.
@@ -1755,9 +1827,26 @@ export class LocalMemory {
    * it already uses. A candidate the cross-encoder never saw keeps its fused rank
    * and contributes from that channel only, so withholding judgement is not the
    * same as judging it badly.
+   *
+   * `contextual`, when present, is a THIRD channel carrying the same
+   * cross-encoder's ordering of the same candidates against passages that lead
+   * with the candidate's own text and continue with its in-session neighbours.
+   * It is deliberately NOT the rejected endorsement channel above, and the
+   * difference is the whole point: endorsement gave every member of a window the
+   * SAME rank, a document-level signal that packed a strong session's siblings
+   * into the top ten. This scores each candidate on its own passage, so the unit
+   * of judgement stays the turn. The isolated channel is untouched either way —
+   * it is what separates an evidence turn from its bystander neighbour, and
+   * replacing it is attempt 1 and attempt 3's shared mistake.
+   *
+   * Composition happens in RANK space because that is the only space `#fuse`
+   * has. Clamping or maximising the two SCORES would collapse them onto shared
+   * values whose order is then decided by the id tiebreak, which is not a
+   * ranking at all.
    */
-  #withReranker(fused: ScoredId[], reranked: ScoredId[]): ScoredId[] {
-    return [...this.#fuse([fused, reranked], this.#rrfK).values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  #withReranker(fused: ScoredId[], reranked: ScoredId[], contextual?: ScoredId[] | null): ScoredId[] {
+    const channels = contextual ? [fused, reranked, contextual] : [fused, reranked];
+    return [...this.#fuse(channels, this.#rrfK).values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   }
 
   #retainBest(heap: ScoredId[], entry: ScoredId, limit: number): void {
@@ -2047,7 +2136,11 @@ export class LocalMemory {
     if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
     if (options.reranker && ranked.length) {
       let candidates: (ScoredId & { memory: MemoryRecord })[] = [];
-      const scores = await this.#boundedCall((signal) => {
+      // BOTH rerank requests issue inside ONE bounded call. A second #boundedCall
+      // would recompute its own deadline from `timeoutMs`, doubling the bound this
+      // method advertises, and a "remaining budget" passed to it would throw the
+      // moment it fell under the floor `v.limit` enforces.
+      const passes = await this.#boundedCall((signal) => {
         time = this.#temporal(input);
         candidates = ranked.flatMap(entry => {
           const current = this.get(entry.id), memory = current && this.#at(current, time);
@@ -2057,18 +2150,30 @@ export class LocalMemory {
         }).slice(0, rerankTopN + (multi?.reserved ?? 0));
         // Rehydrate immediately before dispatch, then isolate adapter mutation.
         const supplied = candidates.map(entry => JSON.parse(JSON.stringify(entry.memory)) as MemoryRecord);
-        return supplied.length ? options.reranker!.rerank(input.query, supplied, { signal }) : Promise.resolve([]);
+        if (!supplied.length) return Promise.resolve({ isolated: [] as { id: string; score: number }[], contextual: null });
+        const windows = multi ? this.#contextPassages(input.query, candidates.map(entry => ({ id: entry.id, text: entry.memory.text })), options.reranker!, time, eligible) : null;
+        // The records stay exactly what they are; the windowed text travels as an
+        // explicit `passages` array, because this is the provider-agnostic seam and
+        // a MemoryRecord whose `text` is not its text would lie to every implementer.
+        return Promise.all([
+          options.reranker!.rerank(input.query, supplied, { signal }),
+          windows ? options.reranker!.rerank(input.query, candidates.map(entry => JSON.parse(JSON.stringify(entry.memory)) as MemoryRecord), { signal, passages: windows }) : Promise.resolve(null),
+        ]).then(([isolated, contextual]) => ({ isolated, contextual }));
       }, options.signal, options.timeoutMs);
-      if (!Array.isArray(scores) || scores.length !== candidates.length) throw new TypeError('Reranker must return every candidate exactly once');
-      const known = new Set(candidates.map((entry) => entry.memory.id));
-      const seen = new Set<string>();
-      const byId = new Map<string, number>();
-      for (const entry of scores) {
-        if (!entry || !known.has(entry.id) || seen.has(entry.id) || typeof entry.score !== 'number' || !Number.isFinite(entry.score) || entry.score < 0 || entry.score > 1) throw new TypeError('Reranker returned an unknown, duplicate or invalid score; scores must be between 0 and 1');
-        seen.add(entry.id); byId.set(entry.id, entry.score);
-      }
-      const rescored = candidates.map((entry) => ({ id: entry.id, score: byId.get(entry.id)! })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-      ranked = multi ? this.#withReranker(ranked, rescored) : rescored;
+      const channel = (scores: { id: string; score: number }[] | null): ScoredId[] | null => {
+        if (scores === null) return null;
+        if (!Array.isArray(scores) || scores.length !== candidates.length) throw new TypeError('Reranker must return every candidate exactly once');
+        const known = new Set(candidates.map((entry) => entry.memory.id));
+        const seen = new Set<string>();
+        const byId = new Map<string, number>();
+        for (const entry of scores) {
+          if (!entry || !known.has(entry.id) || seen.has(entry.id) || typeof entry.score !== 'number' || !Number.isFinite(entry.score) || entry.score < 0 || entry.score > 1) throw new TypeError('Reranker returned an unknown, duplicate or invalid score; scores must be between 0 and 1');
+          seen.add(entry.id); byId.set(entry.id, entry.score);
+        }
+        return candidates.map((entry) => ({ id: entry.id, score: byId.get(entry.id)! })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+      };
+      const rescored = channel(passes.isolated)!;
+      ranked = multi ? this.#withReranker(ranked, rescored, channel(passes.contextual)) : rescored;
     }
     this.#assertOpen(); this.#abort(options.signal);
     // Every await is an invalidation boundary. Rehydrate and recheck all safety

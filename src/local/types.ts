@@ -431,7 +431,19 @@ export interface SyncMemoryEmbedder extends MemoryEmbedder {
   close(): void;
 }
 export interface MemoryReranker {
-  rerank(query: string, candidates: readonly MemoryRecord[], options: { signal: AbortSignal }): Promise<{ id: string; score: number }[]>;
+  /**
+   * `options.passages`, when present, is the text to score for each candidate at
+   * the same index, in place of `candidate.text`.
+   *
+   * It exists so a caller can score a turn together with its in-session
+   * neighbours WITHOUT handing this boundary a record that lies about itself:
+   * `MemoryRecord` is the provider-agnostic contract and overwriting its `text`
+   * would corrupt it for every implementer. A reranker that ignores the array
+   * behaves exactly as it does today, which is the correct degradation.
+   */
+  rerank(query: string, candidates: readonly MemoryRecord[], options: { signal: AbortSignal; passages?: readonly string[] }): Promise<{ id: string; score: number }[]>;
+  /** See `SyncMemoryReranker.countTokens`. */
+  countTokens?(text: string): number;
 }
 /**
  * A cross-encoder that rescores candidates against the query on a synchronous
@@ -447,6 +459,11 @@ export interface SyncMemoryReranker {
   /** One score per passage, in input order. Higher is more relevant; the scale is
    * the model's own and is only meaningful for ordering within one call. */
   rerankSync(query: string, passages: readonly string[]): number[];
+  /** The model's own piece count for a string, when it can report one. Callers
+   * that assemble a passage under a token budget need the encoder's unit rather
+   * than an approximation of it; a reranker that cannot answer simply omits this
+   * and its callers fall back to leaving the budget unspent. */
+  countTokens?(text: string): number;
   close(): void;
 }
 export interface EmbeddingIndexOptions {
@@ -629,6 +646,31 @@ export interface GranularityOptions {
    * relationship: derived evidence corroborates turn evidence rather than
    * outvoting it. */
   weight?: number;
+  /** In-session neighbours concatenated on EITHER side of a candidate when the
+   * cross-encoder rescores it, 0-4. Defaults to 0, which is the feature off.
+   *
+   * A cross-encoder scores each turn against the query in isolation, which is the
+   * judgement a session index exists to correct: a turn that is evidence only in
+   * context gets pulled into the pool by session expansion and then rescored to
+   * the floor. Above 0, and only on the `multi` path, each candidate is scored a
+   * SECOND time against a passage that leads with its own text and continues with
+   * its neighbours, and that ordering joins the fusion as one more channel. The
+   * isolated score is never replaced. Measured on LoCoMo, 2 is the knee: a radius
+   * of 2 reaches 28.5 % of all-evidence-hit failures and 3 adds a further 1.5 %. */
+  rerankContext?: number;
+  /** Wordpieces of context admitted per candidate, 0-448. Defaults to 192.
+   *
+   * This is the one latency dial. Sequence cost is set by the LONGEST member of a
+   * batch, so capping the context caps the padded width of the contextual pass
+   * regardless of how long the corpus's turns are. Neighbours are admitted whole
+   * and skipped when they do not fit; the candidate is never budgeted and never
+   * truncated. */
+  rerankContextTokens?: number;
+  /** Candidates given a contextual pass, 1-1000. Defaults to 1000, i.e. all of
+   * the rerank head. Exists only as a latency valve; lowering it is a second
+   * resort after `rerankContextTokens`, because it changes WHICH candidates get
+   * help rather than how much. */
+  rerankContextTopN?: number;
   /** Derived documents expanded per channel, 1-500. Defaults to 12. */
   expandDocs?: number;
   /** Distinct member records expanded per channel, 1-2000. Defaults to 24.

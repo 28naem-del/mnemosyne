@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import type { SyncMemoryReranker } from '../types.js';
-import { encodeWordPiecePair, loadWordPieceVocabulary, type WordPieceVocabulary } from '../embedding/wordpiece.js';
+import { countWordPieces, encodeWordPiecePair, loadWordPieceVocabulary, type WordPieceVocabulary } from '../embedding/wordpiece.js';
 import { BUNDLED_RERANKER_ID, BUNDLED_RERANKER_MODEL, bundledRerankerFilePath, bundledRerankerStatus, verifyBundledReranker } from './model-assets.js';
 
 /**
@@ -97,6 +97,12 @@ class BundledRerankerEngine {
   }
 
   #assertOpen(): void { if (this.#closed) throw new Error('Local reranker is closed'); }
+
+  /** Exact, because it runs the same `pieces()` path `encodeWordPiecePair` runs. */
+  countTokens(text: string): number {
+    this.#assertOpen();
+    return countWordPieces(text, this.#vocabulary);
+  }
 
   rerankSync(query: string, passages: readonly string[]): number[] {
     this.#assertOpen();

@@ -96,6 +96,19 @@ function wordPiece(word: string, vocabulary: WordPieceVocabulary): number[] {
 }
 
 /**
+ * How many wordpieces `text` contributes to a sequence, excluding the special
+ * tokens the encoders add around it.
+ *
+ * Callers that budget a pair need the encoder's OWN unit. Bytes are not an
+ * approximation of it: `basicTokenize` emits one token per punctuation character,
+ * so a byte cap cannot bound a token-priced resource, and a word count is only a
+ * lower bound because wordpiece splits unknown words.
+ */
+export function countWordPieces(text: string, vocabulary: WordPieceVocabulary): number {
+  return pieces(text, vocabulary).length;
+}
+
+/**
  * Encodes one sequence as `[CLS] … [SEP]`, truncating the body so the result
  * never exceeds `maxTokens`. Truncation is reported so callers can disclose it
  * rather than silently embedding a prefix of a long document.

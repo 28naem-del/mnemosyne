@@ -94,6 +94,10 @@ export interface CorpusBenchmarkOptions {
    * its embedding time rather than hiding it inside retrieval latency.
    */
   granularity?: 'turn' | 'multi';
+  /** In-session neighbours concatenated either side of a candidate when the
+   * cross-encoder rescores it, 0-4. Defaults to 0, the feature off. Only the
+   * `multi` granularity reads it; a `turn` run is unaffected at any value. */
+  rerankContext?: number;
   /**
    * Competitor systems scored in the same loop, on the same chunks, with the same
    * packing budget and the same scorer. Each becomes a `system:<id>` condition.

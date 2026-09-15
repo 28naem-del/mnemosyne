@@ -153,7 +153,7 @@ function summary(rows: CorpusAttempt[]): CorpusSummary {
 
 /** No generation or judge path. Optional embeddings use only explicit caller callbacks. */
 export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBenchmarkOptions = {}): Promise<CorpusBenchmarkReport> {
-  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'granularity', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs', 'corpusIndexBase', 'temporalRouting'];
+  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'granularity', 'rerankContext', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs', 'corpusIndexBase', 'temporalRouting'];
   if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !optionKeys.includes(key))) throw new Error('Unknown corpus evaluation option.');
   if (options.includeBm25 !== undefined && typeof options.includeBm25 !== 'boolean') throw new Error('includeBm25 must be boolean.');
   if (options.includeHybridWithoutRerank !== undefined && typeof options.includeHybridWithoutRerank !== 'boolean') throw new Error('includeHybridWithoutRerank must be boolean.');
@@ -168,6 +168,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
   if (new Set(systems.map(system => system.id)).size !== systems.length) throw new Error('Duplicate matched system id.');
   if (options.hybridLexicalScoring !== undefined && !['overlap', 'bm25'].includes(options.hybridLexicalScoring)) throw new Error('Invalid hybrid lexical scoring.');
   if (options.granularity !== undefined && !['turn', 'multi'].includes(options.granularity)) throw new Error('Invalid retrieval granularity.');
+  if (options.rerankContext !== undefined && (!Number.isSafeInteger(options.rerankContext) || options.rerankContext < 0 || options.rerankContext > 4)) throw new Error('Invalid rerank context radius.');
   if (options.countContext !== undefined && typeof options.countContext !== 'function') throw new Error('Invalid context counter.');
   const started = performance.now(), implementationSha256 = implementationFingerprint();
   const settings = { topK: integer(options.topK, 20, 1, 100), maxContextUnits: integer(options.maxContextUnits, 8192, 1, 16_777_216),
@@ -182,6 +183,9 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
     // Reported so a row says at which granularities it retrieved, not only that it
     // was "hybrid". A run is only comparable to another at the same setting.
     granularity: options.granularity ?? 'turn',
+    // Part of the settings, not a footnote: it changes what the hybrid condition
+    // returns, so two runs at different values are not comparable rows.
+    rerankContext: integer(options.rerankContext, 0, 0, 4),
     // Recorded so a report says whether the hybrid condition was reranked, and by what.
     reranker: options.reranker ? 'enabled' : 'disabled',
     hybridWithoutRerankCondition: options.includeHybridWithoutRerank ? 'enabled' : 'disabled',
@@ -260,7 +264,8 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
         const validFrom = temporal ? new Map(chunks.map(chunk => [chunk.id, temporalInstant(chunk.turn.date)] as const)) : undefined;
         const newest = validFrom && [...validFrom.values()].filter((at): at is string => at !== undefined).sort().at(-1);
         const clock = newest ? new Date(Date.parse(newest) + 86_400_000).toISOString() : fixedTime;
-        memory = createLocalMemory({ path: ':memory:', workspaceId: 'corpus-evaluation', agentId: 'retriever', retrieval: 'lexical', now: () => new Date(clock) });
+        memory = createLocalMemory({ path: ':memory:', workspaceId: 'corpus-evaluation', agentId: 'retriever', retrieval: 'lexical', now: () => new Date(clock),
+          ...(settings.rerankContext ? { granularity: { rerankContext: settings.rerankContext } } : {}) });
         for (let offset = 0; offset < chunks.length; offset += 256) {
           check(); const records: MemoryRecord[] = chunks.slice(offset, offset + 256).map(chunk => ({ id: chunk.id, workspaceId: 'corpus-evaluation', agentId: 'retriever', visibility: 'private', status: 'active', createdAt: fixedTime, updatedAt: fixedTime, ...(validFrom?.get(chunk.id) === undefined ? {} : { validFrom: validFrom.get(chunk.id)! }), dependencies: [], text: chunk.turn.speaker ? `${chunk.turn.speaker}: ${chunk.text}` : chunk.text, kind: 'observation', trust: 'observed', source: { uri: `benchmark://history/${chunk.id}`, ...(chunk.turn.role ? { author: chunk.turn.role } : {}) },
             // The session key is the turn date the corpus already carries, so no
