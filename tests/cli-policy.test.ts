@@ -23,6 +23,7 @@ const mutations = [
 const erasures = [['forget'], ['migrate', '--action', 'rollback'], ['migrate', '--action', 'forget']];
 const reads = [
   ['recall'], ['context'], ['inspect'], ['export'], ['jobs'], ['model'], ['model', '--action', 'get'], ['model', '--action', 'context'],
+  ['replay'], ['bisect'],
   ['skill', '--action', 'get'], ['branch', '--action', 'preview'], ['entity', '--action', 'resolve'], ['entity', '--action', 'traverse'],
   ['health'], ['health', '--action', 'scan'], ['health', '--action', 'recall'], ['migrate', '--action', 'inspect'], ['migrate', '--action', 'source'],
   ...mutations.filter(([command]) => command !== 'store' && command !== 'import'),
