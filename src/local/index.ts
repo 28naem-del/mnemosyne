@@ -19,7 +19,7 @@ import type { LedgerTemporalRouting } from './types.js';
 import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
-import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
+import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, noteLiveClock, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
 
 export type * from './types.js';
@@ -162,8 +162,9 @@ export class LocalMemory {
   /** See `./bm25-corpus-stats.js`. */
   #bm25StatsCache: CorpusStatsCache = new Map();
   #bm25TemporalBounds = { present: false };
-  /** Highest clock reading a live BM25 scope has been evaluated at on this
-   * connection; see `liveClockSteppedBack` for why caching below it is unsafe. */
+  /** Highest clock reading this connection has taken at all — fed by `#time()`,
+   * so writes count as well as recalls; see `liveClockSteppedBack` for why
+   * caching below it is unsafe. */
   #bm25LiveClock = { highWater: '' };
 
   constructor(options: LocalMemoryOptions) {
@@ -452,10 +453,17 @@ export class LocalMemory {
     });
   }
 
+  /** The single place this engine reads its clock. Every reading feeds
+   * `#bm25LiveClock` — writes as much as reads — because the BM25 live-view
+   * cache guard has to know the highest instant this connection has *observed*,
+   * not merely the highest it has recalled at; see `noteLiveClock`. Only ever
+   * sees `this.#now()`, never a caller-supplied `asOf`. */
   #time(): string {
     const date = this.#now();
     if (!(date instanceof Date) || !Number.isFinite(date.getTime())) throw new TypeError('now must return a valid Date');
-    return date.toISOString();
+    const iso = date.toISOString();
+    noteLiveClock(iso, this.#bm25LiveClock);
+    return iso;
   }
 
   #decode(row: unknown): MemoryRecord | null {

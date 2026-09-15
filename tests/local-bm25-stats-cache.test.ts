@@ -541,4 +541,146 @@ describe('BM25 corpus statistics cache', () => {
     db.recall({ query: 'widget', lexicalScoring: 'bm25' });
     expect(probe.calls()).toBe(3);
   });
+  /**
+   * The regression suite for the silent-recall-loss blocker. The existing
+   * step-back tests above all warm the cache with a `recall()` at the high
+   * instant, which is the one carrier the first version of the guard covered:
+   * only `#bm25Recall` fed the high-water mark, so only a *recall* at a high
+   * clock was ever remembered. A **write** at a high clock reads the very same
+   * clock and was invisible to it. These tests are the same scenarios with the
+   * warming recall removed — the mark now comes from `#time()` itself, so every
+   * clock reading feeds it whatever the caller was doing.
+   */
+  describe('a write at a high clock counts as having seen that clock', () => {
+    const pairs = (rows: { memory: { id: string }; score: number }[]) =>
+      rows.map(r => [r.memory.id, r.score] as const).sort((a, b) => a[0].localeCompare(b[0]));
+
+    it('does not serve statistics cached below a write\'s clock, on retrieval:\'lexical\'', () => {
+      // Two rows land at day(12) with NO recall there, so nothing but the write
+      // itself ever observes day(12). The clock then steps back to day(3),
+      // where the rows are legitimately invisible and `documents` is 0 — and
+      // that 0 must not be cached, because ordinary forward advance re-crosses
+      // day(12) with no write to invalidate against. Served stale, `documents`
+      // runs low, the idf term goes negative and `score > 0` drops every row:
+      // 0 results where the truth is 2, indefinitely.
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-writeclock-lexical-'));
+      const path = join(root, 'memory.sqlite');
+      let current = 12;
+      const db = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(current)) });
+      opened.push(db);
+      db.store(fact('widget alpha'));
+      db.store(fact('widget beta'));
+
+      current = 3; // backward step (NTP correction, snapshot restore, sleep/resume)
+      expect(db.recall({ query: 'widget', lexicalScoring: 'bm25' })).toHaveLength(0); // correct: created_at is day(12)
+
+      const probe = countCorpusStatsCalls();
+      current = 20; // the clock recovers and moves on past the writes
+      const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      const recomputed = probe.calls();
+      vi.restoreAllMocks();
+
+      const cold = createLocalMemory({ path, agentId: 'alice', workspaceId: 'test', retrieval: 'lexical', now: () => new Date(day(20)) });
+      opened.push(cold);
+      const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(truth).toHaveLength(2);
+      expect(after).toHaveLength(2);        // the defect returned 0 here
+      expect(pairs(after)).toEqual(pairs(truth)); // ...and, when it returned rows at all, deflated their scores
+      expect(recomputed).toBe(1);           // 0 would mean the stepped-back entry was served
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it('does not serve statistics cached below a write\'s clock, on retrieval:\'hybrid\'', () => {
+      // Same carrier on the default-shaped hybrid path. The embedder is
+      // constant, so every row ties on the dense side and RRF cannot paper over
+      // a collapsed lexical stage the way it does when dense ranking happens to
+      // agree — which is exactly why the audit could demonstrate total loss
+      // only on 'lexical'. What is asserted here is the defect itself: the
+      // corpus statistics must be recomputed rather than served from the entry
+      // built at the stepped-back instant, and the answer must match a cold
+      // engine at the same instant.
+      const constant = Object.freeze({
+        model: 'test-bm25-clock-embedder@1', dimensions: 4,
+        embedSync: (texts: string[]) => texts.map(() => [0, 1, 0, 0]),
+        embed: async (texts: string[]) => texts.map(() => [0, 1, 0, 0]),
+        forQueries: () => ({ model: 'test-bm25-clock-embedder@1', dimensions: 4, embed: async (texts: string[]) => texts.map(() => [0, 1, 0, 0]) }),
+        forPassages: () => ({ model: 'test-bm25-clock-embedder@1', dimensions: 4, embed: async (texts: string[]) => texts.map(() => [0, 1, 0, 0]) }),
+        close: () => {},
+      });
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-writeclock-hybrid-'));
+      const path = join(root, 'memory.sqlite');
+      let current = 12;
+      const options = { path, agentId: 'alice', workspaceId: 'test', retrieval: 'hybrid' as const, embedder: constant };
+      const db = createLocalMemory({ ...options, now: () => new Date(day(current)) });
+      opened.push(db);
+      db.store(fact('widget alpha'));
+      db.store(fact('widget beta'));
+
+      current = 3;
+      expect(db.recall({ query: 'widget', lexicalScoring: 'bm25' })).toHaveLength(0);
+
+      const probe = countCorpusStatsCalls();
+      current = 20;
+      const after = db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      const recomputed = probe.calls();
+      vi.restoreAllMocks();
+
+      const cold = createLocalMemory({ ...options, now: () => new Date(day(20)) });
+      opened.push(cold);
+      const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(truth).toHaveLength(2);
+      expect(after.map(r => r.memory.id).sort()).toEqual(truth.map(r => r.memory.id).sort());
+      expect(recomputed).toBe(1); // 0 would mean the stepped-back entry was served
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it('leaves a monotone clock caching exactly as before, writes included', () => {
+      // The guard must cost nothing on the path everyone is actually on. A
+      // clock that only ever advances never reads below its own mark, so the
+      // comparison is false every time and caching is untouched: one recompute
+      // for the first recall, one more after each write, and nothing else.
+      let current = 3;
+      const db = memory('alice', 'test', () => new Date(day(current)));
+      db.store(fact('widget alpha'));
+      db.store(fact('widget beta'));
+      const probe = countCorpusStatsCalls();
+      const recall = () => db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+
+      recall();
+      expect(probe.calls()).toBe(1);
+      current = 5; recall();
+      current = 6; recall(); recall();
+      expect(probe.calls()).toBe(1);   // forward advance keeps hitting
+
+      current = 12;
+      db.store(fact('widget gamma')); // a write at a *higher* clock than any recall so far
+      current = 13; recall();
+      expect(probe.calls()).toBe(2);   // the write invalidated, the clock did not
+      current = 20; recall(); recall();
+      expect(probe.calls()).toBe(2);
+    });
+
+    it('does not treat a caller-supplied historical asOf as a backward clock step', () => {
+      // `#time()` only ever sees `this.#now()`, so an `asOf` in the past is a
+      // query parameter and not a clock reading. It must neither raise the mark
+      // nor be tested against it: a historical view is keyed by its own literal
+      // instants and stays cacheable however far back the caller looks.
+      let current = 20;
+      const db = memory('alice', 'test', () => new Date(day(current)));
+      db.store(fact('widget alpha'));
+      db.store(fact('widget beta'));
+      const probe = countCorpusStatsCalls();
+
+      db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(probe.calls()).toBe(1);
+      db.recall({ query: 'widget', lexicalScoring: 'bm25', asOf: day(25) }); // historical, its own key
+      db.recall({ query: 'widget', lexicalScoring: 'bm25', asOf: day(25) }); // ...and still cached
+      expect(probe.calls()).toBe(2);
+      db.recall({ query: 'widget', lexicalScoring: 'bm25' }); // the live entry survived the excursion
+      expect(probe.calls()).toBe(2);
+      current = 21;
+      db.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(probe.calls()).toBe(2); // the past asOf never became the high-water mark
+    });
+  });
 });
