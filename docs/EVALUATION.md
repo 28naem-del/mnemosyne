@@ -1,6 +1,8 @@
 # Evaluation evidence — 2026-09-13
 
-This release separates correctness checks, public-data retrieval measurements and memory-quality claims. No paid model calls, generated-answer evaluation or matched competitor experiments were performed.
+This release separates correctness checks, public-data retrieval measurements and memory-quality claims. **No generated-answer evaluation was performed** — every figure on this page is retrieval coverage, scored with no reader and no judge, and no measurement on this page used a paid model call.
+
+A **matched competitor benchmark has since been run** and is not on this page: see [COMPARISON.md](../COMPARISON.md) for the measured tables against Mem0 OSS (14 September, LoCoMo 1,986 questions and LongMemEval-S; and 15 September, Mem0's paid `infer:true` extraction path), including the conditions where Mem0 beats us. That run is the only paid-model spend associated with this release.
 
 ## External-review follow-up on the rc8 source candidate
 

@@ -12,4 +12,4 @@ The host supplies the reader and any model configuration. Scripted fixtures vali
 
 ## Reading the result
 
-Public retrieval measurements and their limits are collected in [Evaluation](/docs/#evaluation). Read the positive-label denominator, source revision, context budget, chronology policy and overflow counts before comparing numbers. No generated-answer accuracy or matched competitor score is implied by those retrieval results.
+Public retrieval measurements and their limits are collected in [Evaluation](/docs/#evaluation). Read the positive-label denominator, source revision, context budget, chronology policy and overflow counts before comparing numbers. No generated-answer accuracy is implied by those retrieval results. A separate matched competitor retrieval benchmark against Mem0 OSS, with its losses published, is in [COMPARISON.md](https://github.com/28naem-del/mnemosyne/blob/main/COMPARISON.md).
