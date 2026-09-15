@@ -33,7 +33,7 @@ describe('local persistence and ownership', () => {
     roots.push(runtime);
     writeFileSync(join(runtime, 'package.json'), '{"type":"module"}');
     for (const directory of ['embedding', 'reranking', 'vector']) mkdirSync(join(runtime, directory), { recursive: true });
-    for (const file of ['index', 'validation', 'types', 'ledger', 'bm25-corpus-stats', 'temporal-query', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece',
+    for (const file of ['index', 'validation', 'types', 'ledger', 'granularity', 'bm25-corpus-stats', 'temporal-query', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece',
       'reranking/shared', 'reranking/onnx-reranker', 'reranking/model-assets',
       'vector/index', 'vector/types', 'vector/sqlite-vec', 'vector/hnsw']) {
       const code = readFileSync(new URL(`../src/local/${file}.ts`, import.meta.url), 'utf8');

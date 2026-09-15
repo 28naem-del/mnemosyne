@@ -42,6 +42,10 @@ export interface LedgerCandidate {
   /** Zero-based position within that stage. */
   rank: number;
   score: number;
+  /** Which granularities nominated this candidate, comma separated and sorted —
+   * `'turn'`, `'session'`, `'turn,session,summary'`. Entries written before the
+   * multi-granularity index read back as `'turn'`, which is what they were. */
+  granularity?: string;
 }
 
 /** Every knob that can change what a retrieval returns, so two runs are only
@@ -118,6 +122,10 @@ export interface LedgerRetrieval {
   /** Absent on schema 1 entries, which genuinely did not record their configuration. */
   config?: LedgerRetrievalConfig;
   configSha256?: string;
+  /** What the multi-granularity index contributed, present only on a recall that
+   * asked for it. `expandedDocs`/`expandedTurns` disclose the caps actually hit,
+   * so a bounded expansion never reads as an unbounded one. */
+  granularity?: { mode: GranularityMode; channels: { level: GranularityLevel; channel: 'lexical' | 'dense'; documents: number; expandedDocs: number; expandedTurns: number }[]; reserved: number };
   /** The full per-stage candidate set, oldest stage first, bounded by
    * `ledger.maxCandidates`. Empty on schema 1 entries and when candidate
    * recording is off. */
@@ -332,6 +340,11 @@ export interface LocalMemoryOptions {
    * stops fitting in whatever RAM SQLite would otherwise settle for on its
    * own (a few MB). Must be a nonzero integer, magnitude at most 2,097,152. */
   cacheSize?: number;
+  /** Multi-granularity index settings. The index is only ever built by an
+   * explicit `indexGranularity()` call and is only ever read by a recall that
+   * asks for `granularity: 'multi'`, so these settings change nothing on their
+   * own. */
+  granularity?: GranularityOptions;
 }
 
 /** What retrieval actually does, as opposed to what was asked for. A hybrid
@@ -350,6 +363,9 @@ export interface RetrievalStatus {
   rerankDegraded?: string;
   /** Which dense index served this path. Absent until a dense recall has run. */
   index?: DenseIndexStatus;
+  /** Why a `granularity: 'multi'` recall could not consult the derived index —
+   * no embedder on this path, or nothing built yet. Never silent. */
+  granularityDegraded?: string;
 }
 
 export interface RecallInput {
@@ -380,6 +396,12 @@ export interface RecallInput {
    * floor sits near 0.55 and a floor below ~0.5 filters almost nothing. Raw recall
    * is a diagnostic view and defaults to no floor; compile() gates separately. */
   minSimilarity?: number;
+  /** Consult the session and summary indexes beside the turn index. Defaults to
+   * `'turn'`, which is exactly the pre-existing engine. Results are turn-level
+   * records either way: a session or summary hit is expanded back into its member
+   * records, and each of those passes the same eligibility gate as any other
+   * candidate before it can be returned. */
+  granularity?: GranularityMode;
 }
 
 export interface ListMemoryInput {
@@ -466,6 +488,8 @@ export interface CompileInput {
   asOf?: string;
   /** Excludes records, corrections and outcome evidence learned after this instant. */
   knownAt?: string;
+  /** Consult the session and summary indexes beside the turn index. Defaults to `'turn'`. */
+  granularity?: GranularityMode;
 }
 
 export interface RecallResult {
@@ -570,4 +594,80 @@ export interface RollbackRecordExpectation { id: string; fingerprint: string }
 export interface RollbackUnchangedRecordsInput {
   /** Exact private records created by the operation being undone, at most 10000. */
   records: readonly RollbackRecordExpectation[];
+}
+
+// The multi-granularity declarations live at the end of this file rather than
+// beside the option that references them: the other tier-1 branches append their
+// own fields to LocalMemoryOptions at the same anchor, and a seventy-line block
+// there turns a one-line additive merge into a seventy-line one.
+
+/** The coarser grains the same content is indexed at beside the turn itself. */
+export type GranularityLevel = 'session' | 'summary';
+/** `turn` is the default and is exactly the pre-existing engine. `multi` also
+ * consults the session and summary indexes and expands what they return back into
+ * member records, so the result shape is unchanged either way. */
+export type GranularityMode = 'turn' | 'multi';
+
+export interface GranularityOptions {
+  /** Metadata keys naming the session a record belongs to, in priority order.
+   * Defaults to `['sessionId', 'conversationId', 'threadId']`. A record carrying
+   * none of them is never derived from and stays turn-only. */
+  sessionKeys?: string[];
+  /** Records per session window, 1-256. Defaults to 6. */
+  windowTurns?: number;
+  /** Window stride, 1-256, at most `windowTurns`. Defaults to 3, so windows
+   * overlap by half and evidence straddling a boundary is still covered whole. */
+  windowStride?: number;
+  /** Sentences kept in a session summary, 1-64. Defaults to 5. */
+  summarySentences?: number;
+  /** Salient terms prefixed to a session summary, 1-128. Defaults to 12. */
+  summaryKeywords?: number;
+  /** Weight of one derived channel's RRF contribution, 0-4. Defaults to 0.5.
+   *
+   * The turn level has two channels and so a total voice of 2.0. At 0.5 the
+   * session level and the summary level each total 1.0, which is the intended
+   * relationship: derived evidence corroborates turn evidence rather than
+   * outvoting it. */
+  weight?: number;
+  /** Derived documents expanded per channel, 1-500. Defaults to 12. */
+  expandDocs?: number;
+  /** Distinct member records expanded per channel, 1-2000. Defaults to 24.
+   *
+   * Capped on members and not only on documents because one summary document is
+   * a whole session — a mean of 21.6 records on LoCoMo — so a document-only cap
+   * would let one channel inject several hundred records into a rerank pool of
+   * fifty. */
+  expandTurns?: number;
+  /** Extra rerank slots reserved for candidates only the derived index found,
+   * 0-500. Defaults to 16.
+   *
+   * Multi-granularity never takes a slot away from the turn-level ranking. The
+   * reranker receives the whole turn-only pool it would have received anyway,
+   * plus at most this many additional candidates, so expansion can only ever add
+   * work and never evict a turn-level candidate it would have scored. */
+  reserve?: number;
+}
+
+export interface GranularityIndexOptions {
+  /** Embeds the derived documents. Omit to build the lexical index only. */
+  embedder?: MemoryEmbedder;
+  /** Documents in each provider call, at most 100. Defaults to 32. */
+  batchSize?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface GranularityIndexResult {
+  /** Sessions the current records imply. */
+  sessions: number;
+  /** Derived documents the current records imply. */
+  documents: number;
+  inserted: number;
+  removed: number;
+  /** Documents left untouched because their content was unchanged, and whose
+   * vectors therefore did not need recomputing. */
+  unchanged: number;
+  embedded: number;
+  /** Records carrying no session key, which are never derived from. */
+  unsessioned: number;
 }
