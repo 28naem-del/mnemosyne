@@ -32,9 +32,10 @@ describe('local persistence and ownership', () => {
     const runtime = mkdtempSync(join(tmpdir(), 'mnemosyne-runtime-'));
     roots.push(runtime);
     writeFileSync(join(runtime, 'package.json'), '{"type":"module"}');
-    for (const directory of ['embedding', 'reranking']) mkdirSync(join(runtime, directory), { recursive: true });
-    for (const file of ['index', 'validation', 'types', 'ledger', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece',
-      'reranking/shared', 'reranking/onnx-reranker', 'reranking/model-assets']) {
+    for (const directory of ['embedding', 'reranking', 'vector']) mkdirSync(join(runtime, directory), { recursive: true });
+    for (const file of ['index', 'validation', 'types', 'ledger', 'bm25-corpus-stats', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece',
+      'reranking/shared', 'reranking/onnx-reranker', 'reranking/model-assets',
+      'vector/index', 'vector/types', 'vector/sqlite-vec', 'vector/hnsw']) {
       const code = readFileSync(new URL(`../src/local/${file}.ts`, import.meta.url), 'utf8');
       writeFileSync(join(runtime, `${file}.js`), ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText);
     }
@@ -67,7 +68,11 @@ describe('local persistence and ownership', () => {
     expect(second.get(stored.id)).toEqual(stored);
     expect(second.recall({ query: 'pull requests' })[0].memory.id).toBe(stored.id);
     const db = new DatabaseSync(path);
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(1);
+    // Schema version 2: `local_embeddings.data` is a packed float32 BLOB as of
+    // T1.2, and a build that only ever wrote JSON must refuse a v2 file instead
+    // of misreading a BLOB row as text (see the "vector storage format version
+    // guard" tests in tests/local-vector-index.test.ts).
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(2);
     db.close();
   });
 

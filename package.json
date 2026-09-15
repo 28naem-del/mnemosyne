@@ -211,5 +211,9 @@
   },
   "engines": {
     "node": ">=22.16.0"
+  },
+  "optionalDependencies": {
+    "hnswlib-node": "3.0.0",
+    "sqlite-vec": "^0.1.9"
   }
 }

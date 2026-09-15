@@ -12,12 +12,40 @@ import type {
 import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, type LedgerRow } from './ledger.js';
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
+import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
+import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
+import type { HnswIndex } from './vector/hnsw.js';
 
 export type * from './types.js';
 
 type DataRow = { data: string };
 type TemporalView = { asOf: string; knownAt: string; historical: boolean };
 type ScoredId = { id: string; score: number };
+type DenseScan = { model: string; dimensions: number; query: number[]; maxCandidates: number; time: TemporalView; includeUntrusted: boolean; kinds: string[]; minSimilarity: number };
+type DenseRow = { id: string; vector: string | Uint8Array; source_hash: string; record: string };
+
+/** Shortlist depth as a multiple of the candidate budget. An index proposes more
+ *  than the budget because the gate below it will reject some of what it proposes. */
+const DENSE_OVERFETCH = 2;
+/** Growth when a shortlist was filtered down past the budget. Widening always
+ *  terminates at the index size, where the shortlist IS the whole index and the
+ *  answer is exactly the exact scan's. */
+const DENSE_WIDENING = 8;
+
+/**
+ * `local_embeddings.data` was JSON text through schema version 1. This build
+ * always writes it as a packed float32 BLOB (`#encodeVector`) and reads either
+ * shape back (`#decodeVector`), but a build that predates this one only ever
+ * wrote and read JSON — handed a BLOB row, its `JSON.parse(row.vector)` throws
+ * an uncontrolled `SyntaxError` deep inside a recall. Bumping to 2 the moment a
+ * database could hold that shape makes an older build refuse the file up front,
+ * at the `user_version` guard in the constructor, with a message that names the
+ * mismatch instead of a parse crash three calls later. A v1 database gets no
+ * data rewritten — `#decodeVector` already reads both shapes — only its version
+ * number moves, in `#bumpVectorSchema()`.
+ */
+const SCHEMA_VERSION = 2;
+
 /** Collects each ranking stage's candidate list on the way through one recall, so
  * the ledger can record what was considered and not only what was returned. The
  * engine fills it only when the ledger asks for it; retrieval itself never reads it. */
@@ -86,10 +114,27 @@ export class LocalMemory {
   #rerankerDegraded?: string;
   readonly #atomicContext = new AsyncLocalStorage<{ done: boolean }>();
   #cursorSecret = "";
+  readonly #indexMode: DenseIndexMode;
+  readonly #sqliteVecPath?: string;
+  readonly #cacheSize?: number;
+  #vecLoaded = false;
+  #vecError?: string;
+  #denseIndex: DenseIndex | null = null;
+  #denseResolved = false;
+  #denseStatus?: DenseIndexStatus;
+  /** Bumped by every mutation that can put a record back in the pending set. */
+  #writeSeq = 0;
+  #vectorsDrained?: { model: string; writeSeq: number; dataVersion: number };
+  /** See `./bm25-corpus-stats.js`. */
+  #bm25StatsCache: CorpusStatsCache = new Map();
+  #bm25TemporalBounds = { present: false };
+  /** Highest clock reading a live BM25 scope has been evaluated at on this
+   * connection; see `liveClockSteppedBack` for why caching below it is unsafe. */
+  #bm25LiveClock = { highWater: '' };
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode', 'sqliteVecPath', 'cacheSize'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -122,6 +167,18 @@ export class LocalMemory {
     this.#ledgerQueries = ledger === false ? 'digest' : v.enumeration((ledger as LedgerOptions).queries ?? 'digest', ['text', 'digest'] as const, 'ledger.queries');
     this.#ledgerCandidates = ledger === false ? 'off' : v.enumeration((ledger as LedgerOptions).candidates ?? 'full', ['full', 'off'] as const, 'ledger.candidates');
     this.#ledgerMaxCandidates = ledger === false ? 100 : v.limit((ledger as LedgerOptions).maxCandidates, 100, 1000);
+    this.#indexMode = resolveDenseIndexMode(options.indexMode);
+    if (options.sqliteVecPath !== undefined) this.#sqliteVecPath = v.string(options.sqliteVecPath, 'sqliteVecPath', 4096);
+    // SQLite's own PRAGMA cache_size sign convention: positive is a page count,
+    // negative is a KiB budget (the size SQLite will actually respect, since page
+    // size varies). Bounded well below any value that could itself be a memory
+    // hazard; the default (applied below when this is unset) is -65536, 64 MiB.
+    if (options.cacheSize !== undefined) {
+      if (!Number.isSafeInteger(options.cacheSize) || options.cacheSize === 0 || Math.abs(options.cacheSize) > 2_097_152) {
+        throw new TypeError('cacheSize must be a nonzero integer of magnitude at most 2097152 (SQLite PRAGMA cache_size: positive = pages, negative = KiB)');
+      }
+      this.#cacheSize = options.cacheSize;
+    }
     this.#path = path === ':memory:' ? path : resolve(path);
     if (this.#path !== ':memory:') {
       mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
@@ -135,13 +192,19 @@ export class LocalMemory {
       if (!file.isFile() || file.isSymbolicLink()) throw new Error('Database path must be a regular file');
       chmodSync(this.#path, 0o600);
     }
-    this.#db = new DatabaseSync(this.#path);
+    // The extension capability is opened only for a mode that needs it, and the
+    // loader closes SQL-level access to load_extension() the moment the load
+    // returns, so no statement reaching this database can load anything itself.
+    const wantsVec = this.#indexMode === 'auto' || this.#indexMode === 'sqlite-vec';
+    this.#db = new DatabaseSync(this.#path, wantsVec ? { allowExtension: true } : {});
     try {
-      this.#db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;');
+      if (wantsVec) { const loaded = tryLoadSqliteVec(this.#db, this.#sqliteVecPath); this.#vecLoaded = loaded.loaded; this.#vecError = loaded.error; }
+      this.#db.exec(`PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA cache_size=${this.#cacheSize ?? -65536};`);
       const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-      if (version > 1) throw new Error(`Unsupported memory schema version ${version}`);
+      if (version > SCHEMA_VERSION) throw new Error(`Unsupported memory schema version ${version}`);
       this.#enableWal();
       if (version === 0) this.#migrate();
+      else if (version === 1) this.#bumpVectorSchema();
       this.#advancedSchema();
       this.#privateFiles();
     } catch (error) {
@@ -172,7 +235,7 @@ export class LocalMemory {
     this.#transaction(() => {
       // Another process may have initialized this file while BEGIN waited.
       const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-      if (version === 1) return;
+      if (version === SCHEMA_VERSION) return;
       if (version !== 0) throw new Error(`Unsupported memory schema version ${version}`);
       this.#db.exec(`
         CREATE TABLE memories (
@@ -218,8 +281,28 @@ export class LocalMemory {
           INSERT INTO memories_fts(rowid, text) VALUES(new.rowid, new.text);
         END;
         INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 1);
-        PRAGMA user_version=1;
+        PRAGMA user_version=${SCHEMA_VERSION};
       `);
+    });
+  }
+
+  /**
+   * Move an existing v1 database to v2 without touching a row of data.
+   *
+   * v1 predates the packed float32 embedding format; `#decodeVector` already
+   * reads both shapes, so a v1 database opened by this build needs nothing
+   * rewritten — only its declared version needs to catch up, so that a build
+   * which only ever understood JSON refuses the file instead of misreading a
+   * BLOB row as text. Runs for every v1 database this build opens, whether or
+   * not it has written any embeddings yet: from this point on, any it writes
+   * are packed.
+   */
+  #bumpVectorSchema(): void {
+    this.#transaction(() => {
+      // Another connection may have already bumped this, or moved it further.
+      const version = (this.#db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+      if (version !== 1) return;
+      this.#db.exec(`PRAGMA user_version=${SCHEMA_VERSION};`);
     });
   }
 
@@ -321,7 +404,7 @@ export class LocalMemory {
         CREATE INDEX IF NOT EXISTS idempotency_memory ON idempotency(memory_id);
         CREATE INDEX IF NOT EXISTS dependencies_target ON dependencies(to_id);
         CREATE INDEX IF NOT EXISTS memories_runtime_jobs ON memories(workspace_id) WHERE json_extract(data,'$.metadata.runtimeType')='job';
-      ${LEDGER_SCHEMA}`);
+      ${LEDGER_SCHEMA}${VECTOR_SCHEMA}`);
       if (!this.#db.prepare('PRAGMA table_info(local_search)').all().some(column => column.name === 'token_count')) this.#db.exec('ALTER TABLE local_search ADD COLUMN token_count INTEGER');
       if (!this.#db.prepare('PRAGMA table_info(local_terms)').all().some(column => column.name === 'frequency')) {
         this.#db.exec('ALTER TABLE local_terms ADD COLUMN frequency INTEGER NOT NULL DEFAULT 1; UPDATE local_search SET token_count=NULL;');
@@ -331,6 +414,7 @@ export class LocalMemory {
       this.#cursorSecret = (this.#db.prepare("SELECT value FROM local_settings WHERE key='cursor-secret'").get() as { value: string }).value;
       for (const row of this.#db.prepare('SELECT m.data FROM memories m LEFT JOIN local_search s ON s.memory_id=m.id WHERE s.memory_id IS NULL').iterate()) this.#indexText(this.#decode(row)!);
       this.#repairTermFrequencies();
+      prepareDenseIndexSchema(this.#db, this.#vecLoaded);
     });
   }
 
@@ -365,11 +449,18 @@ export class LocalMemory {
     }
   }
 
-  #insert(record: MemoryRecord, origin: LedgerProvenance['origin'] = 'store'): void {
+  /** `clockNow` is THIS engine's current time, which is not the same thing as
+   * `record.createdAt`: on the `import()` path `createdAt` came off the
+   * producing machine's clock. It is the baseline
+   * {@link markTemporalBoundsIfNeeded} compares temporal bounds against, so
+   * it has to be the reader's clock — hence required, never defaulted. */
+  #insert(record: MemoryRecord, origin: LedgerProvenance['origin'], clockNow: string): void {
+    this.#writeSeq++;
     this.#db.prepare(`INSERT INTO memories(id,workspace_id,agent_id,visibility,trust,status,kind,text,fact_key,supersedes,created_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       record.id, record.workspaceId, record.agentId, record.visibility, record.trust, record.status,
       record.kind, record.text, record.key ?? null, record.supersedes ?? null, record.createdAt, JSON.stringify(record),
     );
+    markTemporalBoundsIfNeeded(this.#db, record, clockNow);
     this.#indexText(record);
     this.#links(record);
     this.#audit(record.id, 'stored');
@@ -539,6 +630,7 @@ export class LocalMemory {
     record.status = status;
     record.updatedAt = now;
     if (invalidation) record.invalidation = invalidation;
+    this.#writeSeq++;
     this.#db.prepare('UPDATE memories SET status=?, data=? WHERE id=? AND workspace_id=?').run(status, JSON.stringify(record), record.id, this.#workspaceId);
     this.#audit(record.id, status);
   }
@@ -558,7 +650,7 @@ export class LocalMemory {
       const record: MemoryRecord = { ...payload, id: randomUUID(), workspaceId: this.#workspaceId, agentId: this.#agentId, createdAt: now, updatedAt: now, status: 'active' };
       if (record.validUntil !== undefined && record.validUntil <= (record.validFrom ?? record.createdAt)) throw new TypeError('validUntil must follow validFrom or createdAt');
       this.#validateDependencies(record);
-      this.#insert(record);
+      this.#insert(record, 'store', now);
       if (idempotencyKey) this.#db.prepare('INSERT INTO idempotency(workspace_id,agent_id,key,payload,memory_id) VALUES(?,?,?,?,?)').run(this.#workspaceId, this.#agentId, idempotencyKey, v.canonical(payload), record.id);
       return record;
     });
@@ -832,6 +924,9 @@ export class LocalMemory {
       ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
       ...(reranker ? { rerankerModel: reranker.model, rerankTopN: this.#rerankTopN } : {}),
       ...(this.#rerankerDegraded ? { rerankDegraded: this.#rerankerDegraded } : {}),
+      // Size is read live rather than remembered, so it reports the index as it
+      // is now and not as it was when it was opened.
+      ...(this.#denseStatus ? { index: { ...this.#denseStatus, ...(this.#denseIndex ? { size: this.#denseIndex.size() } : {}) } } : {}),
     };
   }
 
@@ -975,15 +1070,36 @@ export class LocalMemory {
    * selecting it and writing its vector.
    */
   #indexPendingVectors(embedder: SyncMemoryEmbedder, model: string, dimensions: number): void {
+    // Resolved first, so an index that has to be built from an existing database
+    // is caught up before this batch adds to it.
+    const denseIndex = this.#resolveDenseIndex(model, dimensions);
+    // Discovering that nothing is pending costs a walk of every scoped record —
+    // two index seeks each — and it runs on EVERY recall. Measured at 130 ms per
+    // recall over 20k records, which is ~6.5 s at a million and swamps any index
+    // underneath it. So remember having drained, and re-check only when
+    // something could have changed: a local mutation (`#writeSeq`) or another
+    // connection committing (`PRAGMA data_version`, which SQLite bumps only for
+    // writes made outside this one). Both are O(1) and the check is conservative
+    // in the safe direction — an unrelated write just costs one extra scan.
+    const dataVersion = this.#dataVersion();
+    const drained = this.#vectorsDrained;
+    if (drained && drained.model === model && drained.writeSeq === this.#writeSeq && drained.dataVersion === dataVersion) return;
     const pendingSql = `FROM memories m JOIN local_search s ON s.memory_id=m.id LEFT JOIN local_embeddings e ON e.memory_id=m.id AND e.model=?
       WHERE m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND m.status='active' AND m.trust!='untrusted' AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       AND (e.memory_id IS NULL OR e.source_hash!=s.source_hash)`;
-    const pending = this.#db.prepare(`SELECT m.data ${pendingSql} ORDER BY m.created_at,m.id LIMIT 64`);
+    // Paged by a (created_at, id) cursor rather than restarting each time. The
+    // filter is an anti-join against what is already indexed, so without a cursor
+    // every page re-walks and discards the whole indexed prefix: the first bulk
+    // index is then quadratic, measured at 8.7 s for 20k records but 244 s for
+    // 100k. A record that becomes pending again *behind* the cursor is not lost —
+    // the write that did so bumps `#writeSeq`, which forces the next recall to
+    // start a fresh pass from the beginning.
+    const pending = this.#db.prepare(`SELECT m.data ${pendingSql} AND (m.created_at, m.id) > (?, ?) ORDER BY m.created_at,m.id LIMIT 64`);
     const write = this.#db.prepare('INSERT INTO local_embeddings(memory_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data');
-    let registered = false;
+    let registered = false, cursorCreatedAt = '', cursorId = '';
     for (;;) {
-      const rows = pending.all(model, this.#workspaceId, this.#agentId).map(row => this.#decode(row)!);
-      if (!rows.length) return;
+      const rows = pending.all(model, this.#workspaceId, this.#agentId, cursorCreatedAt, cursorId).map(row => this.#decode(row)!);
+      if (!rows.length) { this.#vectorsDrained = { model, writeSeq: this.#writeSeq, dataVersion: this.#dataVersion() }; return; }
       if (!registered) {
         this.#transaction(() => {
           this.#db.prepare('INSERT OR IGNORE INTO local_embedding_models(model,dimensions) VALUES(?,?)').run(model, dimensions);
@@ -994,47 +1110,231 @@ export class LocalMemory {
       const vectors = embedder.embedSync(rows.map(record => record.text), 'passage');
       if (!Array.isArray(vectors) || vectors.length !== rows.length) throw new TypeError('Embedder must return one vector per input text');
       this.#transaction(() => {
-        for (let index = 0; index < rows.length; index++) write.run(rows[index].id, model, dimensions, this.#textHash(rows[index].text), JSON.stringify(this.#vector(vectors[index], dimensions)));
+        const entries: DenseIndexEntry[] = [];
+        for (let index = 0; index < rows.length; index++) {
+          const vector = this.#vector(vectors[index], dimensions);
+          write.run(rows[index].id, model, dimensions, this.#textHash(rows[index].text), this.#encodeVector(vector));
+          // The index is fed inside the transaction that writes the vector, so a
+          // rolled-back batch cannot leave an index entry for a vector that was
+          // never stored.
+          if (denseIndex) entries.push({ label: this.#assignLabel(rows[index].id, model), vector: Float32Array.from(vector) });
+        }
+        denseIndex?.upsert(entries);
       });
-      // A full page that indexed nothing would loop forever; refuse instead.
-      if (rows.length < 64) return;
-      if (!(this.#db.prepare(`SELECT count(*) AS count ${pendingSql}`).get(model, this.#workspaceId, this.#agentId) as { count: number }).count) return;
+      // The cursor advances strictly, so the loop terminates on its own and needs
+      // no separate progress guard.
+      cursorCreatedAt = rows[rows.length - 1].createdAt; cursorId = rows[rows.length - 1].id;
+      if (rows.length < 64) { this.#vectorsDrained = { model, writeSeq: this.#writeSeq, dataVersion: this.#dataVersion() }; return; }
     }
   }
 
-  /** Synchronous twin of #scanVectors: exact cosine over every authorized indexed
-   * row, retaining a bounded heap of identifiers rather than source text. */
-  #scanVectorsSync(scan: { model: string; dimensions: number; query: number[]; maxCandidates: number; time: TemporalView; includeUntrusted: boolean; kinds: string[]; minSimilarity: number }): ScoredId[] {
-    const heap: ScoredId[] = [];
-    const { kinds, time, includeUntrusted } = scan;
-    const statement = this.#db.prepare(`SELECT e.memory_id AS id,e.data AS vector,e.source_hash FROM local_embeddings e JOIN memories m ON m.id=e.memory_id
-      WHERE e.model=? AND e.dimensions=? AND e.memory_id>? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
-      ${time.historical ? '' : "AND (m.status!='invalidated' OR json_extract(m.data,'$.invalidation.correctionId') IS NOT NULL)"} ${includeUntrusted ? '' : "AND m.trust!='untrusted'"}
+  /**
+   * Candidates for the dense channel — two implementations, ONE definition of
+   * what may be returned.
+   *
+   * `#denseWhere` is the SQL half of the gate (scope, visibility, trust,
+   * advisory, status, and both temporal cut-offs) and `#denseAccept` is the JS
+   * half (bitemporal reconstruction at the requested clocks, a staleness check
+   * against the source text, and an exact rescore). The exact scan walks every
+   * indexed row through that pair. The ANN path walks a *proposed shortlist*
+   * through the very same pair.
+   *
+   * That is the whole safety argument for putting an index here: an index sees
+   * vectors and labels and nothing else, so it can only ever narrow what a query
+   * sees, never widen it. A stale, corrupt or adversarial index costs recall; it
+   * cannot surface a record the exact scan would have withheld.
+   */
+  #scanVectorsSync(scan: DenseScan): ScoredId[] {
+    const index = this.#resolveDenseIndex(scan.model, scan.dimensions);
+    const proposed = index && this.#annVectorScan(index, scan);
+    return proposed ?? this.#exactVectorScan(scan);
+  }
+
+  /** The dense predicate. Shared verbatim by the exact scan and the ANN post-filter. */
+  #denseWhere(scan: DenseScan): string {
+    return `AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
+      ${scan.time.historical ? '' : "AND (m.status!='invalidated' OR json_extract(m.data,'$.invalidation.correctionId') IS NOT NULL)"} ${scan.includeUntrusted ? '' : "AND m.trust!='untrusted'"}
       AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       AND m.created_at<=? AND coalesce(json_extract(m.data,'$.validFrom'),m.created_at)<=?
       AND (json_extract(m.data,'$.validUntil') IS NULL OR json_extract(m.data,'$.validUntil')>?)
-      ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}
+      ${scan.kinds.length ? `AND m.kind IN (${scan.kinds.map(() => '?').join(',')})` : ''}`;
+  }
+
+  #denseWhereParameters(scan: DenseScan): string[] {
+    return [this.#workspaceId, this.#agentId, scan.time.knownAt, scan.time.asOf, scan.time.asOf, ...scan.kinds];
+  }
+
+  /**
+   * The JS half of the dense gate.
+   *
+   * The rescore happens here, at full precision, from the stored vector — never
+   * from a distance an index reported. An index decides which records are
+   * *looked at*; it never decides what a record scores, so switching indexes
+   * cannot move a score.
+   */
+  #denseAccept(row: DenseRow, scan: DenseScan): ScoredId | null {
+    // The record travels on the row. Both dense queries already join `memories`
+    // to enforce the predicate, so re-reading it per candidate was a second
+    // lookup for a row already in hand.
+    const stored = JSON.parse(row.record) as MemoryRecord, memory = this.#at(stored, scan.time);
+    if (!memory || row.source_hash !== this.#textHash(memory.text)) return null;
+    const vector = this.#decodeVector(row.vector, scan.dimensions);
+    let score = 0;
+    for (let index = 0; index < scan.dimensions; index++) score += vector[index] * scan.query[index];
+    // Nonpositive cosine is not affirmative semantic evidence, and neither is
+    // anything under the caller's floor. A dense retriever always has a
+    // nearest neighbour, so without a floor an unrelated query still returns
+    // its closest record; the floor is how a caller asks for abstention.
+    return score > 0 && score >= scan.minSimilarity ? { id: memory.id, score } : null;
+  }
+
+  /** Exact cosine over every authorized indexed row, retaining a bounded heap of
+   *  identifiers rather than source text. The definitive answer, and the one the
+   *  differential tests hold every index against. */
+  #exactVectorScan(scan: DenseScan): ScoredId[] {
+    const heap: ScoredId[] = [];
+    const statement = this.#db.prepare(`SELECT e.memory_id AS id,e.data AS vector,e.source_hash,m.data AS record FROM local_embeddings e JOIN memories m ON m.id=e.memory_id
+      WHERE e.model=? AND e.dimensions=? AND e.memory_id>? ${this.#denseWhere(scan)}
       ORDER BY e.memory_id LIMIT 512`);
+    const parameters = this.#denseWhereParameters(scan);
     let cursor = '';
     for (;;) {
       this.#assertOpen();
-      const rows = statement.all(scan.model, scan.dimensions, cursor, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds) as { id: string; vector: string; source_hash: string }[];
+      const rows = statement.all(scan.model, scan.dimensions, cursor, ...parameters) as DenseRow[];
       for (const row of rows) {
         cursor = row.id;
-        const stored = this.get(row.id), memory = stored && this.#at(stored, time);
-        if (!memory || row.source_hash !== this.#textHash(memory.text)) continue;
-        const vector = this.#vector(JSON.parse(row.vector), scan.dimensions);
-        let score = 0;
-        for (let index = 0; index < scan.dimensions; index++) score += vector[index] * scan.query[index];
-        // Nonpositive cosine is not affirmative semantic evidence, and neither is
-        // anything under the caller's floor. A dense retriever always has a
-        // nearest neighbour, so without a floor an unrelated query still returns
-        // its closest record; the floor is how a caller asks for abstention.
-        if (score > 0 && score >= scan.minSimilarity) this.#retainBest(heap, { id: memory.id, score }, scan.maxCandidates);
+        const accepted = this.#denseAccept(row, scan);
+        if (accepted) this.#retainBest(heap, accepted, scan.maxCandidates);
       }
       if (rows.length < 512) break;
     }
     return heap.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  }
+
+  /**
+   * Shortlist from an index, then authorize.
+   *
+   * The shortlist is deliberately deeper than the candidate budget, because the
+   * gate below rejects some of what the index proposes and a budget filled from
+   * a too-short shortlist would silently be a different answer than the exact
+   * scan's. When it still comes up short the shortlist widens, and widening
+   * terminates at the index size — where the shortlist IS the whole index, so the
+   * result is exactly what the exact scan returns. Returns null only when there
+   * is nothing indexed yet, which is the caller's cue to scan.
+   */
+  #annVectorScan(index: DenseIndex, scan: DenseScan): ScoredId[] | null {
+    const size = index.size();
+    if (!size) return null;
+    const query = Float32Array.from(scan.query);
+    let depth = Math.min(size, Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64));
+    for (;;) {
+      this.#assertOpen();
+      const accepted = this.#authorizeLabels(index.search(query, depth), scan);
+      if (accepted.length >= scan.maxCandidates || depth >= size) return accepted.slice(0, scan.maxCandidates);
+      depth = Math.min(size, depth * DENSE_WIDENING);
+    }
+  }
+
+  /**
+   * Run proposed labels through the same SQL predicate and JS gate as the scan.
+   *
+   * One seek per label, not one `IN (...)` over all of them. That looks like the
+   * naive choice and is the opposite: measured on a 20k store, authorizing 64
+   * labels costs 0.13 ms as individual seeks and 204 ms as a single 900-value
+   * `IN` list — same rows, same predicate, 1500x. With an `IN` list the planner
+   * stops seeking `local_vec_labels` by primary key and drives the join from the
+   * other side, so the cost stops depending on the shortlist and starts
+   * depending on the store. An index that hands back a short list of candidates
+   * is worth nothing if authorizing them re-reads the table it was meant to
+   * avoid.
+   */
+  #authorizeLabels(labels: readonly number[], scan: DenseScan): ScoredId[] {
+    if (!labels.length) return [];
+    const statement = this.#db.prepare(`SELECT e.memory_id AS id,e.data AS vector,e.source_hash,m.data AS record
+      FROM local_vec_labels l JOIN local_embeddings e ON e.memory_id=l.memory_id AND e.model=l.model JOIN memories m ON m.id=e.memory_id
+      WHERE l.label=? AND e.model=? AND e.dimensions=? ${this.#denseWhere(scan)}`);
+    const parameters = this.#denseWhereParameters(scan);
+    const accepted: ScoredId[] = [];
+    for (const label of labels) {
+      for (const row of statement.all(BigInt(label), scan.model, scan.dimensions, ...parameters) as DenseRow[]) {
+        const entry = this.#denseAccept(row, scan);
+        if (entry) accepted.push(entry);
+      }
+    }
+    return accepted.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  }
+
+  /**
+   * Open the configured index on first dense use, and bring it up to date.
+   *
+   * `#denseResolved` only latches on a successful resolution — set after
+   * `createDenseIndex` returns, not before. An explicit `sqlite-vec`/`hnsw`
+   * request with no backend available throws (see `createDenseIndex`), and
+   * latching first would have cached that failure as "resolved to null":
+   * every later recall in the session would have gone on to silently answer
+   * from the exact scan instead of throwing again, which is exactly the
+   * quiet substitution naming a backend explicitly is supposed to refuse.
+   */
+  #resolveDenseIndex(model: string, dimensions: number): DenseIndex | null {
+    if (this.#denseResolved) return this.#denseIndex;
+    const selection = this.#transaction(() => createDenseIndex(this.#db, {
+      mode: this.#indexMode, model, dimensions, databasePath: this.#path, vecLoaded: this.#vecLoaded, ...(this.#vecError ? { vecError: this.#vecError } : {}),
+    }));
+    this.#denseResolved = true;
+    this.#denseIndex = selection.index;
+    this.#denseStatus = selection.status;
+    if (selection.index && selection.rebuild) this.#syncDenseIndex(selection.index, model, dimensions);
+    return this.#denseIndex;
+  }
+
+  /**
+   * Populate an index from `local_embeddings`, which stays the source of truth.
+   *
+   * This is what makes the index migration-free: a database written before it
+   * existed, or one whose sidecar file was lost, is caught up lazily on first
+   * dense use rather than by an upgrade step. HNSW resumes from its own
+   * watermark, so a lost flush costs the tail of the index and not the whole of
+   * it; sqlite-vec lives in the database file and simply re-upserts, which is
+   * idempotent. Rows are walked in `memory_id` order so labels — and therefore
+   * the graph an HNSW rebuild produces — are the same every time.
+   *
+   * This only ever adds. An HNSW index resolved for the first time after an
+   * erasure that happened while it was closed — including one made by a
+   * different process — needs the other direction too, which is why this is
+   * always followed by a label reconciliation for `hnsw`; see `HnswIndex.reconcile`.
+   */
+  #syncDenseIndex(index: DenseIndex, model: string, dimensions: number): void {
+    const after = index.kind === 'hnsw' ? (index as HnswIndex).watermark : 0;
+    const statement = this.#db.prepare(`SELECT e.memory_id AS id, e.data AS vector, l.label
+      FROM local_embeddings e LEFT JOIN local_vec_labels l ON l.memory_id=e.memory_id AND l.model=e.model
+      WHERE e.model=? AND e.dimensions=? AND (l.label IS NULL OR l.label>?) ORDER BY e.memory_id`);
+    let batch: DenseIndexEntry[] = [];
+    this.#transaction(() => {
+      for (const row of statement.iterate(model, dimensions, after) as Iterable<{ id: string; vector: string | Uint8Array; label: number | bigint | null }>) {
+        const label = row.label === null ? this.#assignLabel(row.id, model) : Number(row.label);
+        batch.push({ label, vector: Float32Array.from(this.#decodeVector(row.vector, dimensions)) });
+        if (batch.length === 512) { index.upsert(batch); batch = []; }
+      }
+      if (batch.length) index.upsert(batch);
+    });
+    if (index.kind === 'hnsw') {
+      const live = new Set((this.#db.prepare('SELECT label FROM local_vec_labels WHERE model=?').all(model) as { label: number | bigint }[])
+        .map((row) => Number(row.label)));
+      (index as HnswIndex).reconcile(live);
+    }
+  }
+
+  #labelsFor(memoryIds: readonly string[]): number[] {
+    if (!memoryIds.length) return [];
+    const statement = this.#db.prepare('SELECT label FROM local_vec_labels WHERE memory_id=?');
+    return memoryIds.flatMap((memoryId) => (statement.all(memoryId) as { label: number | bigint }[]).map((row) => Number(row.label)));
+  }
+
+  /** Labels are AUTOINCREMENT, so one is never reused after an erasure — a reused
+   *  label would let a new record inherit a forgotten one's place in a stale index. */
+  #assignLabel(memoryId: string, model: string): number {
+    const row = this.#db.prepare('INSERT INTO local_vec_labels(memory_id,model) VALUES(?,?) ON CONFLICT(memory_id,model) DO UPDATE SET model=excluded.model RETURNING label').get(memoryId, model) as { label: number | bigint };
+    return Number(row.label);
   }
 
   #rankedRecall(input: RecallInput, eligible?: (memory: MemoryRecord) => boolean, at?: TemporalView): RecallResult[] {
@@ -1083,12 +1383,16 @@ export class LocalMemory {
     return ranked;
   }
 
-  /** BM25 k1=1.2, b=0.75 over this query's visible corpus. Two streaming passes
-   * avoid a process-global document cache and score before top-k. Statistics
+  /** BM25 k1=1.2, b=0.75 over this query's visible corpus. Statistics
    * include visible conflicts, matching raw recall's diagnostic contract; the
    * context compiler separately gates unsafe provenance before retention.
-   * Cost is proportional to scoped documents and matching postings, unlike the
-   * faster optional overlap scorer whose work is driven only by query postings. */
+   *
+   * `documents`/`totalLength` are corpus-wide constants, cached by
+   * `corpusStats()` in `./bm25-corpus-stats.js` (see there for the
+   * invalidation argument) so this no longer scans the whole scoped corpus
+   * per query. Per-term document frequency stays uncached, read straight off
+   * the term-indexed `candidates` query below — already O(matching
+   * postings), not O(corpus), before this change. */
   #bm25Recall(input: { terms: string[]; count: number; budget: number; kinds: string[]; includeUntrusted: boolean; time: TemporalView }, eligible?: (memory: MemoryRecord) => boolean): RecallResult[] {
     this.#repairTermFrequencies();
     const { terms, kinds, time } = input;
@@ -1104,36 +1408,55 @@ export class LocalMemory {
       AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0 AND s.token_count>0
       ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}`;
     const parameters = [this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds];
-    const statistics = this.#db.prepare(`${matches}
-      SELECT CASE WHEN m.status='active' THEN NULL ELSE m.data END AS temporal_data,s.token_count,t.frequencies
-      FROM memories m JOIN local_search s ON s.memory_id=m.id LEFT JOIN matches t ON t.memory_id=m.id WHERE ${scope}`);
-    let documents = 0, totalLength = 0;
-    const frequency = new Map<string, number>();
-    for (const value of statistics.iterate(...terms, ...parameters)) {
-      const row = value as { temporal_data: string | null; token_count: number; frequencies: string | null };
-      if (row.temporal_data !== null && !this.#at(this.#decode({ data: row.temporal_data })!, time)) continue;
-      documents++; totalLength += row.token_count;
-      if (row.frequencies !== null) for (const [term] of JSON.parse(row.frequencies) as [string, number][]) frequency.set(term, (frequency.get(term) ?? 0) + 1);
-    }
-    if (!documents || !frequency.size) return [];
+    const { documents, totalLength } = corpusStats({
+      db: this.#db, cache: this.#bm25StatsCache, scope, parameters,
+      key: corpusStatsCacheKey(input.includeUntrusted, kinds, time),
+      // `||` short-circuits, so the live-only guards below are never reached
+      // for a historical view — `liveClockSteppedBack` must not see a
+      // caller-chosen `asOf`, only a clock reading.
+      cacheable: time.historical || (!hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds)
+        && !liveClockSteppedBack(time.asOf, this.#bm25LiveClock)),
+      // The instant this scope is evaluated at. For a live view `#temporal()`
+      // sets `asOf === knownAt === #time()`, so this is the reader's own clock
+      // read once, with no extra tick of an injected or monotonic one.
+      computedAt: time.asOf,
+      writeSeq: this.#writeSeq, dataVersion: this.#dataVersion(),
+      isVisible: (temporalData) => !!this.#at(this.#decode({ data: temporalData })!, time),
+    });
+    if (!documents) return [];
     const averageLength = totalLength / documents, heap: ScoredId[] = [];
+    // Term-indexed: `matches` only ever contains rows carrying at least one of
+    // `terms`, so this touches the matching postings, never the whole corpus.
+    // Document frequency is tallied from exactly this same row set — it is the
+    // same quantity `statistics` used to compute before this change, just read
+    // off the cheaper query instead of a corpus-wide scan, and still counted
+    // ahead of #eligible so an ineligible-but-visible conflict still weighs on
+    // IDF the same way raw recall's diagnostic contract always counted it.
     const candidates = this.#db.prepare(`${matches}
       SELECT m.data,s.token_count,t.frequencies FROM matches t CROSS JOIN memories m ON m.id=t.memory_id
       CROSS JOIN local_search s ON s.memory_id=m.id WHERE ${scope}`);
+    const frequency = new Map<string, number>();
+    const scored: { memory: MemoryRecord; tokenCount: number; frequencies: [string, number][] }[] = [];
     for (const value of candidates.iterate(...terms, ...parameters)) {
       const row = value as DataRow & { token_count: number; frequencies: string };
       const memory = this.#at(this.#decode(row)!, time);
-      if (!memory || (eligible && !eligible(memory))) continue;
+      if (!memory) continue;
+      const parsed = JSON.parse(row.frequencies) as [string, number][];
+      for (const [term] of parsed) frequency.set(term, (frequency.get(term) ?? 0) + 1);
+      if (!eligible || eligible(memory)) scored.push({ memory, tokenCount: row.token_count, frequencies: parsed });
+    }
+    if (!frequency.size) return [];
+    for (const row of scored) {
       let score = 0;
-      for (const [term, occurrences] of JSON.parse(row.frequencies) as [string, number][]) {
+      for (const [term, occurrences] of row.frequencies) {
         const df = frequency.get(term);
         if (df === undefined) continue;
         const idf = Math.log1p((documents - df + 0.5) / (df + 0.5));
-        score += idf * (occurrences * 2.2) / (occurrences + 1.2 * (0.25 + 0.75 * row.token_count / averageLength));
+        score += idf * (occurrences * 2.2) / (occurrences + 1.2 * (0.25 + 0.75 * row.tokenCount / averageLength));
       }
-      const outcomes = this.#outcomes(memory.id, time.historical ? time.knownAt : undefined);
+      const outcomes = this.#outcomes(row.memory.id, time.historical ? time.knownAt : undefined);
       score = score * (1 + Math.min(outcomes.successes, 3) * 0.05) / (1 + outcomes.failures * 10);
-      if (score > 0) this.#retainBest(heap, { id: memory.id, score }, Math.min(input.count, input.budget));
+      if (score > 0) this.#retainBest(heap, { id: row.memory.id, score }, Math.min(input.count, input.budget));
     }
     return heap.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).flatMap(entry => {
       const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
@@ -1180,6 +1503,54 @@ export class LocalMemory {
     const previous = this.#db.prepare('SELECT dimensions FROM local_embedding_models WHERE model=?').get(model) as { dimensions: number } | undefined;
     if (previous && previous.dimensions !== dimensions) throw new Error('Embedding model dimension mismatch; use a new model revision identifier');
     return { model, dimensions };
+  }
+
+  /**
+   * Vectors are stored as packed float32, not as a JSON array of doubles.
+   *
+   * A 384-dimension vector is 8,016 bytes as JSON and 1,536 as float32 — 5.2x —
+   * and the exact scan pays `JSON.parse` on the whole of it once per row per
+   * query. At a million records that is 8 GB of text that has to be parsed to
+   * answer anything, which is most of what made the linear scan untenable.
+   *
+   * The precision is not lost: the bundled embedder is int8-quantized and
+   * `vec0` indexes float32 regardless, so the extra digits were noise. Storing
+   * float32 also means the index and the rescore below it now agree exactly
+   * rather than to within a rounding error.
+   *
+   * `data` is declared TEXT, and SQLite stores a BLOB in a TEXT column as a
+   * BLOB, so this needs no migration and no schema change: rows written before
+   * this are still JSON and are still read as JSON, and a record is rewritten
+   * in the new form whenever its text changes.
+   */
+  #encodeVector(vector: readonly number[]): Uint8Array {
+    const packed = Float32Array.from(vector);
+    return new Uint8Array(packed.buffer, packed.byteOffset, packed.byteLength);
+  }
+
+  #decodeVector(value: unknown, dimensions: number): number[] {
+    if (typeof value === 'string') return this.#vector(JSON.parse(value), dimensions); // written before T1.2
+    if (!(value instanceof Uint8Array) || value.byteLength !== dimensions * 4) throw new TypeError('Stored embedding does not match the declared number of dimensions');
+    // Copied rather than viewed: the buffer SQLite hands back is not guaranteed
+    // to be aligned for a Float32Array view.
+    const packed = new Float32Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+    // Normalised with a plain loop rather than through #vector(), whose
+    // overflow-safe `Math.hypot(...value)` spreads 384 arguments and dominated
+    // the per-candidate cost. #vector() still guards everything arriving from an
+    // embedder; this guards what we wrote ourselves, which is already unit-norm
+    // float32, so the only real job is to reject a corrupted row.
+    const vector = new Array<number>(dimensions);
+    let norm = 0;
+    for (let index = 0; index < dimensions; index++) { const entry = packed[index]; if (!Number.isFinite(entry)) throw new TypeError('Stored embedding contains a non-finite value'); vector[index] = entry; norm += entry * entry; }
+    norm = Math.sqrt(norm);
+    if (!Number.isFinite(norm) || norm === 0) throw new TypeError('Stored embedding norm must be finite and nonzero');
+    for (let index = 0; index < dimensions; index++) vector[index] /= norm;
+    return vector;
+  }
+
+  /** Changes when another connection commits; unchanged for this one's own writes. */
+  #dataVersion(): number {
+    return (this.#db.prepare('PRAGMA data_version').get() as { data_version: number }).data_version;
   }
 
   #vector(value: unknown, dimensions: number): number[] {
@@ -1277,7 +1648,7 @@ export class LocalMemory {
           const original = dispatched[index];
           const current = this.get(original.id);
           if (!current || current.status !== 'active' || current.trust === 'untrusted' || this.#embeddingSourceState(current.id) !== sourceStates.get(current.id)) { result.skipped++; continue; }
-          this.#db.prepare('INSERT INTO local_embeddings(memory_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data').run(current.id, model, dimensions, this.#textHash(current.text), JSON.stringify(validated[index]));
+          this.#db.prepare('INSERT INTO local_embeddings(memory_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data').run(current.id, model, dimensions, this.#textHash(current.text), this.#encodeVector(validated[index]));
           result.indexed++;
         }
       });
@@ -1369,13 +1740,13 @@ export class LocalMemory {
     let cursor = '';
     for (;;) {
       check();
-      const rows = statement.all(scan.model, scan.dimensions, cursor, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds) as { id: string; vector: string; source_hash: string }[];
+      const rows = statement.all(scan.model, scan.dimensions, cursor, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds) as DenseRow[];
       const currentTime = this.#temporal(input);
       for (const row of rows) {
         check(); cursor = row.id;
         const stored = this.get(row.id), memory = stored && this.#at(stored, currentTime);
         if (!memory || row.source_hash !== this.#textHash(memory.text)) continue;
-        const vector = this.#vector(JSON.parse(row.vector), scan.dimensions);
+        const vector = this.#decodeVector(row.vector, scan.dimensions);
         const score = vector.reduce((sum, entry, index) => sum + entry * scan.query[index], 0);
         // Nonpositive cosine is not affirmative semantic evidence.
         if (score > 0 && this.#eligibleAt(memory.id, currentTime, includeUntrusted)) this.#retainBest(heap, { id: memory.id, score }, scan.maxCandidates);
@@ -1471,24 +1842,34 @@ export class LocalMemory {
       const record: MemoryRecord = { ...old, validFrom, ...(validUntil === undefined ? {} : { validUntil }), id: correctionId, text, source, trust: previous.trust === 'untrusted' ? 'untrusted' : 'observed', status: 'active', supersedes: id, createdAt: now, updatedAt: now, metadata };
       if (record.dependencies.some((dependency) => this.get(dependency)?.trust === 'untrusted')) record.trust = 'untrusted';
       this.#validateDependencies(record);
-      this.#insert(record, 'correction');
+      this.#insert(record, 'correction', now);
       this.#appendLedger('correction', record.id, { correction: { supersededId: id, correctionId, reason, invalidatedIds, invalidatedCount: invalidatedIds.length } });
       return record;
     });
   }
 
   forget(id: string): { deletedIds: string[] } {
+    let erased: number[] = [];
     const deletedIds = this.#transaction(() => {
       this.#owned(id);
       // Also purge correction history and derived text, which may quote the source.
       const records = this.#descendants([id], true);
       const visible = records.filter((record) => record.agentId === this.#agentId || record.visibility === 'workspace').map((record) => record.id);
+      // Read the labels before the delete, because the cascade takes them with it.
+      erased = this.#labelsFor(records.map((record) => record.id));
+      this.#writeSeq++;
       for (const record of records) this.#db.prepare('DELETE FROM memories WHERE id=? AND workspace_id=?').run(record.id, this.#workspaceId);
       // Counts only. Naming the erased records here would defeat the erasure the
       // caller just asked for; their ledger entries cascaded away with them.
       this.#appendLedger('erasure', null, { erasure: { deletedCount: records.length } });
       return visible;
     });
+    // The vec0 rows went with the labels, inside the transaction, via the trigger.
+    // An HNSW index lives in a file the transaction cannot reach, so its vectors
+    // are struck here. Either way the record is already unreachable: its label is
+    // gone, AUTOINCREMENT never reissues it, and the authorization join drops any
+    // candidate whose label no longer resolves.
+    if (erased.length) this.#denseIndex?.remove(erased);
     // Secure deletion covers live SQLite/FTS content. OS snapshots, SSD remapping,
     // backups and a WAL pinned by another reader cannot be guaranteed erased.
     if (!this.#transactionDepth) this.#db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
@@ -1522,7 +1903,8 @@ export class LocalMemory {
       if (expected.has(id)) throw new TypeError('Duplicate rollback record');
       expected.set(id, fingerprint);
     }
-    return this.#transaction(() => {
+    let erased: number[] = [];
+    const result = this.#transaction(() => {
       let conflicts = 0;
       const children = this.#db.prepare('SELECT from_id AS id FROM dependencies WHERE workspace_id=? AND to_id=?');
       const successors = this.#db.prepare('SELECT id FROM memories WHERE workspace_id=? AND supersedes=?');
@@ -1546,10 +1928,18 @@ export class LocalMemory {
         if (external) conflicts++;
       }
       if (conflicts) throw new RollbackConflictError(conflicts);
+      // Read the labels before the delete, same as forget(): the cascade takes
+      // the local_vec_labels rows with it, so this is the last point they exist.
+      erased = this.#labelsFor([...expected.keys()]);
+      this.#writeSeq++;
       const remove = this.#db.prepare('DELETE FROM memories WHERE id=? AND workspace_id=? AND agent_id=?');
       for (const id of expected.keys()) remove.run(id, this.#workspaceId, this.#agentId);
       return { deletedIds: [...expected.keys()] };
     });
+    // Same reasoning as forget(): the vec0 rows went with the cascade inside the
+    // transaction; an HNSW index lives outside it, so its vectors are struck here.
+    if (erased.length) this.#denseIndex?.remove(erased);
+    return result;
   }
 
   #count(text: string): number {
@@ -1705,7 +2095,7 @@ export class LocalMemory {
       }
       const record: MemoryRecord = { ...normalized, id: correctionId, workspaceId: this.#workspaceId, agentId: this.#agentId, status: 'active', createdAt: now, updatedAt: now, ...(supersedes ? { supersedes } : {}) };
       this.#validateDependencies(record);
-      this.#insert(record);
+      this.#insert(record, 'store', now);
       return record;
     });
   }
@@ -1886,13 +2276,13 @@ export class LocalMemory {
     });
     if (new Set(idempotency.map((entry) => entry.key)).size !== idempotency.length || new Set(idempotency.map((entry) => entry.memoryId)).size !== idempotency.length) throw new Error('Duplicate snapshot idempotency mapping');
     return this.#transaction(() => {
-      const result: ImportResult = { imported: 0, skipped: 0, outcomesImported: 0 };
+      const result: ImportResult = { imported: 0, skipped: 0, outcomesImported: 0 }, importedAt = this.#time();
       for (const record of ordered) {
         const existing = this.#decode(this.#db.prepare('SELECT data FROM memories WHERE id=?').get(record.id));
         if (existing) {
           if (existing.workspaceId !== this.#workspaceId || existing.agentId !== this.#agentId || v.canonical(existing) !== v.canonical(record)) throw new Error('Snapshot id conflicts with existing memory');
           result.skipped++;
-        } else { this.#insert(record, 'import'); result.imported++; }
+        } else { this.#insert(record, 'import', importedAt); result.imported++; }
       }
       for (const outcome of outcomes) {
         const existing = this.#db.prepare('SELECT data FROM outcomes WHERE id=?').get(outcome.id) as DataRow | undefined;
@@ -1917,6 +2307,10 @@ export class LocalMemory {
     this.#embedderShared = false;
     if (this.#rerankerShared && this.#reranker) releaseSharedReranker(this.#reranker);
     this.#rerankerShared = false;
+    // An HNSW index lives outside the database file, so closing is when it is
+    // persisted. A flush lost to a crash costs the tail of the index, which the
+    // next open rebuilds from its watermark — it never costs correctness.
+    try { this.#denseIndex?.close(); } finally { this.#denseIndex = null; }
     this.#db.close();
     this.#closed = true;
   }

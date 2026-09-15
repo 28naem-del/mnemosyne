@@ -230,6 +230,9 @@ export interface StoreMemoryInput {
  * which is what makes it auditable, so it remains a first-class selection. */
 export type RetrievalMode = 'hybrid' | 'lexical';
 
+import type { DenseIndexMode, DenseIndexStatus } from './vector/types.js';
+export type { DenseIndexMode, DenseIndexStatus } from './vector/types.js';
+
 export interface LocalMemoryOptions {
   path: string;
   workspaceId: string;
@@ -273,6 +276,38 @@ export interface LocalMemoryOptions {
   rrfK?: number;
   /** Provenance and outcome ledger settings. `false` disables it entirely. */
   ledger?: LedgerOptions | false;
+  /** Which dense index to search. Defaults to `MNEMOSYNE_INDEX_MODE`, else `auto`.
+   *
+   * - `exact` — score every authorized vector. No optional binaries, no index
+   *   files, and the answer every other mode is measured against.
+   * - `auto` — sqlite-vec when the extension loads, otherwise `exact`. Still an
+   *   exact search: `vec0` scores the same vectors in C instead of in JS.
+   * - `sqlite-vec` — as `auto`, but refuses to degrade silently.
+   * - `hnsw` — approximate, sublinear, for stores past a few hundred thousand
+   *   vectors. It is the one retrieval component here that can *miss* a true
+   *   neighbour, which is why it is never selected on your behalf.
+   *
+   * No mode changes what a record scores or whether it may be returned: every
+   * candidate an index proposes is re-authorized and rescored against the stored
+   * vector before it reaches a caller. */
+  indexMode?: DenseIndexMode;
+  /** Explicit filesystem path to a `sqlite-vec` loadable extension, overriding
+   * the bundled `sqlite-vec` package's own resolution. Only consulted when
+   * `indexMode` is `auto` or `sqlite-vec`. There is no environment-variable
+   * equivalent: an env-controlled path would make every `LocalMemory` opened
+   * on a machine `dlopen` whatever that variable points at, by default and
+   * without the caller asking for it. This option requires the caller to name
+   * the path explicitly. */
+  sqliteVecPath?: string;
+  /** `PRAGMA cache_size`, applied on every open. SQLite's own units: a
+   * **positive** value is a page count; a **negative** value is a KiB budget
+   * (what this engine defaults to and recommends, since page size can vary).
+   * Defaults to `-65536` — 64 MiB. A larger page cache means fewer trips
+   * through the OS page cache for the shortlist rescore and BM25 postings the
+   * hot recall path reads on every query, which matters once the working set
+   * stops fitting in whatever RAM SQLite would otherwise settle for on its
+   * own (a few MB). Must be a nonzero integer, magnitude at most 2,097,152. */
+  cacheSize?: number;
 }
 
 /** What retrieval actually does, as opposed to what was asked for. A hybrid
@@ -289,6 +324,8 @@ export interface RetrievalStatus {
   rerankTopN?: number;
   /** Why reranking is not running although it was requested. Never silent. */
   rerankDegraded?: string;
+  /** Which dense index served this path. Absent until a dense recall has run. */
+  index?: DenseIndexStatus;
 }
 
 export interface RecallInput {

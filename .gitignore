@@ -48,3 +48,6 @@ pnpm-lock.yaml
 
 # Locally packed releases
 *.tgz
+
+# Synthetic stores built by scripts/benchmark-ann-scale.mjs
+.benchmark-ann/

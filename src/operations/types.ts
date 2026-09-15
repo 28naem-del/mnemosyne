@@ -13,7 +13,8 @@ export interface BackupManifest {
   database: {
     bytes: number;
     sha256: string;
-    userVersion: 1;
+    /** 1 (JSON embeddings) or 2 (packed float32, local/index.ts's SCHEMA_VERSION). */
+    userVersion: 1 | 2;
     pageCount: number;
     pageSize: number;
     integrity: 'ok';
