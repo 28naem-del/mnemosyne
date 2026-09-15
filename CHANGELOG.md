@@ -37,6 +37,9 @@ on this branch and can be read with `git show <sha>`.
   `3a420ae`, `9c5634b`; the benchmark reports the temporal-reasoning subset separately in `bb6e698`.
 - **Cross-encoder reranking** of the fused candidate set, with a bundled int8 ONNX embedder that
   runs synchronously and offline. `72dcb20`, `ebb48ed`, `6503021`.
+- **Contextual reranking (T1.3)** — a candidate is scored with its in-session neighbours rather
+  than alone, bounded by `--rerank-context-top-n`. **This merged with its `g3` gate not met: the
+  measured result is short of the gate by 0.82.** `6d1b301`, `819aaca`, `5571d83`, `fc24fa7`.
 - **Full-candidate provenance and outcome ledger** — the ledger records the complete retrieval
   candidate set rather than only what was returned. `1b146d7`, `a40e470`.
 - **A matched competitor benchmark.** Competitor systems are scored as conditions inside our own
