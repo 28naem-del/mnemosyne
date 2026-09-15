@@ -3,6 +3,13 @@
 //
 //   node scripts/benchmark-bisect.mjs [--corpus FILE] [--tasks 20] [--k 10]
 //                                     [--counts 1,5,20] [--seed v0] [--out report.json]
+//                                     [--confirm off|outcome|minimal] [--exact]
+//
+// `--confirm minimal` re-executes one ablation per blamed record, so the report
+// carries whether the blame set is minimal under the exact oracle and not only
+// under the cached ranking. `--exact` promotes the exact oracle to the search
+// itself. Both cost a full re-index per test; the defaults are what the
+// published numbers were measured with, and the report says which was used.
 //
 // Builds the store once, then for each fault count N: copies the store, plants
 // N competing claims per targeted question, and bisects each failure. Reports
@@ -24,6 +31,7 @@ const { values } = parseArgs({
     corpus: { type: 'string' }, tasks: { type: 'string' }, k: { type: 'string' },
     counts: { type: 'string' }, seed: { type: 'string' }, out: { type: 'string' },
     target: { type: 'string' }, keep: { type: 'boolean' },
+    confirm: { type: 'string' }, exact: { type: 'boolean' },
   },
 });
 
@@ -33,6 +41,10 @@ const K = Number(values.k ?? 10);
 const COUNTS = (values.counts ?? '1,5,20').split(',').map(Number);
 const SEED = values.seed ?? 'v0-bisect';
 const TARGET = Number(values.target ?? 10_000);
+const CONFIRM = values.confirm ?? 'outcome';
+const EXACT = values.exact === true;
+if (!['off', 'outcome', 'minimal'].includes(CONFIRM)) { process.stderr.write(`benchmark-bisect: --confirm must be off, outcome or minimal\n`); process.exit(2); }
+const BISECT_OPTIONS = { confirm: CONFIRM, ...(EXACT ? { exact: true } : {}) };
 const WORKSPACE = 'bisect-benchmark';
 const AGENT = 'auditor';
 const DAY = 86_400_000;
@@ -42,6 +54,11 @@ if (!existsSync(CORPUS)) { process.stderr.write(`benchmark-bisect: corpus not fo
 const log = (line) => process.stdout.write(`${line}\n`);
 const seconds = (ms) => `${(ms / 1000).toFixed(1)}s`;
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
+// A measurement that was not taken prints as `n/a`, never as a number. `0.0s`
+// in a time-to-locate column reads as "located instantly", which is the most
+// flattering possible reading of "nothing was measured".
+const percentOrNa = (value) => (value === null || value === undefined ? 'n/a' : percent(value));
+const secondsOrNa = (ms) => (ms === null || ms === undefined ? 'n/a' : seconds(ms));
 const quantile = (values, fraction) => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -62,7 +79,7 @@ function random(seed) {
 
 const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bisect-bench-'));
 const basePath = join(root, 'base.sqlite');
-const report = { corpus: CORPUS, seed: SEED, k: K, target: TARGET, startedAt: new Date().toISOString(), runs: [] };
+const report = { corpus: CORPUS, seed: SEED, k: K, target: TARGET, oracle: { confirm: CONFIRM, exact: EXACT }, startedAt: new Date().toISOString(), runs: [] };
 
 try {
   // ---- 1. The store -------------------------------------------------------
@@ -125,7 +142,7 @@ try {
       displaced++;
       const task = { id: question.id, query: question.query, k: K, gold: question.gold, ...cut };
       const started = performance.now();
-      const result = bisect(memory, task);
+      const result = bisect(memory, task, BISECT_OPTIONS);
       const elapsedMs = performance.now() - started;
       const mine = injected.get(question.id) ?? [];
       const hitFaults = result.blame.filter(id => everyFault.has(id));
@@ -135,7 +152,8 @@ try {
         precision: result.blame.length ? hitFaults.length / result.blame.length : null,
         recall: mine.length ? result.blame.filter(id => mine.includes(id)).length / mine.length : null,
         goldRank: result.goldRank, universe: result.universe, tests: result.tests, widenings: result.widenings,
-        minimalUnique: result.minimalUnique, exactConfirmed: result.exactConfirmed, stateSha256: result.stateSha256,
+        minimalUnique: result.minimalUnique, exactConfirmed: result.exactConfirmed,
+        exactMinimal: result.exactMinimal, stateSha256: result.stateSha256,
       });
       process.stdout.write(`  N=${count} ${question.id.padEnd(12)} ${result.outcome.padEnd(9)} blame ${String(result.blame.length).padStart(2)} of ${String(result.universe).padStart(3)}  ${seconds(elapsedMs).padStart(6)}  ${result.exactConfirmed ? 'confirmed' : 'UNCONFIRMED'}\n`);
     }
@@ -148,6 +166,11 @@ try {
     const times = rows.filter(row => row.displaced).map(row => row.elapsedMs);
     const unique = bisected.filter(row => row.minimalUnique === true);
     const uniquePrecisions = unique.map(row => row.precision).filter(value => value !== null);
+    // Oracle B refused the set. The row is not scored — an unverified blame set
+    // has no business in a precision average — but it is counted and printed,
+    // because "the cheap oracle was wrong here" is a result about the method.
+    const unconfirmed = rows.filter(row => row.displaced && row.outcome === 'unconfirmed');
+    const exactMinimals = bisected.map(row => row.exactMinimal).filter(value => value !== null);
     const mean = (list) => (list.length ? list.reduce((sum, value) => sum + value, 0) / list.length : null);
 
     const summary = {
@@ -157,11 +180,13 @@ try {
       notDisplaced: targeted.length - displaced,
       bisected: bisected.length,
       unfixable: rows.filter(row => row.displaced && row.outcome === 'unfixable').length,
+      unconfirmed: unconfirmed.length,
       blamePrecision: mean(precisions),
       blameRecall: mean(recalls),
       blamePrecisionUnique: mean(uniquePrecisions),
       uniqueShare: bisected.length ? unique.length / bisected.length : null,
       exactConfirmedShare: bisected.length ? bisected.filter(row => row.exactConfirmed === true).length / bisected.length : null,
+      exactMinimalShare: exactMinimals.length ? exactMinimals.filter(value => value === true).length / exactMinimals.length : null,
       medianTimeToLocateMs: quantile(times, 0.5),
       p95TimeToLocateMs: quantile(times, 0.95),
       meanTestsPerBisect: mean(bisected.map(row => row.tests)),
@@ -169,15 +194,19 @@ try {
       rows,
     };
     report.runs.push(summary);
-    log(`  N=${count}: precision ${summary.blamePrecision === null ? 'n/a' : percent(summary.blamePrecision)} · recall ${summary.blameRecall === null ? 'n/a' : percent(summary.blameRecall)} · median ${seconds(summary.medianTimeToLocateMs ?? 0)} · p95 ${seconds(summary.p95TimeToLocateMs ?? 0)} · displaced ${displaced}/${targeted.length}\n`);
+    log(`  N=${count}: precision ${percentOrNa(summary.blamePrecision)} · recall ${percentOrNa(summary.blameRecall)} · median ${secondsOrNa(summary.medianTimeToLocateMs)} · p95 ${secondsOrNa(summary.p95TimeToLocateMs)} · displaced ${displaced}/${targeted.length}${summary.unconfirmed ? ` · UNCONFIRMED ${summary.unconfirmed}` : ''}${summary.exactMinimalShare === null ? '' : ` · exact-minimal ${percent(summary.exactMinimalShare)}`}\n`);
   }
 
   // ---- 4. The gate --------------------------------------------------------
   log('');
-  log('| N | displaced | bisected | blame precision | blame recall | unique-solution precision | median TTL | p95 TTL | exact-confirmed |');
-  log('|---|---|---|---|---|---|---|---|---|');
+  // The column headed "unique blame (oracle A)" is precision restricted to the
+  // rows where the cached-rank swap scan found no equally small alternative. It
+  // is a statement about that oracle's ranking, not a re-executed uniqueness
+  // proof, and it is named so nobody has to guess which.
+  log('| N | displaced | bisected | unconfirmed | blame precision | blame recall | unique blame (oracle A) | median TTL | p95 TTL | exact-confirmed | exact-minimal |');
+  log('|---|---|---|---|---|---|---|---|---|---|---|');
   for (const run of report.runs) {
-    log(`| ${run.faults} | ${run.displaced}/${run.targeted} | ${run.bisected} | ${run.blamePrecision === null ? 'n/a' : percent(run.blamePrecision)} | ${run.blameRecall === null ? 'n/a' : percent(run.blameRecall)} | ${run.blamePrecisionUnique === null ? 'n/a' : percent(run.blamePrecisionUnique)} | ${seconds(run.medianTimeToLocateMs ?? 0)} | ${seconds(run.p95TimeToLocateMs ?? 0)} | ${run.exactConfirmedShare === null ? 'n/a' : percent(run.exactConfirmedShare)} |`);
+    log(`| ${run.faults} | ${run.displaced}/${run.targeted} | ${run.bisected} | ${run.unconfirmed} | ${percentOrNa(run.blamePrecision)} | ${percentOrNa(run.blameRecall)} | ${percentOrNa(run.blamePrecisionUnique)} | ${secondsOrNa(run.medianTimeToLocateMs)} | ${secondsOrNa(run.p95TimeToLocateMs)} | ${percentOrNa(run.exactConfirmedShare)} | ${percentOrNa(run.exactMinimalShare)} |`);
   }
 
   // A run where injection displaced nothing has no measurement in it. It is
@@ -194,6 +223,9 @@ try {
   };
   log('');
   if (unmeasured.length) log(`no measurement at N = ${unmeasured.join(', ')}: injection displaced nothing at k=${K}, so there was no failure to bisect`);
+  const refused = report.runs.reduce((sum, run) => sum + run.unconfirmed, 0);
+  if (refused) log(`unconfirmed  : ${refused} blame set(s) the exact oracle would not stand behind — excluded from precision, listed in the report`);
+  log(`oracle       : search ${EXACT ? 'exact re-execution' : 'cached-rank ablation'}, confirmation ${CONFIRM}`);
   log(`gate blame precision >= 90%    : ${precisionGate ? 'PASS' : 'MISS'}${measured.length ? ` (over N = ${measured.map(run => run.faults).join(', ')})` : ' — nothing measured'}`);
   log(`gate median time-to-locate<60s : ${timeGate ? 'PASS' : 'MISS'}${measured.length ? '' : ' — nothing measured'}`);
 

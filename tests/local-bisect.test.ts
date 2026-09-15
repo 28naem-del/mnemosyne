@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalMemory, type LocalMemory } from '../src/local/index.js';
-import { ablateSnapshot, ablationClosure, bisect, ddmin, exactOracle, rankOracle, type BisectTask } from '../src/local/bisect.js';
+import { ablateSnapshot, ablationClosure, bisect, ddmin, exactOracle, goldSupport, rankOracle, type BisectTask } from '../src/local/bisect.js';
 
 /**
  * Bisect: ddmin over the candidate set, against a verifier with no model in it.
@@ -242,5 +242,43 @@ describe('bisect', () => {
     const oracle = exactOracle(memory, task);
     expect(oracle(new Set([gold]))).toBe(false);
     expect(bisect(memory, task).blame).not.toContain(gold);
+  });
+
+  it('never proposes removing a record the gold evidence hangs off', () => {
+    const memory = store();
+    const prior = memory.store({ text: 'Dana named the sailboat', trust: 'observed', source: { uri: 'test://rumour/0' } });
+    // The gold DEPENDS on the record that outranks it. Ablating that record
+    // takes the gold with it (`ablationClosure`), so removing it cannot make the
+    // task pass — the cheap oracle, which walks a flat id list, cannot see that.
+    const gold = memory.store({
+      // Same trust as what it depends on: the kernel refuses a record whose
+      // trust exceeds its dependency's ("Memory trust cannot exceed dependency trust").
+      text: 'Dana named the sailboat Corvina after the summer refit that the yard finished late',
+      trust: 'observed', source: { uri: 'test://transcript/gold' }, dependencies: [prior.id],
+    });
+    const task: BisectTask = { id: 'sailboat-dep', query: 'Dana named the sailboat', k: 1, gold: [gold.id], depth: 100 };
+    expect(memory.recall({ query: task.query, limit: 1 })[0].memory.id).toBe(prior.id);
+    expect(ablationClosure(memory.export().memories, [prior.id]).has(gold.id)).toBe(true);
+
+    const result = bisect(memory, task);
+    expect(result.blame).toEqual([]);
+    expect(result.outcome).toBe('unfixable');
+    expect(result.reason).toBe('ablation-insufficient');
+    expect(result.goldRank).toBe(2);
+    expect(goldSupport(memory, task)).toEqual(new Set([gold.id, prior.id]));
+  });
+
+  it('refuses the result outright when the exact oracle will not stand behind it', () => {
+    const { memory, task } = poisonedStore(2);
+    // Oracle B rebuilt as a store that never surfaces the gold, whatever is
+    // ablated — the shape of a cheap-oracle answer that re-execution rejects.
+    const result = bisect(memory, task, {
+      createStore: () => ({ recall: () => [], close: () => {} }),
+    });
+    expect(result.outcome).toBe('unconfirmed');
+    expect(result.reason).toBe('blame-not-confirmed');
+    expect(result.exactConfirmed).toBe(false);
+    // The set is still reported so it can be looked at. It is just not an answer.
+    expect(result.blame).toHaveLength(2);
   });
 });

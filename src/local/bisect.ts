@@ -20,8 +20,8 @@
  *  - **Oracle B, exact re-execution.** Rebuild a store without the ablated
  *    records and run the real `recall`. This is the real answer and it costs a
  *    full re-index, so it confirms rather than searches. A blame set Oracle B
- *    will not confirm is reported as `exactConfirmed: false` — never quietly
- *    kept.
+ *    will not confirm comes back as `outcome: 'unconfirmed'`, not as a blame
+ *    set with a flag on it — never quietly kept.
  *
  * Nothing here knows which records were injected. A caller that seeds faults
  * keeps that knowledge to itself and scores the answer afterwards.
@@ -103,12 +103,19 @@ export interface BisectResult {
   /**
    * - `blamed` — a minimal set of records whose removal makes the task pass.
    * - `passing` — the task already passes; there is nothing to blame.
-   * - `unfixable` — removing every non-gold candidate still does not surface the
-   *   gold, so the failure is not a displacement failure at this depth.
+   * - `unfixable` — removing every candidate still does not surface the gold, so
+   *   the failure is not a displacement failure at this depth.
+   * - `unconfirmed` — ddmin found a set, and Oracle B would not stand behind it.
+   *   `blame` still carries the set so it can be looked at; it is not an answer.
+   *   Only reachable with confirmation on, which is the default.
+   *
+   * A consumer that switches on `outcome` gets the truth without having to also
+   * read `exactConfirmed` — the v2 lesson about flags nobody checks.
    */
-  outcome: 'blamed' | 'passing' | 'unfixable';
+  outcome: 'blamed' | 'passing' | 'unfixable' | 'unconfirmed';
   /** Why the search ended where it did. Present on every outcome, so `unfixable` is never a shrug. */
-  reason: 'displaced' | 'already-passing' | 'gold-not-retrievable' | 'ablation-insufficient';
+  reason: 'displaced' | 'already-passing' | 'gold-not-retrievable' | 'ablation-insufficient'
+    | 'blame-not-confirmed' | 'failure-not-reproduced';
   blame: string[];
   /** Ordered candidate ids the search ran over, before gold was excluded. */
   candidates: number;
@@ -132,9 +139,14 @@ export interface BisectResult {
    * True when no equally small blame set exists that differs from this one by a
    * single swap. At k > 1 several minimal sets normally exist — any `m` of the
    * records above the gold will do — and this says which case you are in.
+   *
+   * Computed with the cached-rank oracle, so it inherits that oracle's blindness
+   * to second-order scoring effects: it is a statement about the ranking, not a
+   * re-executed one. `exactMinimal` under `confirm: 'minimal'` is the re-executed
+   * statement, and the two can disagree.
    */
   minimalUnique: boolean | null;
-  /** Same-size alternatives found by the swap search, capped at 64; null under `exact`. */
+  /** Same-size alternatives found by the cached-rank swap search, capped at 64; null under `exact`. */
   alternatives: number | null;
   /** Oracle B agreed: the recorded failure fails and removing the blame set passes. */
   exactConfirmed: boolean | null;
@@ -323,6 +335,39 @@ function countAlternatives(universe: readonly string[], blame: readonly string[]
   return found;
 }
 
+/**
+ * Every id whose removal would take a gold record with it: the gold itself and
+ * everything it hangs off — dependencies, the record it supersedes, its
+ * invalidation cause and correction — transitively.
+ *
+ * These can never be candidates. Ablating one deletes the evidence, so the task
+ * cannot pass in the resulting store no matter what else is removed, and a
+ * "blame set" containing one is an answer to a different question. `exactRunner`
+ * already refuses such an ablation; this keeps them out of the search itself, so
+ * the cheap oracle — which walks a flat id list and knows nothing about links —
+ * cannot propose one.
+ */
+export function goldSupport(source: Pick<BisectSource, 'getAt'>, task: BisectTask): Set<string> {
+  const time = {
+    ...(task.asOf === undefined ? {} : { asOf: task.asOf }),
+    ...(task.knownAt === undefined ? {} : { knownAt: task.knownAt }),
+  };
+  const support = new Set<string>();
+  const pending = [...task.gold];
+  for (let index = 0; index < pending.length; index++) {
+    const id = pending[index];
+    if (support.has(id)) continue;
+    support.add(id);
+    const record = source.getAt(id, time);
+    if (!record) continue;
+    pending.push(...record.dependencies);
+    if (record.supersedes) pending.push(record.supersedes);
+    if (record.invalidation?.sourceId) pending.push(record.invalidation.sourceId);
+    if (record.invalidation?.correctionId) pending.push(record.invalidation.correctionId);
+  }
+  return support;
+}
+
 function goldRank(ranked: readonly string[], gold: ReadonlySet<string>): number | null {
   const index = ranked.findIndex(id => gold.has(id));
   return index === -1 ? null : index + 1;
@@ -371,7 +416,10 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
   }
 
   const passes = rankOracle(ranked, task.gold, task.k, require);
-  const universe = ranked.filter(id => !goldSet.has(id));
+  // Not `!goldSet.has(id)`: a record the gold depends on takes the gold with it
+  // when it is ablated, so removing it can never make the task pass.
+  const support = goldSupport(source, task);
+  const universe = ranked.filter(id => !support.has(id));
   const ranking: BisectResult['ranking'] = widenings === 0 ? 'single-recall' : 'stacked';
   const shared = {
     taskId: task.id, blame: [] as string[], candidates: ranked.length, universe: universe.length,
@@ -400,19 +448,30 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
   let exactConfirmed: boolean | null = null;
   let exactMinimal: boolean | null = null;
   let exactRetrieval: string | null = null;
+  let refused: BisectResult['reason'] | null = null;
   if (confirm !== 'off') {
     exactRetrieval = String(options.storeOptions?.retrieval ?? 'lexical');
     const oracle = (removed: ReadonlySet<string>): boolean => {
       const result = run(removed, task.k);
       return result.goldRemoved ? false : satisfied(result.ids, task);
     };
-    // The recorded failure really fails, and removing the blame set really fixes it.
-    exactConfirmed = !oracle(new Set()) && oracle(new Set(minimal));
+    // The recorded failure really fails, and removing the blame set really fixes
+    // it. Either half can fail: the cheap oracle is blind to the IDF and average
+    // document length that ablation moves, so it can call a failure that a real
+    // re-execution does not reproduce, and it can propose a set that does not
+    // actually fix one.
+    const reproduced = !oracle(new Set());
+    const fixes = oracle(new Set(minimal));
+    exactConfirmed = reproduced && fixes;
+    if (!reproduced) refused = 'failure-not-reproduced';
+    else if (!fixes) refused = 'blame-not-confirmed';
     if (confirm === 'minimal') exactMinimal = minimal.every(id => !oracle(new Set(minimal.filter(entry => entry !== id))));
   }
 
   return {
-    ...shared, outcome: 'blamed', reason: 'displaced', blame: minimal, tests,
+    ...shared,
+    ...(refused === null ? { outcome: 'blamed' as const, reason: 'displaced' as const } : { outcome: 'unconfirmed' as const, reason: refused }),
+    blame: minimal, tests,
     minimalUnique: alternatives === null ? null : alternatives === 0, alternatives,
     exactConfirmed, exactMinimal, exactRetrieval,
     elapsedMs: clock() - started,
