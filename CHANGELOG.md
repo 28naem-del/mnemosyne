@@ -65,9 +65,9 @@ on this branch and can be read with `git show <sha>`.
 - The MCP `memory_context` tool passes `asOf`, `knownAt` and `lexicalScoring` through. `478c715`.
 - Documentation corrections from the release audit: the docs no longer deny the ANN index this
   release ships or the matched competitor run it carries, the matched run's compression figure is
-  computed by its generator rather than hardcoded, and the `self-improving` npm keyword — a v1
-  leftover asserting an unbuilt capability — is removed. `03061fc`, `2fd354c`, `4dd6769`,
-  `4a45c0e`, `88d8501`.
+  computed by its generator rather than hardcoded, and the npm keyword claiming the system
+  improves itself — a v1 leftover asserting an unbuilt capability — is removed. `03061fc`,
+  `2fd354c`, `4dd6769`, `4a45c0e`, `88d8501`.
 
 ## [2.0.0-rc.9] — packaging and release documentation, 2026-09-13
 
