@@ -1,5 +1,5 @@
 # The uncompressed merged reports and the per-part intermediates are regenerable
-# and large (145 MB uncompressed). What is committed is the gzipped merged report
+# and large (76.1 MB uncompressed). What is committed is the gzipped merged report
 # for each run, which contains every per-question attempt record, plus summary.json.
 #
 #   gunzip -k locomo-k10.json.gz     # restore a full raw report

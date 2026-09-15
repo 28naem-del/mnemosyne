@@ -25,7 +25,10 @@ contains every attempt record from its parts, and `mergeParts` refuses to combin
 whose settings, corpus digest, embedding identity, system roster or implementation
 digest differ, so the merge cannot silently blend different experiments.
 
-**Uncompressed size is 145 MB**, which is why these are stored gzipped (23x).
+**Uncompressed size is 76,141,738 bytes (76.1 MB)**, against 2,944,190 bytes committed — a factor
+of 25.9 — which is why these are stored gzipped. Do not retype those figures: `make-report.mjs`
+reads them out of the `.json.gz` members' own ISIZE trailers every time it regenerates
+`../matched-run-2026-09-14.md`, so the published report cannot drift from the files on disk.
 
 ## Regenerating the published report
 
