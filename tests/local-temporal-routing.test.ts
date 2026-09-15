@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type StoreMemoryInput, type SyncMemoryEmbedder } from '../src/local/index.js';
+import { createLocalMemory, type LocalMemory, type LocalMemoryOptions, type StoreMemoryInput, type SyncMemoryEmbedder, type SyncMemoryReranker } from '../src/local/index.js';
+import { parseTemporalQuery } from '../src/local/temporal-query.js';
 
 /**
  * Temporal routing at the recall and compile entry points (master plan T1.4).
@@ -273,5 +274,116 @@ describe('temporal routing on the other retrieval entry points', () => {
     const query = 'Atlas quota review session before March 2023';
     expect(ids(db.recall({ query, limit: 12 }))).toHaveLength(12);
     expect(ids(db.recall({ query, limit: 12, temporalRouting: 'auto' })).sort()).toEqual([seeded[0], seeded[1]].sort());
+  });
+});
+
+/**
+ * A bound read out of a query is a guess about what the asker meant; a bound the
+ * caller passes is a statement about the clock they want. Only the second is
+ * allowed to point into the future. Without that distinction "as of today"
+ * resolves to the last instant of today, `#at` drops every record whose validity
+ * ends before then, and a question about the present is answered as history —
+ * with an empty result and no error.
+ */
+describe('a bound read out of a query never reaches past now', () => {
+  /** Valid from before NOW until later the same day: current at NOW, and gone by
+   * the end of the day that "as of today" resolves to. */
+  const expiringToday = (db: LocalMemory): string =>
+    db.store(fact('Atlas quota is 500 requests per minute', { validFrom: '2026-03-01T00:00:00.000Z', validUntil: '2026-03-15T18:00:00.000Z' })).id;
+  const counts = (db: LocalMemory, query: string) => ({
+    off: ids(db.recall({ query, limit: 10 })).length,
+    on: ids(db.recall({ query, limit: 10, temporalRouting: 'auto' })).length,
+  });
+
+  it('still finds a record that is valid at this instant when the query says "as of today"', () => {
+    const db = memory();
+    const id = expiringToday(db);
+    const { off, on } = counts(db, 'what is the Atlas quota as of today');
+    expect({ off, on }).toEqual({ off: 1, on: 1 });
+    expect(ids(db.recall({ query: 'what is the Atlas quota as of today', limit: 10, temporalRouting: 'auto' }))).toEqual([id]);
+  });
+
+  it('holds at the confidence gate itself, where a bare year is enough to set a bound', () => {
+    const db = memory();
+    expiringToday(db);
+    // "through 2026" parses at exactly TEMPORAL_ROUTING_MIN_CONFIDENCE, so it is
+    // the weakest parse that can still apply one — and it reaches to December.
+    expect(parseTemporalQuery('Atlas quota through 2026', { now: new Date(NOW) }).confidence).toBe(0.6);
+    expect(counts(db, 'Atlas quota through 2026')).toEqual({ off: 1, on: 1 });
+  });
+
+  it('writes down the bound it applied, not the one it read', () => {
+    const db = memory();
+    expiringToday(db);
+    db.recall({ query: 'what is the Atlas quota as of today', limit: 10, temporalRouting: 'auto' });
+    const routing = retrievalOf(db).temporalRouting!;
+    // The parse is reported verbatim — the query really did say "as of today" —
+    // while the bound that governed retrieval is the present.
+    expect(routing.window.to).toBe('2026-03-16T00:00:00.000Z');
+    expect(routing.appliedAsOf).toBe(NOW);
+    expect(routing.appliedAsOf! <= NOW).toBe(true);
+  });
+
+  it('leaves a bound that already sits in the past exactly where the query put it', () => {
+    const db = memory();
+    db.store(fact('Atlas quota is 500 requests per minute', { validFrom: '2025-06-01T00:00:00.000Z' }));
+    // Clamping must not become a licence to ignore a real historical question:
+    // "before March 2020" still hides evidence dated after it.
+    expect(counts(db, 'Atlas quota before March 2020')).toEqual({ off: 1, on: 0 });
+    db.recall({ query: 'Atlas quota before March 2020', limit: 10, temporalRouting: 'auto' });
+    expect(retrievalOf(db).temporalRouting?.appliedAsOf).toBe('2020-02-29T23:59:59.999Z');
+  });
+
+  it('still honours a future asOf the caller stated, because that one is intent', () => {
+    const db = memory();
+    expiringToday(db);
+    const query = 'what is the Atlas quota as of today';
+    const stated = '2026-09-15T00:00:00.000Z';
+    // The caller asked past the record's expiry on purpose, so it is correctly gone.
+    expect(ids(db.recall({ query, limit: 10, temporalRouting: 'auto', asOf: stated }))).toEqual([]);
+    const retrieval = retrievalOf(db);
+    expect(retrieval.asOf).toBe(stated);
+    expect(retrieval.temporalRouting?.appliedAsOf).toBeUndefined();
+  });
+
+  it('cannot reach the routing-off path at all', () => {
+    const db = memory();
+    expiringToday(db);
+    const query = 'what is the Atlas quota as of today';
+    const plain = db.recall({ query, limit: 10 });
+    expect(db.recall({ query, limit: 10, temporalRouting: 'off' })).toEqual(plain);
+    // `#route` returns before reading the clock when routing is off, so the
+    // clamp is unreachable rather than merely inactive.
+    expect(retrievalOf(db).temporalRouting).toBeUndefined();
+  });
+});
+
+/**
+ * The final ordering stage only exists when a reranker does. Every other test
+ * here runs with `reranker: null`, which leaves `TEMPORAL_PRIORITY_KEEP` and the
+ * post-rerank pass unmeasured — a stub reranker is what makes them observable.
+ */
+describe('the ordering stage protects the podium a reranker produced', () => {
+  /** Scores by month, newest first: a deliberately date-blind order, so any
+   * movement in the result is the window's doing and not the reranker's. */
+  const newestFirst: SyncMemoryReranker = {
+    model: 'test-stub-reranker@v1',
+    rerankSync: (_query, passages) => passages.map(text => Number(/session (\d+)/.exec(text)![1])),
+    close: () => {},
+  };
+
+  it('holds the top three and partitions everything below them', () => {
+    const db = memory({ reranker: newestFirst });
+    const seeded = seed(db);
+    const query = 'Atlas quota review session in June 2023';
+    const plain = ids(db.recall({ query, limit: 12 }));
+    // The reranker alone orders December down to January.
+    expect(plain).toEqual([...seeded].reverse());
+    const routed = ids(db.recall({ query, limit: 12, temporalRouting: 'auto' }));
+    // December, November and October are held. June — the only record inside the
+    // widened window — is promoted to just below them, and the rest keep their
+    // reranked order. Reducing TEMPORAL_PRIORITY_KEEP to 0 would put June first;
+    // dropping the post-rerank pass would leave it in seventh place.
+    expect(routed).toEqual([seeded[11], seeded[10], seeded[9], seeded[5], seeded[8], seeded[7], seeded[6], seeded[4], seeded[3], seeded[2], seeded[1], seeded[0]]);
   });
 });

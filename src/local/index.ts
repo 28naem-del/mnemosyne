@@ -44,9 +44,12 @@ const TEMPORAL_PRIORITY_DEPTH = 1000;
  */
 const TEMPORAL_PRIORITY_SLACK_MS = 7 * 86_400_000;
 /** How many leading results the FINAL ordering leaves exactly where it found
- * them. See `#prioritize`: the candidate stage reorders everything, the ordering
- * stage protects the podium, so a window read from a query cannot evict the
- * matches the retriever was most sure of. */
+ * them. See `#prioritize`: the candidate stage reorders everything with
+ * `keep = 0`, and the ordering stage then holds the top of whatever comes back.
+ * Be precise about what that buys. The podium this protects is the reranker's,
+ * built from a candidate list the earlier pass has already rearranged — so it
+ * guards against the FINAL pass demoting a strong match, not against the
+ * candidate pass having changed which matches the reranker was shown. */
 const TEMPORAL_PRIORITY_KEEP = 3;
 /** A query's own time expression, resolved into retrieval parameters. `window`
  * is the prioritisation window — the parsed one widened by
@@ -675,10 +678,20 @@ export class LocalMemory {
   #route(input: Pick<RecallInput, 'query' | 'asOf' | 'knownAt' | 'temporalRouting'>): TemporalRoute | null {
     if (input === null || typeof input !== 'object') return null;
     if (v.enumeration(input.temporalRouting ?? 'off', ['auto', 'off'] as const, 'temporalRouting') === 'off') return null;
-    const parse = parseTemporalQuery(v.string(input.query, 'query', 4096), { now: this.#time() });
+    const now = this.#time();
+    const parse = parseTemporalQuery(v.string(input.query, 'query', 4096), { now });
     if (!parse.window || parse.relation === 'none' || parse.grain === 'none' || parse.confidence < TEMPORAL_ROUTING_MIN_CONFIDENCE) return null;
-    const asOf = input.asOf === undefined ? parse.asOf : undefined;
-    const knownAt = input.knownAt === undefined ? parse.knownAt : undefined;
+    // A bound the caller states may sit in the future — that is explicit intent,
+    // and the branch below already lets it win. A bound read out of a query may
+    // not: "as of today" resolves to the last instant of today and "through
+    // 2026" to the last instant of December, and `#at` drops every record whose
+    // `validUntil` falls at or before the bound. Unclamped, a present-tense
+    // question is answered as a historical one and a record that is valid at
+    // this instant comes back as an empty result with no error. Clamping is a
+    // no-op for any parse that already lands at or before `now`.
+    const present = (at: string | undefined): string | undefined => (at === undefined || at <= now ? at : now);
+    const asOf = input.asOf === undefined ? present(parse.asOf) : undefined;
+    const knownAt = input.knownAt === undefined ? present(parse.knownAt) : undefined;
     const slack = (at: string, direction: number, by: number): string =>
       new Date(Math.min(Math.max(Date.parse(at) + direction * by, TEMPORAL_WINDOW_BOUNDS.floor), TEMPORAL_WINDOW_BOUNDS.ceiling)).toISOString();
     const window = parse.window;
@@ -723,11 +736,22 @@ export class LocalMemory {
    * one evicted correct evidence from three temporal questions outright,
    * because a window read from a query is a guess and a top match is not.
    *
-   * Reordering never narrows, so a misread window can only rank evidence lower,
-   * never hide it. Scores are reassigned onto the descending sequence the
-   * ranking already produced, because `RecallResult.score` is documented to
-   * decrease down the list and a promotion is a change of rank, not a claim of
-   * higher relevance.
+   * This method itself only permutes — nothing is added, nothing is removed.
+   * That is NOT the same as saying routing cannot change which records answer a
+   * query, and the difference is the asynchronous reranker path. There the
+   * candidate slice IS the answer set: `recallHybrid` truncates this list at
+   * `rerankTopN` and then replaces the ranking with that slice, so running with
+   * `keep = 0` beforehand decides membership and not merely order. Measured on
+   * an eight-record pool with `rerankTopN = 4`, every out-of-window record was
+   * displaced out of the result outright. That is deliberate — reaching the
+   * in-window candidate is worth more than preserving the fused order, and it is
+   * where the temporal subset's gain comes from — but it is a narrowing, so a
+   * misread window can cost evidence and not just rank. `recall`'s synchronous
+   * reranker carries its tail through and cannot lose a record this way.
+   *
+   * Scores are reassigned onto the descending sequence the ranking already
+   * produced, because `RecallResult.score` is documented to decrease down the
+   * list and a promotion is a change of rank, not a claim of higher relevance.
    */
   #prioritize<T extends { score: number }>(items: T[], window: TemporalWindow, when: (item: T) => string | undefined, keep: number): T[] {
     const depth = Math.min(items.length, TEMPORAL_PRIORITY_DEPTH);
