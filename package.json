@@ -200,7 +200,6 @@
     "llm",
     "embeddings",
     "multi-agent",
-    "self-improving",
     "mcp",
     "local-first",
     "temporal-memory",
