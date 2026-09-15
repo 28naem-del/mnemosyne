@@ -130,6 +130,20 @@ withModel('bundled reranker', () => {
     expect(reranker.rerankSync('gardening', passages)).toEqual(reranker.rerankSync('gardening', passages));
   });
 
+  it('reports its own token count, which is what a caller budgeting a passage has to spend', () => {
+    // The factory returns a frozen facade. If it stops forwarding this, the
+    // context-aware rerank stands down silently and a benchmark reads as "no
+    // effect" rather than "never ran" — which is exactly how it failed once.
+    const reranker = createBundledReranker();
+    open.push(reranker);
+    expect(typeof reranker.countTokens).toBe('function');
+    const short = reranker.countTokens!('gardening');
+    const long = reranker.countTokens!('gardening in the spring with a trowel and a great deal of patience');
+    expect(short).toBeGreaterThan(0);
+    expect(long).toBeGreaterThan(short);
+    expect(reranker.countTokens!('gardening')).toBe(short);
+  });
+
   it('accepts a passage far longer than the window by truncating it', () => {
     const reranker = createBundledReranker();
     open.push(reranker);

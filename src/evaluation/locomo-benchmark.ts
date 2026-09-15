@@ -128,7 +128,7 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   if (report.embedding) console.log(`embedder ${report.embedding.model} (${report.embedding.dimensions}d, asymmetric=${report.embedding.asymmetric})`);
   console.log(`reranker ${reranker ? `${reranker.model} (top-${rerankTopN})` : 'disabled'}`);
   console.log(`granularity ${granularity}${derivedIndex(report)}`);
-  console.log(`rerank context ${rerankContext ? `+/-${rerankContext} in-session turns` : 'off'}`);
+  console.log(`rerank context ${rerankContext ? `+/-${rerankContext} in-session turns${reranker?.countTokens ? '' : ' — INACTIVE: this reranker does not report token counts'}` : 'off'}`);
   console.log(line('lexical', 'zero-model overlap'));
   console.log(line('bm25', 'zero-model BM25'));
   console.log(line('hybrid', reranker ? 'hybrid dense + BM25 + rerank' : 'hybrid dense + BM25 (RRF)'));

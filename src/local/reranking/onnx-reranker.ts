@@ -167,6 +167,10 @@ export function createBundledReranker(options: BundledRerankerOptions = {}): Syn
   return Object.freeze({
     model: engine.model,
     rerankSync: (query: string, passages: readonly string[]) => engine.rerankSync(query, passages),
+    // Forwarded, not omitted: a caller that budgets a passage needs this model's
+    // own unit, and a facade that quietly dropped it would make context-aware
+    // reranking stand down without saying so.
+    countTokens: (text: string) => engine.countTokens(text),
     close: () => engine.close(),
   });
 }
