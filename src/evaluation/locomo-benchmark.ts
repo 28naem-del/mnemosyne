@@ -54,7 +54,8 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
       + 'its K in-session neighbours either side, and fuses that ordering as one more channel. It needs --granularity multi; at 0 or on\n'
       + 'a turn run nothing about the pipeline changes. K=2 is the measured knee on this corpus.\n'
       + '--rerank-context-top-n N caps how many candidates that second pass is given, which is the latency valve: only those N rows are\n'
-      + 'submitted to it, and the rest keep the isolated pass ordering in the contextual channel. Defaults to 32, one reranker batch.\n'
+      + 'submitted to it, and the rest keep the isolated pass ordering in the contextual channel. Defaults to 14, which is the\n'
+      + 'measured p95 budget divided by the measured cost of a windowed row, not a round number.\n'
       + 'The zero-model conditions are unaffected either way, so the baselines stay comparable across the two settings.\n'
       + '--corpus-index-base gives the ordinal of this run\'s first conversation within the whole dataset. A run split into parts\n'
       + 'must set it, or each part numbers its conversations from zero, mints different chunk identities and breaks ties differently.');
