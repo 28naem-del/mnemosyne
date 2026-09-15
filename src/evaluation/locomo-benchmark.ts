@@ -23,11 +23,14 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
     file: { type: 'string' }, out: { type: 'string' }, 'top-k': { type: 'string' },
     'min-recall': { type: 'string' }, 'max-questions': { type: 'string' }, lexical: { type: 'boolean' }, help: { type: 'boolean' },
     'no-rerank': { type: 'boolean' }, 'rerank-top-n': { type: 'string' },
+    'temporal-routing': { type: 'boolean' }, 'temporal-category': { type: 'string' }, 'min-temporal-gain': { type: 'string' },
   } });
   if (values.help) {
     console.log('node dist/evaluation/locomo-benchmark.js [--file CORPUS.json] [--out REPORT.json] [--top-k 10] [--min-recall 70] [--max-questions N] [--lexical] [--no-rerank] [--rerank-top-n 50]\n'
       + 'Defaults to benchmarks/data/locomo10.json, or $MNEMOSYNE_LOCOMO_PATH. --lexical skips both models and reports the zero-model baselines only.\n'
-      + '--no-rerank measures the fused ranking without the cross-encoder, which is the T1.1 configuration.');
+      + '--no-rerank measures the fused ranking without the cross-encoder, which is the T1.1 configuration.\n'
+      + '--temporal-routing [--temporal-category locomo:2] [--min-temporal-gain 3.0] scores a hybrid-temporal condition with the engine\'s\n'
+      + 'temporal query routing enabled beside the unrouted hybrid one, from a single ingestion, and reports every question category separately.');
     return;
   }
   const file = resolve(values.file ?? process.env.MNEMOSYNE_LOCOMO_PATH ?? DEFAULT_CORPUS);
@@ -66,6 +69,12 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   }
   const rerankTopN = Number(values['rerank-top-n'] ?? 50);
   if (!Number.isSafeInteger(rerankTopN) || rerankTopN < 1 || rerankTopN > 1000) throw new Error('--rerank-top-n must be between 1 and 1000');
+  // LoCoMo category 2 is its temporal-reasoning subset; the adapter emits the
+  // source category verbatim as `locomo:N`, so the subset is named, not inferred.
+  const temporalRouting = values['temporal-routing'] === true;
+  const temporalCategory = values['temporal-category'] ?? 'locomo:2';
+  const minTemporalGain = Number(values['min-temporal-gain'] ?? 3);
+  if (!Number.isFinite(minTemporalGain) || minTemporalGain < -100 || minTemporalGain > 100) throw new Error('--min-temporal-gain must be between -100 and 100');
   const started = Date.now();
   const report = await runCorpusBenchmark(dataset, {
     topK, includeBm25: true, hybridLexicalScoring: 'bm25',
@@ -74,6 +83,7 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
     // passages are embedded differently into the same vector space.
     ...(model ? { embedder: model.forPassages(), queryEmbedder: model.forQueries() } : {}),
     ...(reranker ? { reranker: asMemoryReranker(reranker), rerankTopN } : {}),
+    ...(temporalRouting ? { temporalRouting: true } : {}),
     maxEmbeddingCalls: 1_000_000, timeoutMs: 3_600_000,
   });
   model?.close();
@@ -95,6 +105,20 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   console.log(line('lexical', 'zero-model overlap'));
   console.log(line('bm25', 'zero-model BM25'));
   console.log(line('hybrid', reranker ? 'hybrid dense + BM25 + rerank' : 'hybrid dense + BM25 (RRF)'));
+  if (temporalRouting) console.log(line('hybrid-temporal', '  + temporal query routing'));
+  // Routing is a per-question decision, so the honest reading is per category:
+  // the subset it targets against every subset it must not damage.
+  const categories = report.categorySummaries;
+  if (temporalRouting && categories) {
+    const off = categories.hybrid ?? {}, on = categories['hybrid-temporal'] ?? {};
+    console.log(`per-category recall@${topK}, routing off -> on (annotated questions in brackets)`);
+    for (const category of [...new Set([...Object.keys(off), ...Object.keys(on)])].sort()) {
+      const before = off[category]?.meanRecall ?? null, after = on[category]?.meanRecall ?? null;
+      const delta = before === null || after === null ? null : (after - before) * 100;
+      console.log(`  ${`${category}${category === temporalCategory ? ' *' : ''}`.padEnd(14)}[${String(off[category]?.annotatedQuestions ?? 0).padStart(4)}]  `
+        + `${percent(before).padStart(6)} -> ${percent(after).padStart(6)}  ${delta === null ? '   n/a' : `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}`}`);
+    }
+  }
   for (const notice of report.notices) console.log(`note: ${notice}`);
   if (values.out) { writeFileSync(resolve(values.out), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600, flag: 'wx' }); console.log(`report written to ${resolve(values.out)}`); }
 
@@ -106,6 +130,19 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
     const scored = achieved === null || achieved === undefined ? 0 : achieved * 100;
     if (scored < floor) { console.error(`FAIL: mean recall@${topK} ${scored.toFixed(2)} is below the required ${floor}.`); process.exitCode = 1; return; }
     console.log(`PASS: mean recall@${topK} ${scored.toFixed(2)} meets the required ${floor}.`);
+  }
+  if (temporalRouting) {
+    const off = report.categorySummaries?.hybrid?.[temporalCategory]?.meanRecall;
+    const on = report.categorySummaries?.['hybrid-temporal']?.[temporalCategory]?.meanRecall;
+    if (off === undefined || off === null || on === undefined || on === null) {
+      console.error(`FAIL: category ${temporalCategory} has no scored recall to compare.`); process.exitCode = 1; return;
+    }
+    const gain = (on - off) * 100;
+    if (gain < minTemporalGain) {
+      console.error(`FAIL: ${temporalCategory} recall@${topK} gained ${gain.toFixed(2)} points, below the required ${minTemporalGain.toFixed(2)}.`);
+      process.exitCode = 1; return;
+    }
+    console.log(`PASS: ${temporalCategory} recall@${topK} gained ${gain.toFixed(2)} points, at or above the required ${minTemporalGain.toFixed(2)}.`);
   }
 }
 

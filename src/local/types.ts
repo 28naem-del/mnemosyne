@@ -71,6 +71,26 @@ export interface LedgerVerifierOutcome {
   recordedAt: string;
 }
 
+/** The time expression a query carried, and the retrieval parameters it produced.
+ * Recorded in full so the decision can be re-derived and argued with later: the
+ * span that was read, how it was read, and which bounds were actually applied. */
+export interface LedgerTemporalRouting {
+  /** The literal span of the original query that was read as a time expression. */
+  matched: string;
+  /** `before`/`after` narrow visibility; `at`/`between` only prioritise. */
+  relation: 'at' | 'before' | 'after' | 'between';
+  grain: 'day' | 'week' | 'month' | 'year';
+  /** How far the parse was trusted, 0-1. Routing runs only above its threshold. */
+  confidence: number;
+  /** The query the ranking channels actually saw, with the time expression removed. */
+  cleanedQuery: string;
+  /** The parsed slice: `from` inclusive, `to` exclusive. */
+  window: { from: string; to: string };
+  /** Present only where the parse supplied a bound the caller had left open. */
+  appliedAsOf?: string;
+  appliedKnownAt?: string;
+}
+
 /** What a retrieval was asked for and what it returned. `results` and `candidates`
  * are rebuilt from the reference tables, so an erased record leaves no identity behind. */
 export interface LedgerRetrieval {
@@ -85,6 +105,10 @@ export interface LedgerRetrieval {
   degraded?: string;
   asOf?: string;
   knownAt?: string;
+  /** What temporal routing read out of the query and what it did about it.
+   * Absent whenever routing did not run or the parser declined, which is every
+   * entry written before this field existed. */
+  temporalRouting?: LedgerTemporalRouting;
   latencyMs: number;
   results: { memoryId: string; rank: number; score: number }[];
   /** 1 = written before the candidate-set schema existed; 2 = carries `config`,
@@ -335,6 +359,12 @@ export interface RecallInput {
   limit?: number;
   kinds?: MemoryKind[];
   includeUntrusted?: boolean;
+  /** Read the time expression in `query` and retrieve accordingly. Off by default,
+   * so results, ledger entries and benchmark numbers are unchanged until asked for.
+   * An explicit `asOf` or `knownAt` always wins over a parsed one. Declared beside
+   * the other time options rather than at the end of the interface, which is where
+   * a parallel branch appends its own field. */
+  temporalRouting?: 'auto' | 'off';
   /** Real-world time to recall. Historical mode is enabled by either time field. */
   asOf?: string;
   /** Only use memories and outcome evidence recorded by this time. */
@@ -429,6 +459,9 @@ export interface CompileInput {
   lexicalScoring?: 'overlap' | 'bm25';
   maxTokens: number;
   taskId?: string;
+  /** Read the time expression in `query` and compile accordingly. Off by default.
+   * An explicit `asOf` or `knownAt` always wins over a parsed one. */
+  temporalRouting?: 'auto' | 'off';
   /** Real-world time represented by this packet. Historical context is labeled in its envelope. */
   asOf?: string;
   /** Excludes records, corrections and outcome evidence learned after this instant. */

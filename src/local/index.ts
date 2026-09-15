@@ -11,6 +11,12 @@ import type {
 } from './types.js';
 import { decodeLedgerRow, LEDGER_EVENTS, LEDGER_SCHEMA, retrievalConfigSha256, type LedgerRow } from './ledger.js';
 import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared.js';
+// On its own lines mid-block rather than folded into the shared type import
+// above or appended to the end: two other branches insert imports directly
+// after './ledger.js' and directly after './reranking/shared.js', and this gap
+// is the one place a third insertion merges without a conflict.
+import type { LedgerTemporalRouting } from './types.js';
+import { parseTemporalQuery, TEMPORAL_ROUTING_MIN_CONFIDENCE, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
 import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, type CorpusStatsCache } from './bm25-corpus-stats.js';
@@ -50,6 +56,34 @@ const SCHEMA_VERSION = 2;
  * the ledger can record what was considered and not only what was returned. The
  * engine fills it only when the ledger asks for it; retrieval itself never reads it. */
 type RetrievalTrace = { stage: RetrievalStage; candidates: ScoredId[] }[];
+/** How deep a parsed window reorders the candidate pool. A candidate ranked
+ * below this was not going to reach a caller's top results on the strength of
+ * its date alone, and the bound keeps routing's cost off the latency budget. */
+const TEMPORAL_PRIORITY_DEPTH = 1000;
+/**
+ * How far outside the window a record may be dated and still rank as part of it.
+ * A memory is stamped with when something was SAID, not when it happened:
+ * LoCoMo's own evidence for an event on 7 May 2023 sits in the session dated
+ * 8 May. Measured on that corpus, a week of slack lifts the share of temporal
+ * questions whose evidence falls inside its own window from 51% to 73%; six
+ * weeks reaches 82% but ranks no better, because a window that wide stops
+ * discriminating. Slack applies to ranking alone — an `asOf` bound stays exact,
+ * and the ledger records the window the query actually named.
+ */
+const TEMPORAL_PRIORITY_SLACK_MS = 7 * 86_400_000;
+/** How many leading results the FINAL ordering leaves exactly where it found
+ * them. See `#prioritize`: the candidate stage reorders everything with
+ * `keep = 0`, and the ordering stage then holds the top of whatever comes back.
+ * Be precise about what that buys. The podium this protects is the reranker's,
+ * built from a candidate list the earlier pass has already rearranged — so it
+ * guards against the FINAL pass demoting a strong match, not against the
+ * candidate pass having changed which matches the reranker was shown. */
+const TEMPORAL_PRIORITY_KEEP = 3;
+/** A query's own time expression, resolved into retrieval parameters. `window`
+ * is the prioritisation window — the parsed one widened by
+ * `TEMPORAL_PRIORITY_SLACK_MS` — while `entry.window` keeps the window the query
+ * named, so the ledger reports the parse and not the policy. */
+type TemporalRoute = { query: string; asOf?: string; knownAt?: string; window: TemporalWindow; entry: LedgerTemporalRouting };
 const SCOPE = "workspace_id = ? AND (agent_id = ? OR visibility = 'workspace')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const LOCAL_SNAPSHOT_LIMITS = Object.freeze({ maxRecords: 100000, maxBytes: 32 * 1024 * 1024 });
@@ -505,7 +539,7 @@ export class LocalMemory {
     return id;
   }
 
-  #recordRecall(input: RecallInput, results: RecallResult[], mode: RetrievalMode, embedder: SyncMemoryEmbedder | null, latencyMs: number, trace: RetrievalTrace): void {
+  #recordRecall(input: RecallInput, results: RecallResult[], mode: RetrievalMode, embedder: SyncMemoryEmbedder | null, latencyMs: number, trace: RetrievalTrace, temporalRouting?: LedgerTemporalRouting): void {
     if (!this.#ledgerEnabled) return;
     const query = typeof input.query === 'string' ? input.query : '';
     const reranked = trace.find(entry => entry.stage === 'reranked');
@@ -536,6 +570,7 @@ export class LocalMemory {
       ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
       ...(input.asOf === undefined ? {} : { asOf: input.asOf }),
       ...(input.knownAt === undefined ? {} : { knownAt: input.knownAt }),
+      ...(temporalRouting === undefined ? {} : { temporalRouting }),
       latencyMs, results: [],
       schema: 2, config, configSha256: retrievalConfigSha256(config),
       candidates: [], candidateCounts, verifier: null,
@@ -718,6 +753,115 @@ export class LocalMemory {
     return { knownAt, asOf: input.asOf === undefined ? knownAt : v.timestamp(input.asOf, 'asOf'), historical: input.asOf !== undefined || input.knownAt !== undefined };
   }
 
+  /**
+   * Reads the time expression in a query and resolves it into retrieval parameters.
+   *
+   * Off unless the caller asks for it, so results, ledger entries and benchmark
+   * numbers are unchanged for everyone else. An explicit `asOf` or `knownAt`
+   * always wins: the caller has stated the clock it wants, and a phrase inside
+   * the query does not get to overrule it.
+   *
+   * Only an exclusionary phrase ("before March 2026") becomes a real bound. A
+   * scoping phrase ("in June 2023", "last week") yields a window used to
+   * prioritise candidates and nothing more, because "in June" says which slice
+   * to read first, not that July must become invisible — and because a misread
+   * window should then cost ranking, never evidence.
+   */
+  #route(input: Pick<RecallInput, 'query' | 'asOf' | 'knownAt' | 'temporalRouting'>): TemporalRoute | null {
+    if (input === null || typeof input !== 'object') return null;
+    if (v.enumeration(input.temporalRouting ?? 'off', ['auto', 'off'] as const, 'temporalRouting') === 'off') return null;
+    const now = this.#time();
+    const parse = parseTemporalQuery(v.string(input.query, 'query', 4096), { now });
+    if (!parse.window || parse.relation === 'none' || parse.grain === 'none' || parse.confidence < TEMPORAL_ROUTING_MIN_CONFIDENCE) return null;
+    // A bound the caller states may sit in the future — that is explicit intent,
+    // and the branch below already lets it win. A bound read out of a query may
+    // not: "as of today" resolves to the last instant of today and "through
+    // 2026" to the last instant of December, and `#at` drops every record whose
+    // `validUntil` falls at or before the bound. Unclamped, a present-tense
+    // question is answered as a historical one and a record that is valid at
+    // this instant comes back as an empty result with no error. Clamping is a
+    // no-op for any parse that already lands at or before `now`.
+    const present = (at: string | undefined): string | undefined => (at === undefined || at <= now ? at : now);
+    const asOf = input.asOf === undefined ? present(parse.asOf) : undefined;
+    const knownAt = input.knownAt === undefined ? present(parse.knownAt) : undefined;
+    const slack = (at: string, direction: number, by: number): string =>
+      new Date(Math.min(Math.max(Date.parse(at) + direction * by, TEMPORAL_WINDOW_BOUNDS.floor), TEMPORAL_WINDOW_BOUNDS.ceiling)).toISOString();
+    const window = parse.window;
+    return {
+      query: parse.cleanedQuery,
+      window: { from: slack(window.from, -1, TEMPORAL_PRIORITY_SLACK_MS), to: slack(window.to, 1, TEMPORAL_PRIORITY_SLACK_MS) },
+      ...(asOf === undefined ? {} : { asOf }), ...(knownAt === undefined ? {} : { knownAt }),
+      entry: {
+        matched: parse.matched[0]?.text ?? '', relation: parse.relation, grain: parse.grain,
+        confidence: parse.confidence, cleanedQuery: parse.cleanedQuery, window: parse.window,
+        ...(asOf === undefined ? {} : { appliedAsOf: asOf }), ...(knownAt === undefined ? {} : { appliedKnownAt: knownAt }),
+      },
+    };
+  }
+
+  /** The input to actually retrieve with: the cleaned query plus any bound the
+   * parse supplied and the caller had left open. Identity when routing is off,
+   * which is what keeps the default path byte-identical. */
+  #routed<T extends { query: string; asOf?: string; knownAt?: string }>(input: T, route: TemporalRoute | null): T {
+    if (!route) return input;
+    return { ...input, query: route.query, ...(route.asOf === undefined ? {} : { asOf: route.asOf }), ...(route.knownAt === undefined ? {} : { knownAt: route.knownAt }) } as T;
+  }
+
+  /** When a record's evidence is dated: its stated validity, else when it was written. */
+  #when(id: string): string | undefined {
+    const record = this.get(id);
+    return record ? record.validFrom ?? record.createdAt : undefined;
+  }
+
+  /**
+   * Stable partition of a ranked list: candidates dated inside the parsed window
+   * come first, the rest follow, each group in the order the ranking gave it,
+   * and nothing is removed. Measured against the alternative of a fixed rank
+   * bonus, the partition is worth 0.31 recall@10 points on LoCoMo's temporal
+   * questions, because a window is evidence about which candidate answers the
+   * question and not a small nudge to its score.
+   *
+   * `keep` is how many leading candidates the window is not allowed to touch.
+   * Zero is what the candidate stage wants — a cross-encoder cannot judge a
+   * candidate it never sees, so everything in the window should reach it. The
+   * final ordering wants the opposite: measured on LoCoMo, reordering from rank
+   * one evicted correct evidence from three temporal questions outright,
+   * because a window read from a query is a guess and a top match is not.
+   *
+   * This method itself only permutes — nothing is added, nothing is removed.
+   * That is NOT the same as saying routing cannot change which records answer a
+   * query, and the difference is the asynchronous reranker path. There the
+   * candidate slice IS the answer set: `recallHybrid` truncates this list at
+   * `rerankTopN` and then replaces the ranking with that slice, so running with
+   * `keep = 0` beforehand decides membership and not merely order. Measured on
+   * an eight-record pool with `rerankTopN = 4`, every out-of-window record was
+   * displaced out of the result outright. That is deliberate — reaching the
+   * in-window candidate is worth more than preserving the fused order, and it is
+   * where the temporal subset's gain comes from — but it is a narrowing, so a
+   * misread window can cost evidence and not just rank. `recall`'s synchronous
+   * reranker carries its tail through and cannot lose a record this way.
+   *
+   * Scores are reassigned onto the descending sequence the ranking already
+   * produced, because `RecallResult.score` is documented to decrease down the
+   * list and a promotion is a change of rank, not a claim of higher relevance.
+   */
+  #prioritize<T extends { score: number }>(items: T[], window: TemporalWindow, when: (item: T) => string | undefined, keep: number): T[] {
+    const depth = Math.min(items.length, TEMPORAL_PRIORITY_DEPTH);
+    const held = Math.min(keep, depth);
+    const head = items.slice(held, depth);
+    const inside: T[] = [], outside: T[] = [];
+    for (const item of head) { const at = when(item); (at !== undefined && at >= window.from && at < window.to ? inside : outside).push(item); }
+    // All inside or all outside is not a reordering, so leave the list alone.
+    if (!inside.length || !outside.length) return items;
+    const scores = head.map((item) => item.score);
+    return [...items.slice(0, held), ...[...inside, ...outside].map((item, index) => ({ ...item, score: scores[index] }) as T), ...items.slice(depth)];
+  }
+
+  /** `#prioritize` over already-hydrated results, which carry their own dates. */
+  #prioritized(results: RecallResult[], route: TemporalRoute | null): RecallResult[] {
+    return route ? this.#prioritize(results, route.window, (result) => result.memory.validFrom ?? result.memory.createdAt, TEMPORAL_PRIORITY_KEEP) : results;
+  }
+
   #at(record: MemoryRecord, time: TemporalView, restoreInvalidated = true): MemoryRecord | null {
     if (record.createdAt > time.knownAt || (record.validFrom ?? record.createdAt) > time.asOf || (record.validUntil !== undefined && record.validUntil <= time.asOf)) return null;
     if (record.status === 'invalidated' && record.updatedAt <= time.knownAt && (!restoreInvalidated || !this.#historicalInvalidationValid(record, time))) return null;
@@ -892,6 +1036,7 @@ export class LocalMemory {
    * correction or erasure could slip through mid-query.
    */
   recall(input: RecallInput): RecallResult[] {
+    const route = this.#route(input), routed = this.#routed(input, route);
     const embedder = this.#resolveEmbedder();
     const started = performance.now();
     // The trace is collected only when the ledger will record it; a disabled
@@ -899,14 +1044,19 @@ export class LocalMemory {
     const trace: RetrievalTrace = [];
     const collect = this.#ledgerEnabled ? trace : undefined;
     let results: RecallResult[];
-    if (embedder) results = this.#hybridRecall(input, embedder, collect);
+    if (embedder) results = this.#hybridRecall(routed, embedder, collect, route);
     else {
-      results = this.#rankedRecall(input);
+      results = this.#rankedRecall(routed);
       // With no dense channel the lexical ranking IS the candidate set, so the
       // trace records exactly what the stage produced at the requested depth.
       collect?.push({ stage: 'lexical', candidates: results.map(entry => ({ id: entry.memory.id, score: entry.score })) });
+      // No deeper pool exists on this path, so a parsed window reorders what was
+      // returned rather than reaching past it.
+      results = this.#prioritized(results, route);
     }
-    this.#recordRecall(input, results, embedder ? 'hybrid' : 'lexical', embedder, performance.now() - started, trace);
+    // The ledger records the query the CALLER asked, with the routing decision
+    // beside it, so entries stay comparable across routing on and off.
+    this.#recordRecall(input, results, embedder ? 'hybrid' : 'lexical', embedder, performance.now() - started, trace, route?.entry);
     return results;
   }
 
@@ -1022,7 +1172,7 @@ export class LocalMemory {
   }
 
   /** RRF over the lexical channel and an exact cosine scan, on one synchronous call path. */
-  #hybridRecall(input: RecallInput, embedder: SyncMemoryEmbedder, trace?: RetrievalTrace): RecallResult[] {
+  #hybridRecall(input: RecallInput, embedder: SyncMemoryEmbedder, trace?: RetrievalTrace, route?: TemporalRoute | null): RecallResult[] {
     this.#assertOpen();
     const count = v.limit(input.limit, 10);
     const maxCandidates = v.limit(input.maxCandidates, 1000, 10000);
@@ -1047,8 +1197,13 @@ export class LocalMemory {
     trace?.push({ stage: 'lexical', candidates: lexicalScored },
       { stage: 'dense', candidates: [...semantic].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) },
       { stage: 'fused', candidates: ranked });
+    // Before the reranker takes its slice, not only after: a cross-encoder that
+    // never sees the in-window candidate cannot rank it, and the slice is where
+    // that candidate would otherwise be lost.
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
     const reranked = this.#rerankSync(input, ranked, time);
     if (reranked) { ranked = reranked; trace?.push({ stage: 'reranked', candidates: ranked }); }
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
@@ -1339,7 +1494,7 @@ export class LocalMemory {
 
   #rankedRecall(input: RecallInput, eligible?: (memory: MemoryRecord) => boolean, at?: TemporalView): RecallResult[] {
     this.#assertOpen();
-    v.keys(v.object(input, 'recall'), ['query', 'limit', 'kinds', 'includeUntrusted', 'asOf', 'knownAt', 'maxCandidates', 'lexicalScoring', 'minSimilarity'], 'recall');
+    v.keys(v.object(input, 'recall'), ['query', 'limit', 'kinds', 'includeUntrusted', 'asOf', 'knownAt', 'maxCandidates', 'lexicalScoring', 'minSimilarity', 'temporalRouting'], 'recall');
     const query = v.string(input.query, 'query', 4096);
     const count = v.limit(input.limit, 10);
     const budget = v.limit(input.maxCandidates, 1000, 10000);
@@ -1658,8 +1813,11 @@ export class LocalMemory {
   }
 
   /** RRF over local lexical and exact cosine candidates; optional reranking cannot invent IDs. */
-  async recallHybrid(input: RecallInput, options: HybridRecallOptions): Promise<RecallResult[]> {
+  async recallHybrid(request: RecallInput, options: HybridRecallOptions): Promise<RecallResult[]> {
     this.#assertOpen();
+    // Routed once here rather than held in a local: `time` is recomputed from
+    // `input` at every invalidation boundary below, and must see the same clocks.
+    const route = this.#route(request), input = this.#routed(request, route);
     v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'rerankTopN', 'signal', 'timeoutMs', 'maxCandidates', 'rrfK'], 'hybrid options');
     const { model, dimensions } = this.#embeddingContract(options.embedder);
     const maxCandidates = v.limit(options.maxCandidates, 1000, 10000);
@@ -1680,6 +1838,7 @@ export class LocalMemory {
     const semantic = await this.#scanVectors(input, options, { model, dimensions, query, maxCandidates, time });
     const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], v.limit(options.rrfK, this.#rrfK, 1000));
     let ranked = [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
     if (options.reranker && ranked.length) {
       let candidates: (ScoredId & { memory: MemoryRecord })[] = [];
       const scores = await this.#boundedCall((signal) => {
@@ -1706,6 +1865,7 @@ export class LocalMemory {
     // Every await is an invalidation boundary. Rehydrate and recheck all safety
     // gates after provider work so corrections/failures cannot revive stale text.
     time = this.#temporal(input);
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const current = this.get(entry.id);
@@ -1949,25 +2109,27 @@ export class LocalMemory {
   }
 
   compile(input: CompileInput): ContextPacket {
-    return this.#compile(input, (eligible, time) => this.#rankedRecall({ query: input.query, limit: 100, asOf: input.asOf, knownAt: input.knownAt, lexicalScoring: input.lexicalScoring }, eligible, time));
+    const route = this.#route(input), routed = this.#routed(input, route);
+    return this.#compile(routed, (eligible, time) => this.#prioritized(this.#rankedRecall({ query: routed.query, limit: 100, asOf: routed.asOf, knownAt: routed.knownAt, lexicalScoring: routed.lexicalScoring }, eligible, time), route));
   }
 
   async compileHybrid(input: CompileInput, options: HybridRecallOptions): Promise<ContextPacket> {
-    v.keys(v.object(input, 'compile'), ['query', 'maxTokens', 'taskId', 'asOf', 'knownAt', 'lexicalScoring'], 'compile');
+    v.keys(v.object(input, 'compile'), ['query', 'maxTokens', 'taskId', 'asOf', 'knownAt', 'lexicalScoring', 'temporalRouting'], 'compile');
     v.limit(input.maxTokens, 0, 1000000);
     if (input.taskId !== undefined) v.string(input.taskId, 'taskId', 160);
-    const candidates = await this.recallHybrid({ query: input.query, limit: 100, asOf: input.asOf, knownAt: input.knownAt, lexicalScoring: input.lexicalScoring }, options);
-    return this.#compile(input, (eligible, time) => candidates.flatMap((candidate) => {
+    const route = this.#route(input), routed = this.#routed(input, route);
+    const candidates = await this.recallHybrid({ query: routed.query, limit: 100, asOf: routed.asOf, knownAt: routed.knownAt, lexicalScoring: routed.lexicalScoring }, options);
+    return this.#compile(routed, (eligible, time) => this.#prioritized(candidates.flatMap((candidate) => {
       const current = this.get(candidate.memory.id);
       const memory = current && this.#at(current, time);
       return memory && this.#eligibleAt(memory.id, time) && eligible(memory)
         ? [{ ...candidate, memory, outcomes: this.#outcomes(memory.id, time.historical ? time.knownAt : undefined) }] : [];
-    }));
+    }), route));
   }
 
   #compile(input: CompileInput, retrieve: (eligible: (memory: MemoryRecord) => boolean, time: TemporalView) => RecallResult[]): ContextPacket {
     const options = v.object(input, 'compile');
-    v.keys(options, ['query', 'maxTokens', 'taskId', 'asOf', 'knownAt', 'lexicalScoring'], 'compile');
+    v.keys(options, ['query', 'maxTokens', 'taskId', 'asOf', 'knownAt', 'lexicalScoring', 'temporalRouting'], 'compile');
     const maxTokens = v.limit(input.maxTokens, 0, 1000000);
     v.string(input.query, 'query', 4096);
     v.enumeration(input.lexicalScoring ?? 'bm25', ['overlap', 'bm25'] as const, 'lexicalScoring');

@@ -19,6 +19,27 @@ const integer = (value: number | undefined, fallback: number, min: number, max: 
   return selected;
 };
 const fixedTime = '2000-01-01T00:00:00.000Z';
+const temporalMonthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const temporalWordedDate = /^(\d{1,2}):(\d{2})\s*(am|pm)\s+on\s+(\d{1,2})\s+([a-z]+),?\s+(\d{4})$/i;
+/**
+ * A turn's own timestamp as a UTC instant. LoCoMo writes "1:56 pm on 8 May,
+ * 2023" and LongMemEval writes an ISO instant; both are read literally and
+ * nothing else is guessed. Anything else — including an impossible calendar
+ * date — yields undefined, so that record keeps the fixed ingestion timestamp
+ * instead of an invented validity time.
+ */
+function temporalInstant(date: string | undefined): string | undefined {
+  if (typeof date !== 'string' || !date.trim()) return undefined;
+  const text = date.trim();
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) { const at = Date.parse(text); return Number.isFinite(at) ? new Date(at).toISOString() : undefined; }
+  const worded = temporalWordedDate.exec(text);
+  if (!worded) return undefined;
+  const month = temporalMonthNames.indexOf(worded[5]!.toLowerCase()), day = Number(worded[4]), minute = Number(worded[2]), clock = Number(worded[1]);
+  const hour = clock % 12 + (worded[3]!.toLowerCase() === 'pm' ? 12 : 0);
+  if (month < 0 || day < 1 || day > 31 || minute > 59 || clock < 1 || clock > 12) return undefined;
+  const at = new Date(Date.UTC(Number(worded[6]), month, day, hour, minute));
+  return at.getUTCDate() === day ? at.toISOString() : undefined;
+}
 function implementationFingerprint(): string {
   const moduleFile = fileURLToPath(import.meta.url), root = resolve(dirname(moduleFile), '..'), extension = extname(moduleFile), hash = createHash('sha256');
   function visit(path: string): void {
@@ -132,10 +153,12 @@ function summary(rows: CorpusAttempt[]): CorpusSummary {
 
 /** No generation or judge path. Optional embeddings use only explicit caller callbacks. */
 export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBenchmarkOptions = {}): Promise<CorpusBenchmarkReport> {
-  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs', 'corpusIndexBase'];
+  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs', 'corpusIndexBase', 'temporalRouting'];
   if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !optionKeys.includes(key))) throw new Error('Unknown corpus evaluation option.');
   if (options.includeBm25 !== undefined && typeof options.includeBm25 !== 'boolean') throw new Error('includeBm25 must be boolean.');
   if (options.includeHybridWithoutRerank !== undefined && typeof options.includeHybridWithoutRerank !== 'boolean') throw new Error('includeHybridWithoutRerank must be boolean.');
+  if (options.temporalRouting !== undefined && typeof options.temporalRouting !== 'boolean') throw new Error('temporalRouting must be boolean.');
+  const temporal = options.temporalRouting === true;
   const systems: MatchedSystem[] = options.systems ?? [];
   if (!Array.isArray(systems) || systems.length > 16) throw new Error('Invalid matched system list.');
   for (const system of systems) {
@@ -154,7 +177,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
     rerankTopN: integer(options.rerankTopN, 50, 1, 1000),
     systemIngestTimeoutMs: integer(options.systemIngestTimeoutMs, integer(options.timeoutMs, 600000, 1, 3_600_000), 1, 3_600_000),
     corpusIndexBase: integer(options.corpusIndexBase, 0, 0, 1_000_000),
-    accountingId: options.accountingId ?? 'utf8-bytes-v1', bm25Condition: options.includeBm25 ? 'enabled' : 'disabled', hybridLexicalScoring: options.hybridLexicalScoring ?? 'overlap',
+    accountingId: options.accountingId ?? 'utf8-bytes-v1', bm25Condition: options.includeBm25 ? 'enabled' : 'disabled', temporalRouting: temporal ? 'enabled' : 'disabled', hybridLexicalScoring: options.hybridLexicalScoring ?? 'overlap',
     // Recorded so a report says whether the hybrid condition was reranked, and by what.
     reranker: options.reranker ? 'enabled' : 'disabled',
     hybridWithoutRerankCondition: options.includeHybridWithoutRerank ? 'enabled' : 'disabled',
@@ -196,7 +219,8 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
   const conditions: BenchmarkConditionId[] = ['no-memory', 'full-context', 'lexical',
     ...(options.includeBm25 ? ['bm25' as const] : []),
     ...(embedder && options.includeHybridWithoutRerank ? ['hybrid-norerank' as const] : []),
-    ...(embedder ? ['hybrid' as const] : []), ...systemConditions];
+    ...(embedder ? ['hybrid' as const] : []),
+    ...(embedder && temporal ? ['hybrid-temporal' as const] : []), ...systemConditions];
   const labels = new Map(dataset.labels.map(label => [label.questionId, label]));
   const attempts: CorpusAttempt[] = [], ingestion: CorpusBenchmarkReport['ingestion'] = [];
   const systemReport = new Map<string, NonNullable<CorpusBenchmarkReport['systems']>[number]>(systems.map(system =>
@@ -225,9 +249,16 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
         // conditions are the zero-model paths, and the hybrid condition drives
         // recallHybrid with the explicitly supplied embedder. Pinning the mode keeps
         // the default hybrid engine from silently changing what a condition measures.
-        memory = createLocalMemory({ path: ':memory:', workspaceId: 'corpus-evaluation', agentId: 'retriever', retrieval: 'lexical', now: () => new Date(fixedTime) });
+        // Temporal routing needs real validity times to bite on, and the fixed
+        // ingestion clock predates every corpus date, so the clock moves with
+        // them: one day past the newest dated record, derived from the corpus
+        // itself and never from the wall clock, so the run stays reproducible.
+        const validFrom = temporal ? new Map(chunks.map(chunk => [chunk.id, temporalInstant(chunk.turn.date)] as const)) : undefined;
+        const newest = validFrom && [...validFrom.values()].filter((at): at is string => at !== undefined).sort().at(-1);
+        const clock = newest ? new Date(Date.parse(newest) + 86_400_000).toISOString() : fixedTime;
+        memory = createLocalMemory({ path: ':memory:', workspaceId: 'corpus-evaluation', agentId: 'retriever', retrieval: 'lexical', now: () => new Date(clock) });
         for (let offset = 0; offset < chunks.length; offset += 256) {
-          check(); const records: MemoryRecord[] = chunks.slice(offset, offset + 256).map(chunk => ({ id: chunk.id, workspaceId: 'corpus-evaluation', agentId: 'retriever', visibility: 'private', status: 'active', createdAt: fixedTime, updatedAt: fixedTime, dependencies: [], text: chunk.turn.speaker ? `${chunk.turn.speaker}: ${chunk.text}` : chunk.text, kind: 'observation', trust: 'observed', source: { uri: `benchmark://history/${chunk.id}`, ...(chunk.turn.role ? { author: chunk.turn.role } : {}) }, metadata: {} }));
+          check(); const records: MemoryRecord[] = chunks.slice(offset, offset + 256).map(chunk => ({ id: chunk.id, workspaceId: 'corpus-evaluation', agentId: 'retriever', visibility: 'private', status: 'active', createdAt: fixedTime, updatedAt: fixedTime, ...(validFrom?.get(chunk.id) === undefined ? {} : { validFrom: validFrom.get(chunk.id)! }), dependencies: [], text: chunk.turn.speaker ? `${chunk.turn.speaker}: ${chunk.text}` : chunk.text, kind: 'observation', trust: 'observed', source: { uri: `benchmark://history/${chunk.id}`, ...(chunk.turn.role ? { author: chunk.turn.role } : {}) }, metadata: {} }));
           memory.import({ format: 'mnemosyne-local', version: 1, workspaceId: 'corpus-evaluation', agentId: 'retriever', exportedAt: fixedTime, memories: records, outcomes: [] });
           await setImmediate();
         }
@@ -279,7 +310,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
           try {
             check();
             if (!historyReady || ingestionFailed && condition !== 'no-memory' && condition !== 'full-context') throw new Error('Corpus unavailable.');
-            if ((condition === 'hybrid' || condition === 'hybrid-norerank') && embeddingFailed) { row.status = 'embedding-error'; continue; }
+            if ((condition === 'hybrid' || condition === 'hybrid-norerank' || condition === 'hybrid-temporal') && embeddingFailed) { row.status = 'embedding-error'; continue; }
             const system = condition.startsWith('system:') ? systems.find(entry => matchedConditionId(entry.id) === condition) : undefined;
             if (system && !sessions.has(system.id)) { row.status = 'system-error'; continue; }
             const retrievalStarted = performance.now();
@@ -292,7 +323,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
               ? memory!.recall({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: condition === 'bm25' ? 'bm25' : 'overlap' })
               // `hybrid-norerank` is the same fused ranking with the cross-encoder
               // withheld, so the pair is a within-run measurement of the reranker.
-              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap' }, { embedder: queryEmbedder!, maxCandidates: settings.maxCandidates, ...(options.reranker && condition === 'hybrid' ? { reranker: options.reranker, rerankTopN: settings.rerankTopN } : {}), timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
+              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap', ...(condition === 'hybrid-temporal' ? { temporalRouting: 'auto' as const } : {}) }, { embedder: queryEmbedder!, maxCandidates: settings.maxCandidates, ...(options.reranker && (condition === 'hybrid' || condition === 'hybrid-temporal') ? { reranker: options.reranker, rerankTopN: settings.rerankTopN } : {}), timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
             row.retrievalMs = performance.now() - retrievalStarted;
             check(); row.retrieval = score(hits, label); row.retrievedChunks = hits.length;
             const packingStarted = performance.now(); let selected: Chunk[] = [];
@@ -325,13 +356,19 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
   return { kind: 'offline corpus retrieval evaluation', protocol: dataset.protocol, dataset: { ...dataset.provenance, adapter: dataset.adapter, normalizedSha256, questions: dataset.questions.length, corpora: dataset.corpora.length },
     runtime: { node: process.version, platform: `${process.platform}/${process.arch}`, implementationSha256, fingerprint: 'SHA256 of relative paths and bytes of all runtime JS (or source TS in source execution), excluding declarations' }, settings, calls, ...(embedder ? { embedding: { model: embedder.model, dimensions: embedder.dimensions, asymmetric: options.queryEmbedder !== undefined } } : {}), ...(systems.length ? { systems: [...systemReport.values()] } : {}), answerQuality: 'not-evaluated',
     complete: attempts.length === dataset.questions.length * conditions.length && attempts.every(row => row.status === 'completed' || row.status === 'context-overflow'), ingestion, attempts,
-    summaries: Object.fromEntries(conditions.map(condition => [condition, summary(attempts.filter(row => row.condition === condition))])), notices: dataset.notices, durationMs: performance.now() - started,
+    summaries: Object.fromEntries(conditions.map(condition => [condition, summary(attempts.filter(row => row.condition === condition))])),
+    ...(temporal ? { categorySummaries: Object.fromEntries(conditions.map(condition => {
+      const rows = attempts.filter(row => row.condition === condition);
+      return [condition, Object.fromEntries([...new Set(rows.map(row => row.category))].sort().map(category => [category, summary(rows.filter(row => row.category === category))]))];
+    })) } : {}), notices: dataset.notices, durationMs: performance.now() - started,
     limitations: ['Retrieval coverage is not generated-answer correctness, abstention accuracy, citation entailment, or an official benchmark score. No reader or judge runs.',
       'K counts UTF-8 chunks, with evidence scored at original turn/session group granularity. Finding any chunk from a group does not prove the answer-bearing passage was selected.',
       'Full-context retrieves all history and only supplies it when the complete envelope fits. Overflow remains in packed-coverage denominators; no silent truncation.',
       'Unanswerable and unannotated cases remain in attempt counts but have null positive-evidence metrics. Unsupported answer schemas remain reported; no judge score is invented.',
       'Context accounting defaults to exact UTF-8 bytes, not model tokens. Caller-supplied counters and embedding identities are attestations.',
-      'Fixed ingestion timestamps avoid wall-clock-dependent ranking; original dates remain in delivered context. The retrieval run does not test temporal validity or mutation behavior.',
+      temporal
+        ? 'Records carry their original turn date as validFrom and the engine clock is pinned one day past the newest dated record, both derived from the corpus, so retrieval is time-aware without becoming wall-clock-dependent. Mutation behavior is still not tested, and turns whose date does not parse keep the fixed ingestion timestamp.'
+        : 'Fixed ingestion timestamps avoid wall-clock-dependent ranking; original dates remain in delivered context. The retrieval run does not test temporal validity or mutation behavior.',
       'Latency is local and uncontrolled. Retrieval excludes ingestion, embedding indexing and packing; conditions run in fixed order. Synchronous SQLite operations cannot be preempted.',
       'Hybrid candidate scope follows the selected engine and maxCandidates setting. Embedding costs are explicit and counted but callbacks must honor cancellation.',
       'Matched systems are scored on the identical chunk set, K, packing budget, envelope and evidence scorer, in this same loop. Their declared modes are caller attestations, not authenticated configurations, and a system is credited only for chunk identities it returns. A system that could not load a corpus reports a reason and no score.'], };
