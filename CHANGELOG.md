@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-rc.10] — Tier 1 retrieval, unreleased
+
+Tier 1 reconciled onto the published RC9 packaging. `package.json` still reads `2.0.0-rc.9`: the
+version bump belongs to the publish step, which has not happened. Every commit referenced below is
+on this branch and can be read with `git show <sha>`.
+
+### Added
+
+- **Opt-in dense index (`indexMode`).** `'exact' | 'auto' | 'sqlite-vec' | 'hnsw'`, defaulting to
+  `$MNEMOSYNE_INDEX_MODE` else `'auto'`. `auto` uses `sqlite-vec` when the extension loads and
+  otherwise falls back to the exact scan — still exact, just scored in C. `hnsw` is approximate and
+  sublinear, is the only retrieval component that can miss a true neighbour, and is **never selected
+  on your behalf**; asking for `sqlite-vec` or `hnsw` and not getting it throws rather than silently
+  degrading. No mode changes what a record scores or whether it may be returned: every candidate an
+  index proposes is re-authorized and rescored against the stored vector, so an index is a shortlist
+  and never an authority. `c8f994c`, `0f244e5`, `7730916`, `ab60b9a`, `ef8458f`, `745c299`,
+  `2dcdf7a`.
+- **`sqliteVecPath`** — an explicit path to a `sqlite-vec` loadable extension, with deliberately no
+  environment-variable equivalent, so a machine-wide variable can no longer decide what every
+  `LocalMemory` on the host `dlopen`s. `a5b9db7`.
+- **`cacheSize`** — passes through to `PRAGMA cache_size` (negative = KiB, positive = pages);
+  default `-65536`, i.e. 64 MiB. `7034027`, with peak-RSS-at-1M-records measurements in `209184e`.
+- **`hnswlib-node` pinned to exactly `3.0.0`** and `sqlite-vec` to `^0.1.9`, both as
+  `optionalDependencies` so neither is required to install. `ca98458`.
+- **Opt-in temporal routing** on `recall` and context compilation: a retrieval query's absolute and
+  relative dates are parsed and can set an `asOf`, behind an explicit switch and a minimum parser
+  confidence. A query-parsed clock can never reach past the present. `f76ded0`, `efea0a9`,
+  `3a420ae`, `9c5634b`; the benchmark reports the temporal-reasoning subset separately in `bb6e698`.
+- **Cross-encoder reranking** of the fused candidate set, with a bundled int8 ONNX embedder that
+  runs synchronously and offline. `72dcb20`, `ebb48ed`, `6503021`.
+- **Full-candidate provenance and outcome ledger** — the ledger records the complete retrieval
+  candidate set rather than only what was returned. `1b146d7`, `a40e470`.
+- **A matched competitor benchmark.** Competitor systems are scored as conditions inside our own
+  `runCorpusBenchmark` loop — one process, one chunk set, one K, one packing budget, one evidence
+  scorer — rather than having their published numbers quoted. Results, including every condition
+  where Mem0 OSS beats us, are in [COMPARISON.md](COMPARISON.md). `cf031cf`, `868c8a8`, `7a4452b`,
+  `3133199`; Mem0's paid `infer:true` extraction path measured separately in `21b6bb0`, and the
+  full-corpus projection made to reproduce from its own inputs in `3f907df`.
+
+### Changed
+
+- **BREAKING — hybrid dense+BM25 RRF retrieval is now the default.** `retrieval: 'lexical'` selects
+  the previous behaviour. `c155431`; the default benchmark moved to LoCoMo recall@10 in `9750914`.
+- **BREAKING — dense vectors are stored as a packed float32 BLOB instead of JSON float64**, and
+  `PRAGMA user_version` moves 1 → 2 so an older build refuses the file instead of misreading it.
+  Existing databases migrate on open and need no rewrite; `#decodeVector` reads both shapes.
+  **This is a real behaviour change, not only a storage one:** float32 rounding can reorder
+  near-ties, measured at 7 of 400 top-10 identity mismatches on a deliberately tie-dense synthetic
+  corpus, on both `recall()` and `recallHybrid()`. Measured effect on the LoCoMo and LongMemEval-S
+  runs: **zero**. `2a9f00c`.
+- BM25 corpus statistics are cached instead of rescanned on every recall, with guards for a reader
+  clock that steps backwards across a temporal bound. `a8b3c77`, `e2db2e0`, `fc3d5b7`, `9645cd5`,
+  `418b99b`, `28ba5b6`, `716dc2f`, `a8ffc58`, `e27763c`.
+- The LongMemEval dense channel is bounded to a recent window, matching `LongMemEvalOptions`'
+  documented intent instead of silently covering full history. `0c296c8`, `b31f560`.
+- The MCP `memory_context` tool passes `asOf`, `knownAt` and `lexicalScoring` through. `478c715`.
+- Documentation corrections from the release audit: the docs no longer deny the ANN index this
+  release ships or the matched competitor run it carries, the matched run's compression figure is
+  computed by its generator rather than hardcoded, and the `self-improving` npm keyword — a v1
+  leftover asserting an unbuilt capability — is removed. `03061fc`, `2fd354c`, `4dd6769`,
+  `4a45c0e`, `88d8501`.
+
 ## [2.0.0-rc.9] — packaging and release documentation, 2026-09-13
 
 This candidate packages the tested RC8 memory engine with the repository and contact corrections below. It adds no new engine capabilities or benchmark claims. npm publication is a separate release step; Python package metadata follows this version without asserting PyPI publication.
