@@ -9,7 +9,7 @@ Mnemosyne 2.0.0-rc.9 is a release candidate for developer evaluation. The [READM
 | Evidence kernel | Scoped memory, explicit sharing, correction cascades, conflicts, source history, outcomes and replay-aware forgetting. | Controller-provided provenance and trust do not authenticate truth. |
 | Host lifecycle | `MemoryAgent` context preparation, supplied-turn capture, durable jobs, finite workers and action bindings. | The host installs the integration, selects providers and starts work. |
 | Context and profiles | Budgeted source-backed observations and summaries, original-byte expansion, typed profiles with unknown/conflict states. | Generated assertions remain fallible; default budgeting uses UTF-8 bytes. |
-| Retrieval | Scoped BM25 default, explicit overlap compatibility, full eligible vector scans, optional fusion and reranking. | Dense search is bounded exact scanning, not an ANN index. |
+| Retrieval | Scoped BM25 default, explicit overlap compatibility, full eligible vector scans, optional fusion and reranking, and an opt-in approximate dense index. | Dense search is bounded exact scanning by default; `indexMode: 'hnsw'` selects an approximate index, is never chosen on your behalf, and is the one component that can miss a true neighbour. |
 | Local intelligence | Explicitly provisioned, pinned CPU embedding and reranking providers with cached offline inference. | Optional runtime and model licenses remain separate; use the documented patched dependency. |
 | Temporal memory | Independent `asOf` and `knownAt` through SDK, HTTP, MCP and Python; causal correction history and scheduled changes. | Current access and erasure still apply; ambiguous legacy invalidations remain withheld. |
 | Skill promotion | Persisted promotion requirements, distinct task/verifier thresholds, failed-evidence retirement and usage traces. | Compatibility defaults to one task/verifier; the recommended two-of-each policy is explicit. |
@@ -34,7 +34,7 @@ The synthetic [evidence lifecycle diagnostic](evaluation/EVIDENCE-PROTOCOL.md) s
 - **Semantic and answer evaluation:** run pinned local semantic providers and stronger summary baselines on held-out tasks, measuring quality, cost, latency and negative transfer together.
 - **Native integration validation:** generic protocols and explicit event adapters are available; six native framework lifecycle integrations have not been validated end to end.
 - **Managed operations:** database/backup encryption, enterprise identity, bidirectional synchronization and a hosted service are not included.
-- **Larger collections:** measure the new BM25 default on representative large workloads and evaluate an ANN path without weakening scope, time or erasure behavior. Historical 100,000-record overlap timings do not describe BM25 performance.
+- **Larger collections:** measure the new BM25 default on representative large workloads. The ANN path is no longer outstanding work: `indexMode` now offers `sqlite-vec` and `hnsw` as opt-in dense indexes that preserve scope, time and erasure behavior because every candidate is re-authorized and rescored against the stored vector before return. Historical 100,000-record overlap timings do not describe BM25 performance.
 
 ## Evaluate before adopting
 

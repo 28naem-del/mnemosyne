@@ -102,7 +102,7 @@ The added temporal filters initially caused SQLite to scan the workspace's recor
 
 [The rc2 raw measurement](evaluation/local-rc2-100000.json) includes runtime, platform, workload and limits. Host load and cache state remain uncontrolled. Ingestion was slower than rc1 because rc2 maintains an additional term-posting index; retrieval improvements do not imply faster writes. These figures are not service-level guarantees or a comparison with another memory product.
 
-Broad lexical queries still examine posting lists and synchronously load matching candidates. SQLite work can block its process. Hybrid retrieval adds explicitly selected embeddings and bounded candidate processing, but brute-force local vector comparison is not an approximate-nearest-neighbor index. These probes do not establish semantic answer quality, distributed load capacity or agent task improvement.
+Broad lexical queries still examine posting lists and synchronously load matching candidates. SQLite work can block its process. Hybrid retrieval adds explicitly selected embeddings and bounded candidate processing. The dense channel these probes measured is the default exact scan; an approximate index (`indexMode: 'hnsw'`) exists on this release but is opt-in, is never selected on your behalf, and was not used for any measurement on this page. These probes do not establish semantic answer quality, distributed load capacity or agent task improvement.
 
 ### Write cost and compact posting storage
 

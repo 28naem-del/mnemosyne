@@ -4,7 +4,7 @@ Retrieve useful evidence while preserving ownership and source validity. Mnemosy
 
 ## Meaning and exact matches
 
-Hybrid retrieval combines lexical candidates with semantic similarity through an explicitly selected embedder. The semantic channel searches eligible indexed history before retaining its best candidates; an older memory is not discarded simply because it falls outside a recent-record window. An optional reranker can refine the retained candidates. This local search is exact scanning, not an approximate index with a service-latency guarantee.
+Hybrid retrieval combines lexical candidates with semantic similarity through an explicitly selected embedder. The semantic channel searches eligible indexed history before retaining its best candidates; an older memory is not discarded simply because it falls outside a recent-record window. An optional reranker can refine the retained candidates. This local search is exact scanning by default. An approximate index is available through the opt-in `indexMode: 'hnsw'` option, but it is never selected for you and carries no service-latency guarantee.
 
 ## Evidence before advice
 
