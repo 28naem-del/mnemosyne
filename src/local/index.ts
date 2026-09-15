@@ -115,6 +115,16 @@ export class RollbackConflictError extends Error {
  * workspace/agent IDs are isolation selectors, not authentication credentials.
  * File access bypasses API isolation, so do not give hostile agents the DB file.
  */
+/** The `cacheSize` ceiling, 2 GiB, stated once per unit of SQLite's
+ * sign-encoded `PRAGMA cache_size`. A negative value is already a KiB budget,
+ * so the KiB form is the ceiling written directly; the page form is the same
+ * 2 GiB at SQLite's 4 KiB default `page_size`, which is what this engine opens
+ * with (it sets no `PRAGMA page_size` of its own). A caller running a larger
+ * page size and wanting a true 2 GiB should pass the negative form, which is
+ * the one SQLite honours in bytes regardless of page size. */
+const CACHE_SIZE_MAX_KIB = 2_097_152;
+const CACHE_SIZE_MAX_PAGES = CACHE_SIZE_MAX_KIB / 4;
+
 export class LocalMemory {
   readonly #db: DatabaseSync;
   readonly #workspaceId: string;
@@ -206,11 +216,16 @@ export class LocalMemory {
     if (options.sqliteVecPath !== undefined) this.#sqliteVecPath = v.string(options.sqliteVecPath, 'sqliteVecPath', 4096);
     // SQLite's own PRAGMA cache_size sign convention: positive is a page count,
     // negative is a KiB budget (the size SQLite will actually respect, since page
-    // size varies). Bounded well below any value that could itself be a memory
-    // hazard; the default (applied below when this is unset) is -65536, 64 MiB.
+    // size varies). The ceiling is 2 GiB either way — but the two forms do not
+    // count in the same unit, so one `Math.abs()` bound cannot express it: the
+    // same magnitude that means 2 GiB as KiB means 2 GiB * page_size as pages,
+    // which at SQLite's 4 KiB default is 8 GiB, four times the documented
+    // intent. Each sign is therefore bounded in its own unit. The default
+    // (applied below when this is unset) is -65536, 64 MiB.
     if (options.cacheSize !== undefined) {
-      if (!Number.isSafeInteger(options.cacheSize) || options.cacheSize === 0 || Math.abs(options.cacheSize) > 2_097_152) {
-        throw new TypeError('cacheSize must be a nonzero integer of magnitude at most 2097152 (SQLite PRAGMA cache_size: positive = pages, negative = KiB)');
+      const bound = options.cacheSize > 0 ? CACHE_SIZE_MAX_PAGES : CACHE_SIZE_MAX_KIB;
+      if (!Number.isSafeInteger(options.cacheSize) || options.cacheSize === 0 || Math.abs(options.cacheSize) > bound) {
+        throw new TypeError(`cacheSize must be a nonzero integer within SQLite's PRAGMA cache_size convention: positive = pages, at most ${CACHE_SIZE_MAX_PAGES}; negative = KiB, at most ${CACHE_SIZE_MAX_KIB} in magnitude (2 GiB either way)`);
       }
       this.#cacheSize = options.cacheSize;
     }
