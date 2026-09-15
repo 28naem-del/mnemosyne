@@ -10,6 +10,7 @@ import { startMemoryHttp } from '../http/index.js';
 import { MemoryBranches, type BranchChange } from '../branches/index.js';
 import { MemoryRelations, type EntityInput } from '../relations/index.js';
 import { createLocalMemory, LOCAL_SNAPSHOT_LIMITS } from '../local/index.js';
+import { replayDiff, replayState } from '../local/replay.js';
 import type { MemorySnapshot, StoreMemoryInput } from '../local/types.js';
 import { serveMemoryStdio, VERSION } from '../mcp/server.js';
 import { runMemoryDemo } from '../evaluation/demo.js';
@@ -38,6 +39,12 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy recall [scope] --query TEXT
   mnemosy context [scope] --query TEXT [--tokens 4096]
   mnemosy inspect [scope] [--id ID] [--history]
+  mnemosy replay [scope] --known-at ISO [--as-of ISO] [--hash] [--records]
+                   Reconstruct the belief state at a bitemporal cut point
+  mnemosy replay [scope] --known-at ISO --diff ISO [--json '{"knownAt":"ISO"}']
+                   Belief diff between two cut points, with each change's source
+  mnemosy bisect [scope] --task ID --file TASKS.json [--limit K] [--exact]
+                   Delta-debug memory to the minimal record set behind a failure
   mnemosy correct [scope] --id ID --text TEXT --source URI --reason TEXT
   mnemosy forget [scope] --id ID --confirm
   mnemosy export [scope] --out FILE
@@ -136,6 +143,8 @@ type CliValues = Record<string, string | boolean | undefined>;
 const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
   store: ['write'], import: ['write'],
   recall: ['read'], context: ['read'], inspect: ['read'], export: ['read'], jobs: ['read'],
+  // Replay and bisect reconstruct past state and re-run retrieval against it; both read, neither writes.
+  replay: ['read'], bisect: ['read'],
   correct: ['read', 'write'], forget: ['erase'], capture: ['read', 'write'],
   observe: ['read', 'write'], 'run-jobs': ['read', 'write'], index: ['read', 'write'],
   // These routes enforce per-request policies and must accept valid combinations.
@@ -273,6 +282,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     tokens: { type: 'string' }, out: { type: 'string' }, file: { type: 'string' },
     share: { type: 'boolean' }, confirm: { type: 'boolean' }, history: { type: 'boolean' },
     record: { type: 'string' }, 'read-only': { type: 'boolean' },
+    'as-of': { type: 'string' }, 'known-at': { type: 'string' }, diff: { type: 'string' },
+    hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' },
     'allow-destructive': { type: 'boolean' }, 'include-untrusted': { type: 'boolean' },
     'provider-config': { type: 'string' }, 'token-file': { type: 'string' }, port: { type: 'string' },
     json: { type: 'string' }, action: { type: 'string' }, key: { type: 'string' },
@@ -419,6 +430,22 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         print(values['provider-config'] ? await memory.compileHybrid(input, { embedder: configuredEmbedder(values['provider-config']) }) : memory.compile(input)); break;
       }
       case 'inspect': print(values.id ? memory.get(values.id) : memory.inspect({ limit: integer(values.limit, 20, 100), includeInactive: values.history })); break;
+      case 'replay': {
+        if (!runtime.recallEnabled) throw new Error('Runtime recall is disabled.');
+        // Both bounds are the caller's. Replay never reads a wall clock, so a
+        // cut point is reproducible tomorrow and on another machine.
+        const knownAt = required(values['known-at'], '--known-at');
+        const cut = { knownAt, ...(values['as-of'] === undefined ? {} : { asOf: values['as-of'] }) };
+        if (values.diff !== undefined) {
+          const settings = z.object({ knownAt: z.string().optional() }).strict().parse(jsonInput(values.json) ?? {});
+          print(replayDiff(memory, cut, { asOf: values.diff, knownAt: settings.knownAt ?? knownAt }));
+          break;
+        }
+        const state = replayState(memory, cut, { records: values.records === true });
+        // --hash prints the digest alone, for `test "$(mnemosy replay ... --hash)" = ...`.
+        if (values.hash && !values.records) { process.stdout.write(`${state.stateSha256}\n`); break; }
+        print(state); break;
+      }
       case 'correct': {
         const id = required(values.id, '--id'); const record = memory.get(id);
         if (record?.metadata.advisory === false || ['model', 'skill'].includes(String(record?.metadata.runtimeType))) throw new Error('Internal runtime state requires its controller interface.');
