@@ -10,7 +10,6 @@ import { startMemoryHttp } from '../http/index.js';
 import { MemoryBranches, type BranchChange } from '../branches/index.js';
 import { MemoryRelations, type EntityInput } from '../relations/index.js';
 import { createLocalMemory, LOCAL_SNAPSHOT_LIMITS } from '../local/index.js';
-import { replayDiff, replayState } from '../local/replay.js';
 import type { MemorySnapshot, StoreMemoryInput } from '../local/types.js';
 import { serveMemoryStdio, VERSION } from '../mcp/server.js';
 import { runMemoryDemo } from '../evaluation/demo.js';
@@ -43,8 +42,6 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
                    Reconstruct the belief state at a bitemporal cut point
   mnemosy replay [scope] --known-at ISO --diff ISO [--json '{"knownAt":"ISO"}']
                    Belief diff between two cut points, with each change's source
-  mnemosy bisect [scope] --task ID --file TASKS.json [--limit K] [--exact]
-                   Delta-debug memory to the minimal record set behind a failure
   mnemosy correct [scope] --id ID --text TEXT --source URI --reason TEXT
   mnemosy forget [scope] --id ID --confirm
   mnemosy export [scope] --out FILE
@@ -143,8 +140,8 @@ type CliValues = Record<string, string | boolean | undefined>;
 const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
   store: ['write'], import: ['write'],
   recall: ['read'], context: ['read'], inspect: ['read'], export: ['read'], jobs: ['read'],
-  // Replay and bisect reconstruct past state and re-run retrieval against it; both read, neither writes.
-  replay: ['read'], bisect: ['read'],
+  // Replay reconstructs past state; it reads and never writes.
+  replay: ['read'],
   correct: ['read', 'write'], forget: ['erase'], capture: ['read', 'write'],
   observe: ['read', 'write'], 'run-jobs': ['read', 'write'], index: ['read', 'write'],
   // These routes enforce per-request policies and must accept valid combinations.
@@ -283,7 +280,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     share: { type: 'boolean' }, confirm: { type: 'boolean' }, history: { type: 'boolean' },
     record: { type: 'string' }, 'read-only': { type: 'boolean' },
     'as-of': { type: 'string' }, 'known-at': { type: 'string' }, diff: { type: 'string' },
-    hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' },
+    hash: { type: 'boolean' }, records: { type: 'boolean' },
     'allow-destructive': { type: 'boolean' }, 'include-untrusted': { type: 'boolean' },
     'provider-config': { type: 'string' }, 'token-file': { type: 'string' }, port: { type: 'string' },
     json: { type: 'string' }, action: { type: 'string' }, key: { type: 'string' },
@@ -432,6 +429,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       case 'inspect': print(values.id ? memory.get(values.id) : memory.inspect({ limit: integer(values.limit, 20, 100), includeInactive: values.history })); break;
       case 'replay': {
         if (!runtime.recallEnabled) throw new Error('Runtime recall is disabled.');
+        // Loaded here, not at module scope: a caller who never replays never pays for it.
+        const { replayDiff, replayState } = await import('../local/replay.js');
         // Both bounds are the caller's. Replay never reads a wall clock, so a
         // cut point is reproducible tomorrow and on another machine.
         const knownAt = required(values['known-at'], '--known-at');

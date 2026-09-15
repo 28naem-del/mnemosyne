@@ -6,11 +6,11 @@ import { spawnSync } from 'node:child_process';
 import { createLocalMemory } from '../src/local/index.js';
 
 /**
- * The `replay` and `bisect` CLI routes.
+ * The `replay` CLI route (and, from the next unit, `bisect`).
  *
- * Both are new, both are read-only, and neither may exist for a caller who does
- * not ask for it: the surface here is exactly the surface the docs promise, and
- * nothing else changes shape.
+ * Read-only, and it may not exist for a caller who does not ask for it: the
+ * surface here is exactly the surface the help text promises, and nothing else
+ * changes shape.
  */
 
 const cli = resolve('dist/cli/index.js');
@@ -126,6 +126,18 @@ describe('mnemosy replay', { timeout: 60_000 }, () => {
     const help = run(['--help']);
     expect(help.status).toBe(0);
     expect(help.stdout).toContain('mnemosy replay [scope]');
-    expect(help.stdout).toContain('mnemosy bisect [scope]');
+  });
+
+  it('does not advertise or accept a command that has no implementation', () => {
+    // `bisect` lands in the next unit. Until it does, it must not be in the help
+    // text and must not be in the policy allowlist: a command that is allowlisted
+    // but has no switch arm falls through and exits 0 with no output, which reads
+    // as success. Verified by the v2 verifier lane; pinned here so it stays fixed.
+    const f = fixture();
+    expect(run(['--help']).stdout).not.toContain('bisect');
+    const absent = run(['bisect', ...f.scope]);
+    expect(absent.status).toBe(1);
+    expect(absent.stderr).toContain('Unknown command: bisect');
+    expect(absent.stdout).toBe('');
   });
 });
