@@ -112,7 +112,9 @@ describe('exclusive paths, limits and corruption rejection', () => {
     if (failure === 'truncated') bundle = bundle.subarray(0, -1);
     if (failure === 'digest') bundle[bundle.length - 1] ^= 1;
     if (failure === 'scope') bundle = alterManifest(bundle, manifest => { manifest.scope = 'workspace'; });
-    if (failure === 'schema') bundle = alterManifest(bundle, manifest => { (manifest.database as Record<string, unknown>).userVersion = 2; });
+    // 2 is itself a valid schema version now (T1.2's packed-float32 embeddings), so the
+    // corruption case moves to a version this build never writes, to keep testing a real mismatch.
+    if (failure === 'schema') bundle = alterManifest(bundle, manifest => { (manifest.database as Record<string, unknown>).userVersion = 99; });
     if (failure === 'extra') bundle = alterManifest(bundle, manifest => { manifest.rawSource = 'PRIVATE_UNTRUSTED_MANIFEST'; });
     if (failure === 'length') bundle.writeUInt32BE(8192, magic.length);
     writeFileSync(f.backupPath, bundle);

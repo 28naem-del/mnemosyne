@@ -68,9 +68,18 @@ export function adaptLongMemEvalCorpus(input: unknown, provenance: CorpusProvena
   return result;
 }
 
-/** Only original dialogue enters history; generated observations/summaries and qa stay out. */
-export function adaptLoCoMoCorpus(input: unknown, provenance: CorpusProvenance): CorpusDataset {
+/** Only original dialogue enters history; generated observations/summaries and qa stay out.
+ * `onMalformedEvidence` defaults to rejecting the whole file. `skip` drops only the
+ * individual unresolvable evidence identifiers that the published corpus contains
+ * (space-joined lists, typographic identifiers, references to absent turns) and
+ * reports how many were dropped. A question left with no resolvable evidence
+ * becomes unannotated, so it leaves the positive-retrieval denominator instead of
+ * being scored as a miss. Nothing is repaired or invented. */
+export function adaptLoCoMoCorpus(input: unknown, provenance: CorpusProvenance, options: { onMalformedEvidence?: 'reject' | 'skip' } = {}): CorpusDataset {
   const result = base('locomo-original-dialogue-v1', provenance);
+  const evidencePolicy = options.onMalformedEvidence ?? 'reject';
+  if (!['reject', 'skip'].includes(evidencePolicy)) throw new Error('Invalid LoCoMo evidence policy.');
+  let droppedEvidence = 0, droppedQuestions = 0, affectedQuestions = 0;
   for (const [index, raw] of array(input).entries()) {
     const sample = object(raw), conversation = object(sample.conversation), corpusId = `conversation:${index}`;
     const turns: EvaluationTurn[] = [];
@@ -86,13 +95,21 @@ export function adaptLoCoMoCorpus(input: unknown, provenance: CorpusProvenance):
       const question = object(rawQuestion), category = question.category;
       if (!Number.isSafeInteger(category) || Number(category) < 1 || Number(category) > 5) throw new Error('Unknown LoCoMo question category.');
       const questionId = `${identity(sample.sample_id ?? index)}:${qaIndex}`;
-      const evidence = array(question.evidence ?? []).map(identity);
-      if (evidence.some(id => !turnIds.has(id))) throw new Error('Unknown LoCoMo evidence dialogue.');
+      const declared = array(question.evidence ?? []).map(identity);
+      const evidence = declared.filter(id => turnIds.has(id));
+      if (evidence.length !== declared.length) {
+        if (evidencePolicy === 'reject') throw new Error('Unknown LoCoMo evidence dialogue.');
+        droppedEvidence += declared.length - evidence.length;
+        affectedQuestions++;
+        if (!evidence.length) droppedQuestions++;
+      }
       result.questions.push({ id: questionId, corpusId, query: text(question.question, 4096), category: `locomo:${category}` });
       const reference = question.answer;
       addLabel(result, { questionId, evidenceGroups: evidence.map(id => `turn:${id}`), answerability: category === 5 ? 'unanswerable' : 'answerable', answerSchema: typeof reference === 'string' || typeof reference === 'number' ? 'text' : reference === undefined ? 'missing' : 'unsupported', ...(reference === undefined || category === 5 ? {} : { reference }) });
     }
   }
+  if (evidencePolicy === 'skip') result.notices.push(`Malformed-evidence policy: skip. ${droppedEvidence} unresolvable evidence identifiers were dropped across ${affectedQuestions} questions; ${droppedQuestions} questions lost all evidence and are reported as unannotated, leaving the positive-retrieval denominator. No identifier was repaired or inferred.`);
+  else result.notices.push('Malformed-evidence policy: reject. Every declared evidence identifier resolved to a dialogue turn.');
   result.notices.push('LoCoMo source timestamps have no timezone; raw dates are retained without inventing UTC instants. All five categories remain present, with category 5 separate from positive retrieval metrics.');
   result.notices.push('LoCoMo data is externally supplied under CC BY-NC 4.0, not distributed or relicensed by this package. This is not the official category-specific answer F1 evaluator.');
   return result;

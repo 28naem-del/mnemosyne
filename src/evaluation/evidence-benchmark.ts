@@ -60,7 +60,7 @@ export function runEvidenceBenchmark(options: { engineRevision?: string } = {}):
   let day = 2, sequence = 0;
   const now = () => new Date(instant(day));
   const open = (path: string, agentId = 'owner', workspaceId = 'evaluation') => {
-    const memory = createLocalMemory({ path, agentId, workspaceId, now }); opened.push(memory); return memory;
+    const memory = createLocalMemory({ path, agentId, workspaceId, retrieval: 'lexical', now }); opened.push(memory); return memory;
   };
   const fresh = () => { day = 2; return open(join(root, `${++sequence}.sqlite`)); };
   const store = (memory: LocalMemory, text: string, dependencies: string[] = [], extra: { key?: string; validUntil?: string } = {}) => memory.store({

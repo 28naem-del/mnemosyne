@@ -27,13 +27,14 @@ export async function corpusBenchmarkCli(args = process.argv.slice(2)): Promise<
   const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: {
     format: { type: 'string' }, file: { type: 'string' }, questions: { type: 'string' }, out: { type: 'string' },
     'dataset-revision': { type: 'string' }, 'dataset-label': { type: 'string' }, 'source-url': { type: 'string' }, license: { type: 'string' },
-    'timestamp-policy': { type: 'string' }, 'embedding-config': { type: 'string' }, json: { type: 'string' }, help: { type: 'boolean' },
+    'timestamp-policy': { type: 'string' }, 'malformed-evidence': { type: 'string' }, 'embedding-config': { type: 'string' }, json: { type: 'string' }, help: { type: 'boolean' },
   } });
-  if (values.help) { console.log('node dist/evaluation/corpus-cli.js --format longmemeval|locomo|beam|normalized --file DATA.json [--questions BEAM_QUESTIONS.json] --dataset-revision REV --license LICENSE --out NEW_REPORT.json [--timestamp-policy question-day] [--json SETTINGS_JSON] [--embedding-config EXPLICIT_CONFIG.json]'); return; }
+  if (values.help) { console.log('node dist/evaluation/corpus-cli.js --format longmemeval|locomo|beam|normalized --file DATA.json [--questions BEAM_QUESTIONS.json] --dataset-revision REV --license LICENSE --out NEW_REPORT.json [--timestamp-policy question-day] [--malformed-evidence skip] [--json SETTINGS_JSON] [--embedding-config EXPLICIT_CONFIG.json]'); return; }
   if (!values.file || !values.out || !values.format) throw new Error('Supply --format, --file and a new --out path.');
   if (!['longmemeval', 'locomo', 'beam', 'normalized'].includes(values.format)) throw new Error('Unknown dataset format.');
   if (values.format !== 'beam' && values.questions) throw new Error('--questions applies only to BEAM.');
   if (values.format !== 'longmemeval' && values['timestamp-policy']) throw new Error('--timestamp-policy applies only to LongMemEval.');
+  if (values.format !== 'locomo' && values['malformed-evidence']) throw new Error('--malformed-evidence applies only to LoCoMo.');
   const settings = settingsSchema.parse(values.json ? JSON.parse(values.json) : {});
   const source = readJson(values.file, 536_870_912);
   let dataset: CorpusDataset;
@@ -46,7 +47,7 @@ export async function corpusBenchmarkCli(args = process.argv.slice(2)): Promise<
     if (!values['dataset-revision'] || !values.license) throw new Error('Record --dataset-revision and --license for external data.');
     const provenance: CorpusProvenance = { dataset: values['dataset-label'] ?? values.format, revision: values['dataset-revision'], license: values.license, sourceSha256: source.sha256, sourceBytes: source.bytes, ...(values['source-url'] ? { sourceUrl: values['source-url'] } : {}) };
     if (values.format === 'longmemeval') dataset = adaptLongMemEvalCorpus(source.value, provenance, { timestampPolicy: z.enum(['strict-instant', 'question-day']).parse(values['timestamp-policy'] ?? 'strict-instant') });
-    else if (values.format === 'locomo') dataset = adaptLoCoMoCorpus(source.value, provenance);
+    else if (values.format === 'locomo') dataset = adaptLoCoMoCorpus(source.value, provenance, { onMalformedEvidence: z.enum(['reject', 'skip']).parse(values['malformed-evidence'] ?? 'reject') });
     else {
       if (!values.questions) throw new Error('BEAM requires normalized repository --questions JSON. Python literal strings are unsupported.');
       const questions = readJson(values.questions, 16_777_216);

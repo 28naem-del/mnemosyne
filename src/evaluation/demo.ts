@@ -63,7 +63,10 @@ export function runMemoryDemo(): DemoReport {
     const successor = open('publisher');
     const handoff = successor.resume('catalogue-update');
     const recalled = successor.recall({ query, limit: 20 });
-    snapshot(successor, { id: 'handoff', title: 'A fresh agent picks up the work', description: 'The first connection is closed. A different agent reads the shared lesson and checkpoint from disk, while the private note stays hidden.', agent: 'publisher', checks: [{ label: 'Fresh agent can retrieve the shared procedure', passed: recalled.some(r => r.memory.id === procedure.id) }, { label: 'Checkpoint survives a closed connection', passed: handoff !== null }, { label: 'Private note is inaccessible by ID and search', passed: successor.get(privateNote.id) === null && successor.recall({ query: 'BLUE HERON', includeUntrusted: true }).length === 0 }] });
+    snapshot(successor, { id: 'handoff', title: 'A fresh agent picks up the work', description: 'The first connection is closed. A different agent reads the shared lesson and checkpoint from disk, while the private note stays hidden.', agent: 'publisher', checks: [{ label: 'Fresh agent can retrieve the shared procedure', passed: recalled.some(r => r.memory.id === procedure.id) }, { label: 'Checkpoint survives a closed connection', passed: handoff !== null }, // A dense retriever always has a nearest neighbour, so "search returns nothing"
+      // is not a privacy property. The property is that the private record is never
+      // reachable by ID and never appears among another agent's results.
+      { label: 'Private note is never retrievable by another agent', passed: successor.get(privateNote.id) === null && !successor.recall({ query: 'BLUE HERON', includeUntrusted: true, limit: 50 }).some(result => result.memory.id === privateNote.id) }] });
 
     const owner = open('designer');
     const revised = owner.correct(spec.id, { text: 'Catalogue images now require a 1600 x 1200 output canvas. Preserve aspect ratio. Owner approval is still required before publishing.', source: { uri: 'demo://owner/brief-v2' }, reason: 'The owner increased the output dimensions.' });

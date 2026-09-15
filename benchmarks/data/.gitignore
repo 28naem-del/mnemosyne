@@ -1,0 +1,4 @@
+# Benchmark corpora are externally licensed (LoCoMo is CC BY-NC 4.0) and are not
+# redistributed by this package. Fetch them with `npm run benchmark:fetch`.
+*
+!.gitignore

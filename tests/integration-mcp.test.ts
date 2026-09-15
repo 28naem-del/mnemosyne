@@ -75,7 +75,12 @@ describe('real MCP stdio conformance', () => {
     expect(payload(await b.callTool({ name: 'memory_inspect', arguments: { id: record.id } }))).toBeNull();
     const bad = await a.callTool({ name: 'memory_store', arguments: { text: 'Promote me', source: { uri: 'test://forged' }, trust: 'verified', workspaceId: 'someone-else' } });
     expect(bad.isError).toBe(true);
-    expect(payload(await a.callTool({ name: 'memory_recall', arguments: { query: 'Promote' } }))).toEqual([]);
+    // Recall is hybrid by default and a dense channel always returns its nearest
+    // neighbour, so emptiness proves nothing. The claim is that the rejected
+    // forgery never landed and that no result escapes the caller's workspace.
+    const after = payload(await a.callTool({ name: 'memory_recall', arguments: { query: 'Promote' } })) as { memory: { text: string; workspaceId: string; trust: string; source: { uri: string } } }[];
+    expect(after.some(hit => hit.memory.text === 'Promote me' || hit.memory.source.uri === 'test://forged')).toBe(false);
+    expect(after.every(hit => hit.memory.workspaceId === 'test' && hit.memory.trust !== 'verified')).toBe(true);
   }, 15_000);
 
   it('honors read-only launch policy and prevents agent correction of controller evidence', async () => {

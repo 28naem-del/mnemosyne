@@ -7,7 +7,7 @@ import { createLocalMemory, type LocalMemory, type StoreMemoryInput } from '../s
 
 const opened: LocalMemory[] = []; const roots: string[] = [];
 function memory(path = ':memory:', agentId = 'alice', workspaceId = 'project', now?: () => Date) {
-  const db = createLocalMemory({ path, agentId, workspaceId, now }); opened.push(db); return db;
+  const db = createLocalMemory({ path, agentId, workspaceId, retrieval: 'lexical', now }); opened.push(db); return db;
 }
 const fact = (text: string, input: Partial<StoreMemoryInput> = {}): StoreMemoryInput => ({ text, trust: 'observed', source: { uri: 'test:postings' }, ...input });
 afterEach(() => { vi.restoreAllMocks(); opened.splice(0).forEach(db => db.close()); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); });

@@ -12,7 +12,10 @@ const MAGIC = Buffer.from('MNEMOSYNE-BACKUP1\n');
 const HEADER_BYTES = MAGIC.length + 4;
 const SUFFIXES = ['', '-wal', '-shm', '-journal'];
 const integer = z.number().int().nonnegative();
-const databaseSchema = z.object({ bytes: integer.min(4096).max(4_294_967_296), sha256: z.string().regex(/^[a-f0-9]{64}$/), userVersion: z.literal(1), pageCount: integer.min(1), pageSize: integer.min(512).max(65536), integrity: z.literal('ok'), foreignKeys: z.literal('ok') }).strict();
+// 1 (JSON embeddings) and 2 (packed float32, local/index.ts's SCHEMA_VERSION)
+// are both databases this build reads, writes and backs up correctly.
+const userVersionSchema = z.union([z.literal(1), z.literal(2)]);
+const databaseSchema = z.object({ bytes: integer.min(4096).max(4_294_967_296), sha256: z.string().regex(/^[a-f0-9]{64}$/), userVersion: userVersionSchema, pageCount: integer.min(1), pageSize: integer.min(512).max(65536), integrity: z.literal('ok'), foreignKeys: z.literal('ok') }).strict();
 const manifestSchema = z.object({ format: z.literal('mnemosyne-sqlite-backup'), version: z.literal(1), scope: z.literal('whole-database'), createdAt: z.string().refine(value => Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value), database: databaseSchema }).strict();
 type Identity = { dev: number; ino: number };
 type OwnedFile = Identity & { path: string };
@@ -82,7 +85,7 @@ async function digestFile(path: string, limits: Control): Promise<{ sha256: stri
     return { sha256: hash.digest('hex'), bytes };
   } finally { closeSync(fd); }
 }
-function worker(request: Record<string, unknown>, limits: Control): Promise<{ userVersion: 1; pageCount: number; pageSize: number; integrity: 'ok'; foreignKeys: 'ok' }> {
+function worker(request: Record<string, unknown>, limits: Control): Promise<{ userVersion: 1 | 2; pageCount: number; pageSize: number; integrity: 'ok'; foreignKeys: 'ok' }> {
   limits.check();
   let modulePath = fileURLToPath(new URL('./worker.js', import.meta.url));
   const args: string[] = [];
@@ -103,7 +106,7 @@ function worker(request: Record<string, unknown>, limits: Control): Promise<{ us
       try {
         limits.check(); const value = JSON.parse(output) as { ok?: unknown; result?: unknown };
         if (code !== 0 || value.ok !== true) fail('invalid-database');
-        resolveResult(z.object({ userVersion: z.literal(1), pageCount: integer.min(1), pageSize: integer.min(512).max(65536), integrity: z.literal('ok'), foreignKeys: z.literal('ok') }).strict().parse(value.result));
+        resolveResult(z.object({ userVersion: userVersionSchema, pageCount: integer.min(1), pageSize: integer.min(512).max(65536), integrity: z.literal('ok'), foreignKeys: z.literal('ok') }).strict().parse(value.result));
       } catch (error) { reject(error instanceof MemoryOperationError ? error : new MemoryOperationError('operation-failed')); }
     });
     child.stdin.end(JSON.stringify(request));

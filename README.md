@@ -105,6 +105,58 @@ memory.close();
 
 The old procedure remains inspectable but is no longer eligible as current guidance. Dependencies must be declared by the controller. `observed` means the host recorded the source; it does not certify its truth. The default context counter measures UTF-8 bytes conservatively, not a model's tokenizer. [Context contract](docs/CONTEXT.md).
 
+## Tune the dense index
+
+Recall works without any of this. These three options exist for stores large enough that the
+defaults stop being the right trade, and all three are opt-in.
+
+```js
+const memory = createLocalMemory({
+  path: './agent-memory.sqlite',
+  workspaceId: 'catalogue',
+  agentId: 'designer',
+
+  indexMode: 'hnsw',            // 'exact' | 'auto' (default) | 'sqlite-vec' | 'hnsw'
+  sqliteVecPath: '/opt/lib/vec0.dylib',  // explicit extension path; no env-var equivalent
+  cacheSize: -65536,            // PRAGMA cache_size: negative = KiB, positive = pages
+});
+```
+
+**`indexMode`** — which dense index to search. Defaults to `$MNEMOSYNE_INDEX_MODE`, else `auto`.
+
+| mode | what it does |
+|------|--------------|
+| `exact` | Scores every authorized vector. No optional binaries, no index files, and the answer every other mode is measured against. |
+| `auto` *(default)* | sqlite-vec when the extension loads, otherwise `exact`. Still an exact search — `vec0` scores the same vectors in C instead of in JS. |
+| `sqlite-vec` | As `auto`, but **throws** instead of degrading silently when the extension is unavailable. |
+| `hnsw` | Approximate and sublinear, for stores past a few hundred thousand vectors. The one retrieval component here that can *miss* a true neighbour — which is why it is **never selected on your behalf**. |
+
+Asking explicitly for `sqlite-vec` or `hnsw` and not getting it is an error, not a downgrade: those
+two modes throw when the backend is unavailable. `auto` is the only mode that degrades, and it only
+ever degrades to an exact search, never to an approximate one.
+
+No mode changes what a record scores or whether it may be returned. Every candidate an index
+proposes is re-authorized and rescored against the stored vector before it reaches you, so the index
+is a shortlist, never an authority.
+
+**`sqliteVecPath`** — an explicit filesystem path to a `sqlite-vec` loadable extension, overriding
+the bundled package's own resolution. Only consulted when `indexMode` is `auto` or `sqlite-vec`.
+
+There is deliberately **no environment-variable equivalent.** An env-controlled path would make
+every `LocalMemory` opened on the machine `dlopen` whatever that variable pointed at, by default and
+without the caller asking. Loading a native extension is a decision the calling code has to make in
+the open, so it lives in the constructor and nowhere else.
+
+**`cacheSize`** — `PRAGMA cache_size`, applied on every open, in SQLite's own units: a **positive**
+value is a page count, a **negative** value is a KiB budget. Defaults to `-65536` (64 MiB), and a
+negative value is the recommended form since page size can vary. Must be a nonzero integer of
+magnitude at most 2,097,152.
+
+A larger page cache buys fewer trips through the OS page cache for the shortlist rescore and the
+BM25 postings that the hot recall path reads on every query. It matters once the working set stops
+fitting in the few megabytes SQLite would otherwise settle for on its own — and it is a real memory
+cost, charged per open connection, so it is set rather than guessed.
+
 ## What you can build
 
 | Capability | Behavior | Developer guide |

@@ -11,7 +11,7 @@ import { migrationOriginIdentity, registerMigrationOriginForgotten } from '../sr
 
 const opened: LocalMemory[] = [], roots: string[] = [];
 const one = { id: 'region', revision: 'v1', text: 'Atlas deployment region is Dubai.' };
-function database(path = ':memory:', agentId = 'host') { const memory = createLocalMemory({ path, workspaceId: 'bridge-fixture', agentId }); opened.push(memory); return memory; }
+function database(path = ':memory:', agentId = 'host') { const memory = createLocalMemory({ path, workspaceId: 'bridge-fixture', agentId, retrieval: 'lexical' }); opened.push(memory); return memory; }
 function file() { const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bridge-')); roots.push(root); return join(root, 'memory.db'); }
 function fixture(options: Omit<MemoryBridgeOptions, 'adapter'> = {}, memory = database()) {
   let matches: LegacyMemoryMatch[] = [{ ...one }];
@@ -226,7 +226,7 @@ describe('privacy, races and bounded failure', () => {
       monotonicTime += 1;
       expect(() => value.bridge.validate(packet.context)).toThrow(MemoryBridgeError);
     } finally { monotonicClock.mockRestore(); }
-    let clock = new Date('2030-01-01T00:00:00.000Z'); const memory = createLocalMemory({ path: ':memory:', workspaceId: 'bridge-fixture', agentId: 'host', now: () => clock }); opened.push(memory);
+    let clock = new Date('2030-01-01T00:00:00.000Z'); const memory = createLocalMemory({ path: ':memory:', workspaceId: 'bridge-fixture', agentId: 'host', retrieval: 'lexical', now: () => clock }); opened.push(memory);
     const runtime = new MemoryRuntime(memory), maintenance = new MemoryMaintenance(runtime, { now: () => clock });
     const bridge = new MemoryBridge(runtime, { adapter: value.adapter, trust: 'observed', maintenance });
     const first = await bridge.recall(query), id = first.context.memoryIds[0];

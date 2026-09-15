@@ -1,0 +1,265 @@
+{
+  "note": "Reference token identifiers produced by HuggingFace tokenizers 0.22.2 from Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3 tokenizer.json. The local WordPiece implementation must reproduce these exactly.",
+  "generator": "python3 -c \"from tokenizers import Tokenizer; Tokenizer.from_file(tokenizer.json).encode(text).ids\"",
+  "cases": [
+    {
+      "text": "hello world",
+      "ids": [
+        101,
+        7592,
+        2088,
+        102
+      ]
+    },
+    {
+      "text": "Café — don't STOP.",
+      "ids": [
+        101,
+        7668,
+        1517,
+        2123,
+        1005,
+        1056,
+        2644,
+        1012,
+        102
+      ]
+    },
+    {
+      "text": "The deployment credentials are stored in the vault under ops/prod.",
+      "ids": [
+        101,
+        1996,
+        10813,
+        22496,
+        2024,
+        8250,
+        1999,
+        1996,
+        11632,
+        2104,
+        23092,
+        1013,
+        4013,
+        2094,
+        1012,
+        102
+      ]
+    },
+    {
+      "text": "ab 中文 cd",
+      "ids": [
+        101,
+        11113,
+        1746,
+        1861,
+        3729,
+        102
+      ]
+    },
+    {
+      "text": "sku1200-b",
+      "ids": [
+        101,
+        15315,
+        2226,
+        12521,
+        8889,
+        1011,
+        1038,
+        102
+      ]
+    },
+    {
+      "text": "Melanie painted a sunrise over the harbour last summer.",
+      "ids": [
+        101,
+        13286,
+        4993,
+        1037,
+        13932,
+        2058,
+        1996,
+        7440,
+        2197,
+        2621,
+        1012,
+        102
+      ]
+    },
+    {
+      "text": "Represent this sentence for searching relevant passages: Where are the deployment keys kept?",
+      "ids": [
+        101,
+        5050,
+        2023,
+        6251,
+        2005,
+        6575,
+        7882,
+        13768,
+        1024,
+        2073,
+        2024,
+        1996,
+        10813,
+        6309,
+        2921,
+        1029,
+        102
+      ]
+    },
+    {
+      "text": "Naïve résumé, coöperate: ISO-8601 2026-09-14T08:00:00Z!",
+      "ids": [
+        101,
+        15743,
+        13746,
+        1010,
+        17654,
+        1024,
+        11163,
+        1011,
+        6564,
+        24096,
+        16798,
+        2575,
+        1011,
+        5641,
+        1011,
+        2403,
+        2102,
+        2692,
+        2620,
+        1024,
+        4002,
+        1024,
+        4002,
+        2480,
+        999,
+        102
+      ]
+    },
+    {
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ids": [
+        101,
+        100,
+        102
+      ]
+    },
+    {
+      "text": "Caroline: I went to the LGBTQ support group on 7 May 2023 -- it was affirming!",
+      "ids": [
+        101,
+        7981,
+        1024,
+        1045,
+        2253,
+        2000,
+        1996,
+        12010,
+        4160,
+        2490,
+        2177,
+        2006,
+        1021,
+        2089,
+        16798,
+        2509,
+        1011,
+        1011,
+        2009,
+        2001,
+        21358,
+        27972,
+        2075,
+        999,
+        102
+      ]
+    },
+    {
+      "text": "unaffable antidisestablishmentarianism cryptocurrency",
+      "ids": [
+        101,
+        14477,
+        20961,
+        3468,
+        3424,
+        10521,
+        4355,
+        7875,
+        13602,
+        3672,
+        12199,
+        2964,
+        19888,
+        10085,
+        3126,
+        7389,
+        5666,
+        102
+      ]
+    },
+    {
+      "text": "\tmulti   whitespace\n\nlines\r\nhere",
+      "ids": [
+        101,
+        4800,
+        12461,
+        15327,
+        3210,
+        2182,
+        102
+      ]
+    },
+    {
+      "text": "emoji 😀 and symbols +=<> stay split",
+      "ids": [
+        101,
+        7861,
+        29147,
+        2072,
+        100,
+        1998,
+        9255,
+        1009,
+        1027,
+        1026,
+        1028,
+        2994,
+        3975,
+        102
+      ]
+    },
+    {
+      "text": "Dr. Smith's e-mail is a.b@example.co.uk (urgent!)",
+      "ids": [
+        101,
+        2852,
+        1012,
+        3044,
+        1005,
+        1055,
+        1041,
+        1011,
+        5653,
+        2003,
+        1037,
+        1012,
+        1038,
+        1030,
+        2742,
+        1012,
+        2522,
+        1012,
+        2866,
+        1006,
+        13661,
+        999,
+        1007,
+        102
+      ]
+    }
+  ]
+}

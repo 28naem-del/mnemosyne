@@ -10,7 +10,8 @@ import { AdaptiveContext, type AdaptiveContextOptions, type ContextProposer } fr
 const opened: LocalMemory[] = [], directories: string[] = [];
 function fixture(options: AdaptiveContextOptions = {}, path = ':memory:', agentId = 'alice', workspaceId = 'fixture') {
   let time = Date.parse('2026-09-14T00:00:00.000Z'); const now = () => new Date(time);
-  const memory = createLocalMemory({ path, agentId, workspaceId, now }); opened.push(memory);
+  // Context budgeting is asserted over the zero-model path, as the cases state.
+  const memory = createLocalMemory({ path, agentId, workspaceId, retrieval: 'lexical', now }); opened.push(memory);
   const runtime = new MemoryRuntime(memory, { now }), maintenance = new MemoryMaintenance(runtime, { now });
   const builder = new AdaptiveContext(runtime, { maintenance, ...options });
   const store = (text = 'Atlas release uses dry-run checks. '.repeat(20), dependencies: string[] = [], visibility: 'private' | 'workspace' = 'private') => memory.store({ text, source: { uri: 'fixture:source', revision: 'v1' }, trust: 'observed', dependencies, visibility });

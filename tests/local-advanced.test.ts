@@ -9,7 +9,9 @@ const roots: string[] = [];
 const source = { uri: 'test:advanced' };
 const fact = (text: string, rest: Partial<StoreMemoryInput> = {}): StoreMemoryInput => ({ text, source, trust: 'observed', ...rest });
 function memory(path = ':memory:', agentId = 'alice', workspaceId = 'project', now?: () => Date): LocalMemory {
-  const db = createLocalMemory({ path, agentId, workspaceId, now }); opened.push(db); return db;
+  // These cases contrast explicit recallHybrid against the zero-model baseline,
+  // so the baseline is pinned rather than following the engine default.
+  const db = createLocalMemory({ path, agentId, workspaceId, retrieval: 'lexical', now }); opened.push(db); return db;
 }
 function location(): string { const root = mkdtempSync(join(tmpdir(), 'mnemosyne-advanced-')); roots.push(root); return join(root, 'memory.db'); }
 const date = (day: number) => `2026-09-${String(day).padStart(2, '0')}T00:00:00.000Z`;

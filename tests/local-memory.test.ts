@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +16,7 @@ function location(): string {
   return join(root, 'memory.sqlite');
 }
 function memory(path = ':memory:', agentId = 'alice', workspaceId = 'project'): LocalMemory {
-  const result = createLocalMemory({ path, agentId, workspaceId });
+  const result = createLocalMemory({ path, agentId, workspaceId, retrieval: 'lexical' });
   opened.push(result);
   return result;
 }
@@ -32,7 +32,10 @@ describe('local persistence and ownership', () => {
     const runtime = mkdtempSync(join(tmpdir(), 'mnemosyne-runtime-'));
     roots.push(runtime);
     writeFileSync(join(runtime, 'package.json'), '{"type":"module"}');
-    for (const file of ['index', 'validation', 'types']) {
+    for (const directory of ['embedding', 'reranking', 'vector']) mkdirSync(join(runtime, directory), { recursive: true });
+    for (const file of ['index', 'validation', 'types', 'ledger', 'bm25-corpus-stats', 'temporal-query', 'embedding/index', 'embedding/shared', 'embedding/onnx-embedder', 'embedding/model-assets', 'embedding/wordpiece',
+      'reranking/shared', 'reranking/onnx-reranker', 'reranking/model-assets',
+      'vector/index', 'vector/types', 'vector/sqlite-vec', 'vector/hnsw']) {
       const code = readFileSync(new URL(`../src/local/${file}.ts`, import.meta.url), 'utf8');
       writeFileSync(join(runtime, `${file}.js`), ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText);
     }
@@ -65,7 +68,11 @@ describe('local persistence and ownership', () => {
     expect(second.get(stored.id)).toEqual(stored);
     expect(second.recall({ query: 'pull requests' })[0].memory.id).toBe(stored.id);
     const db = new DatabaseSync(path);
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(1);
+    // Schema version 2: `local_embeddings.data` is a packed float32 BLOB as of
+    // T1.2, and a build that only ever wrote JSON must refuse a v2 file instead
+    // of misreading a BLOB row as text (see the "vector storage format version
+    // guard" tests in tests/local-vector-index.test.ts).
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(2);
     db.close();
   });
 
@@ -225,7 +232,9 @@ describe('provenance and deletion', () => {
     expect(reopened.export().outcomes).toEqual([]);
     expect(reopened.get(original.id)).toBeNull();
     const sql = new DatabaseSync(path);
-    for (const table of ['memories', 'dependencies', 'outcomes', 'idempotency', 'audit']) expect(sql.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n).toBe(0);
+    for (const table of ['memories', 'dependencies', 'outcomes', 'idempotency', 'audit', 'local_ledger_results']) expect(sql.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n).toBe(0);
+    // Only the erasure entry itself survives, and it carries a count, not an identity.
+    expect(sql.prepare("SELECT count(*) AS n FROM local_ledger WHERE event!='erasure' AND event!='recall'").get()?.n).toBe(0);
     sql.close();
     reopened.close();
     expect(readFileSync(path).includes(Buffer.from(canary))).toBe(false);

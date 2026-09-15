@@ -113,6 +113,36 @@ describe('matched corpus retrieval and context budgets', () => {
     expect(hybrid.settings.hybridLexicalScoring).toBe('bm25');
     expect(hybrid.complete).toBe(true);
   });
+  it('applies a reranker to the hybrid condition only, and never shows it a label', async () => {
+    const seen: string[] = [];
+    const embedder = { model: 'synthetic-v1', dimensions: 2, async embed(texts: readonly string[]) { return texts.map(() => [1, 0]); } };
+    const reranker = { async rerank(query: string, candidates: readonly { id: string; text: string }[]) {
+      seen.push(query, ...candidates.map(candidate => candidate.text));
+      return candidates.map(candidate => ({ id: candidate.id, score: candidate.text.includes('orchid') ? 1 : 0 }));
+    } };
+    const report = await runCorpusBenchmark(dataset(), { includeBm25: true, hybridLexicalScoring: 'bm25', embedder, reranker, rerankTopN: 25 });
+    expect(report.complete).toBe(true);
+    expect(report.settings.reranker).toBe('enabled');
+    expect(report.settings.rerankTopN).toBe(25);
+    // The reranker sees query and candidate text, never a gold answer, evidence
+    // group, question identifier or grading category.
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.join('\n')).not.toMatch(/GOLD_|single-session-user|q1/);
+    // The zero-model conditions must be untouched, or their numbers stop being comparable.
+    const baseline = await runCorpusBenchmark(dataset(), { includeBm25: true });
+    expect(report.attempts.find(row => row.condition === 'bm25')?.selected).toEqual(baseline.attempts.find(row => row.condition === 'bm25')?.selected);
+    expect(report.attempts.find(row => row.condition === 'lexical')?.selected).toEqual(baseline.attempts.find(row => row.condition === 'lexical')?.selected);
+  });
+
+  it('refuses a reranker with no document embedder, and a malformed one', async () => {
+    const reranker = { async rerank() { return []; } };
+    await expect(runCorpusBenchmark(dataset(), { reranker })).rejects.toThrow('requires a document embedder');
+    const embedder = { model: 'synthetic-v1', dimensions: 2, async embed(texts: readonly string[]) { return texts.map(() => [1, 0]); } };
+    await expect(runCorpusBenchmark(dataset(), { embedder, reranker: {} as never })).rejects.toThrow('Invalid reranker');
+    // Without a reranker the report says so rather than leaving it unstated.
+    expect((await runCorpusBenchmark(dataset(), { embedder })).settings.reranker).toBe('disabled');
+  });
+
   it('keeps full-context overflow in packed coverage denominator without truncation', async () => {
     const data = dataset(); data.corpora[0].turns[1].text = 'Large unrelated history. '.repeat(200);
     const report = await runCorpusBenchmark(data, { maxContextUnits: 512, chunkBytes: 512 });
@@ -131,7 +161,7 @@ describe('matched corpus retrieval and context budgets', () => {
   });
   it('retains embedding failures and cancellations rather than shrinking the denominator', async () => {
     const report = await runCorpusBenchmark(dataset(), { embedder: { model: 'broken', dimensions: 2, async embed() { throw new Error('PRIVATE_ERROR'); } } });
-    expect(report.complete).toBe(false); expect(report.summaries.hybrid).toMatchObject({ questions: 1, errors: 1, meanRecall: 0 });
+    expect(report.complete).toBe(false); expect(report.summaries.hybrid).toMatchObject({ questions: 1, errors: 1, meanRecall: null, annotatedQuestions: 1 });
     expect(report.summaries.lexical?.anyHitRate).toBe(1); expect(JSON.stringify(report)).not.toContain('PRIVATE_ERROR');
     const signal = AbortSignal.abort();
     const cancelled = await runCorpusBenchmark(dataset(), { signal });
@@ -144,8 +174,12 @@ describe('matched corpus retrieval and context budgets', () => {
       expect(report.complete).toBe(false);
       expect(report.summaries['no-memory']?.completed).toBe(1);
       expect(report.summaries['full-context']?.packedAllHitRate).toBe(1);
-      expect(report.summaries.lexical).toMatchObject({ questions: 1, errors: 1, meanRecall: 0 });
-      expect(report.summaries.bm25).toMatchObject({ questions: 1, errors: 1, meanRecall: 0 });
+      // Nothing was measured for these conditions, so there is no mean to report.
+      // The denominator is not shrunk — `annotatedQuestions` still counts the
+      // question — but a condition where every attempt failed reports null rather
+      // than 0, so "never ran" can never be read as "ran and scored zero".
+      expect(report.summaries.lexical).toMatchObject({ questions: 1, errors: 1, meanRecall: null, annotatedQuestions: 1 });
+      expect(report.summaries.bm25).toMatchObject({ questions: 1, errors: 1, meanRecall: null, annotatedQuestions: 1 });
       expect(JSON.stringify(report)).not.toContain('PRIVATE_INDEX_FAILURE');
     } finally { failingImport.mockRestore(); }
   });

@@ -117,6 +117,14 @@
     "./bridge": {
       "types": "./dist/bridge/index.d.ts",
       "import": "./dist/bridge/index.js"
+    },
+    "./local/embedding": {
+      "types": "./dist/local/embedding/index.d.ts",
+      "import": "./dist/local/embedding/index.js"
+    },
+    "./local/reranking": {
+      "types": "./dist/local/reranking/index.d.ts",
+      "import": "./dist/local/reranking/index.js"
     }
   },
   "files": [
@@ -152,29 +160,35 @@
     "!**/*.db-*"
   ],
   "scripts": {
+    "benchmark": "node dist/evaluation/locomo-benchmark.js",
+    "benchmark:agent": "node dist/cli/index.js benchmark-agent",
+    "benchmark:corpus": "node dist/evaluation/corpus-cli.js",
+    "benchmark:evidence": "node dist/evaluation/evidence-benchmark.js",
+    "benchmark:fetch": "node scripts/fetch-benchmark-corpus.mjs",
+    "benchmark:matched": "node dist/evaluation/matched-benchmark.js",
+    "benchmark:matched:install": "npm ci --prefix benchmarks/competitors",
+    "benchmark:scale": "node dist/evaluation/local-benchmark.js",
     "build": "tsc",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run check",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm test && npm run typecheck:examples",
     "check:docs": "node --test scripts/check-doc-links.test.mjs && node scripts/check-doc-links.mjs",
     "check:public": "node --test scripts/check-public-metadata.test.mjs && node scripts/check-public-metadata.mjs",
+    "clean": "rm -rf dist",
     "demo": "node dist/cli/index.js demo",
-    "demo:record": "node dist/cli/index.js demo --record",
-    "benchmark": "node dist/evaluation/local-benchmark.js",
     "demo:learning": "node dist/cli/index.js learning-demo",
-    "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v",
+    "demo:record": "node dist/cli/index.js demo --record",
+    "evaluate": "node dist/cli/index.js evaluate",
+    "prepublishOnly": "npm run clean && npm run check",
     "pretest": "npm run build",
     "pretest:coverage": "npm run build",
-    "test:watch": "vitest",
     "pretest:watch": "npm run build",
-    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts examples/agent-loop.ts examples/adaptive-context.ts examples/agent-benchmark.ts examples/backup-restore.ts examples/profiles.ts examples/gradual-migration.ts examples/local-semantic.ts",
-    "evaluate": "node dist/cli/index.js evaluate",
-    "benchmark:agent": "node dist/cli/index.js benchmark-agent",
-    "benchmark:corpus": "node dist/evaluation/corpus-cli.js",
-    "benchmark:evidence": "node dist/evaluation/evidence-benchmark.js"
+    "setup:embedder": "node scripts/fetch-local-model.mjs",
+    "setup:reranker": "node scripts/fetch-local-reranker.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts examples/agent-loop.ts examples/adaptive-context.ts examples/agent-benchmark.ts examples/backup-restore.ts examples/profiles.ts examples/gradual-migration.ts examples/local-semantic.ts"
   },
   "keywords": [
     "ai",
@@ -209,6 +223,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
+    "onnxruntime-node": "^1.29.0",
     "uuid": "^14.0.2",
     "zod": "^4.6.2"
   },
@@ -234,5 +249,9 @@
   },
   "engines": {
     "node": ">=22.16.0"
+  },
+  "optionalDependencies": {
+    "hnswlib-node": "3.0.0",
+    "sqlite-vec": "^0.1.9"
   }
 }

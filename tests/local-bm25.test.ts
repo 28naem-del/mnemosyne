@@ -8,7 +8,8 @@ import { createLocalMemory, type LocalMemory, type StoreMemoryInput } from '../s
 const opened: LocalMemory[] = [], roots: string[] = [];
 const day = (value: number) => `2026-09-${String(value).padStart(2, '0')}T00:00:00.000Z`;
 const fact = (text: string, extra: Partial<StoreMemoryInput> = {}): StoreMemoryInput => ({ text, trust: 'observed', source: { uri: 'test:bm25' }, ...extra });
-function memory(path = ':memory:', agentId = 'alice', workspaceId = 'test', now?: () => Date) { const db = createLocalMemory({ path, agentId, workspaceId, now }); opened.push(db); return db; }
+// This suite asserts exact zero-model BM25 scores, so it pins the lexical path.
+function memory(path = ':memory:', agentId = 'alice', workspaceId = 'test', now?: () => Date) { const db = createLocalMemory({ path, agentId, workspaceId, retrieval: 'lexical', now }); opened.push(db); return db; }
 function location() { const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-')); roots.push(root); return join(root, 'memory.sqlite'); }
 afterEach(() => { opened.splice(0).forEach(db => db.close()); roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })); });
 

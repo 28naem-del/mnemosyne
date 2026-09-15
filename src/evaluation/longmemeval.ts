@@ -18,7 +18,7 @@ export interface LongMemEvalOptions {
   topK?: number;
   /** Opt-in day-level compatibility for benchmark histories with same-day timestamps. */
   timestampPolicy?: 'strict-instant' | 'question-day';
-  /** Lexical candidate budget and retained semantic candidates; vectors are scanned across eligible history. */
+  /** Lexical candidate budget, and the size of the bounded-recent window of turns eligible for the dense channel (independent of the unbounded lexical index). */
   maxCandidates?: number;
   maxQuestions?: number;
   maxSessionsPerQuestion?: number;
@@ -263,13 +263,15 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
       check(); let clock = item.sessions[0]?.timestamp ?? item.questionTime;
       let memory: LocalMemory | undefined;
       try {
-        memory = createLocalMemory({ path: join(directory, `question-${questionIndex}.sqlite`), workspaceId: 'longmemeval', agentId: 'retrieval-baseline', now: () => new Date(clock) });
+        // Retrieval-only baseline: the zero-model path, pinned so the default
+        // hybrid engine cannot silently change what the baseline measures.
+        memory = createLocalMemory({ path: join(directory, `question-${questionIndex}.sqlite`), workspaceId: 'longmemeval', agentId: 'retrieval-baseline', retrieval: 'lexical', now: () => new Date(clock) });
         const references = new Map<string, Omit<LongMemEvalRetrieval, 'score'>>();
         let indexedTurns = 0, indexedBytes = 0;
+        const allRecords: MemoryRecord[] = [];
         for (const [sessionIndex, session] of item.sessions.entries()) {
           clock = session.timestamp;
           for (let offset = 0; offset < session.turns.length; offset += 128) {
-            const records: MemoryRecord[] = [];
             for (const [relative, turn] of session.turns.slice(offset, offset + 128).entries()) {
               check(); if (!turn.content.trim()) continue;
               const turnIndex = offset + relative;
@@ -278,15 +280,40 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
               const record: MemoryRecord = { id: historyId(sessionIndex, turnIndex), workspaceId: 'longmemeval', agentId: 'retrieval-baseline', visibility: 'private', status: 'active', createdAt: session.timestamp, updatedAt: session.timestamp, dependencies: [], text: turn.content, kind: 'observation', trust: 'observed',
                 source: { uri: `longmemeval://history/session/${sessionIndex}/turn/${turnIndex}`, author: turn.role, observedAt: session.timestamp },
                 metadata: { sessionIndex, turnIndex } };
-              records.push(record);
+              allRecords.push(record);
               references.set(record.id, { sessionId: session.id, sessionDate: session.date, turnIndex, role: turn.role });
               indexedTurns++; indexedBytes += Buffer.byteLength(turn.content);
             }
-            if (records.length) memory.import({ format: 'mnemosyne-local', version: 1, workspaceId: 'longmemeval', agentId: 'retrieval-baseline', exportedAt: session.timestamp, memories: records, outcomes: [] });
             await setImmediate(); check();
           }
         }
         clock = item.retrievalCutoff;
+        const importChunks = async (chunk: MemoryRecord[]) => {
+          for (let offset = 0; offset < chunk.length; offset += 128) {
+            const slice = chunk.slice(offset, offset + 128);
+            if (slice.length) memory!.import({ format: 'mnemosyne-local', version: 1, workspaceId: 'longmemeval', agentId: 'retrieval-baseline', exportedAt: item.retrievalCutoff, memories: slice, outcomes: [] });
+            await setImmediate(); check();
+          }
+        };
+        // The dense channel keeps a bounded window of the most recently created
+        // turns, never the full history: embedding is indexed for the newest
+        // maxCandidates turns only, then those are the sole pending rows when
+        // indexEmbeddings runs. Older turns are imported afterwards so the
+        // lexical channel below still covers full history unbounded.
+        const windowSize = embedder ? Math.min(allRecords.length, budget.maxCandidates) : 0;
+        const windowRecords = allRecords.slice(allRecords.length - windowSize);
+        const restRecords = allRecords.slice(0, allRecords.length - windowSize);
+        await importChunks(windowRecords);
+        if (embedder) {
+          let remaining = windowRecords.length;
+          while (remaining > 0) {
+            check();
+            const indexed = await memory.indexEmbeddings({ embedder, limit: 1000, batchSize: 32, timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal });
+            if (indexed.remaining && !indexed.indexed) throw new Error('Embedding index made no progress.');
+            remaining = indexed.remaining;
+          }
+        }
+        await importChunks(restRecords);
         // Protocol v1's lexical baseline remains overlap even if the product default changes.
         const query = { query: item.question, limit: budget.topK, maxCandidates: budget.maxCandidates, asOf: item.retrievalCutoff, knownAt: item.retrievalCutoff, lexicalScoring: 'overlap' as const };
         const convert = (hits: RecallResult[]) => hits.map(hit => {
@@ -297,14 +324,6 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
         const baselines: LongMemEvalQuestionResult['baselines'] = { 'no-memory': score([], item.evidenceSessionIds), lexical: score(convert(memory.recall(query)), item.evidenceSessionIds) };
         check();
         if (embedder) {
-          let remaining = indexedTurns;
-          while (remaining > 0) {
-            check();
-            const indexed = await memory.indexEmbeddings({ embedder, limit: 1000, batchSize: 32, timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal });
-            if (indexed.remaining && !indexed.indexed) throw new Error('Embedding index made no progress.');
-            remaining = indexed.remaining;
-          }
-          check();
           baselines.hybrid = score(convert(await memory.recallHybrid(query, { embedder, maxCandidates: budget.maxCandidates, timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })), item.evidenceSessionIds);
         }
         check();
@@ -319,7 +338,7 @@ export async function runLongMemEval(input: unknown, options: LongMemEvalOptions
     summary[baseline] = { all: summarize(results, baseline), answerable: summarize(results.filter(row => row.answerability === 'answerable'), baseline), unanswerable: summarize(results.filter(row => row.answerability === 'unanswerable'), baseline), byQuestionType };
   }
   return { kind: 'LongMemEval-style offline retrieval evaluation', protocol: 'v1-turn-retrieval-session-evidence', dataset: { origin: 'caller-supplied; official provenance not verified', ...(label ? { label } : {}), ...(revision ? { revision } : {}), sha256: dataset.sha256, bytes: dataset.bytes, questions: results.length }, granularity: 'turn', topK: budget.topK, providerMode: supplied ? 'caller-supplied-embedder' : 'none', ...(supplied ? { embeddingModel: { model: supplied.model, dimensions: supplied.dimensions } } : {}), calls, answerQuality: { status: 'not-evaluated', abstentionAccuracy: null }, results, summary, limits: budget, storage: 'fresh scoped SQLite per question; temporary files removed', durationMs: performance.now() - started,
-    limitations: ['Retrieval scores do not measure answer correctness, reasoning quality or semantic abstention.', 'K counts retrieved turns; evidence metrics deduplicate their session IDs. These are not official session-retrieval-at-K results.', 'Questions without evidence-session labels have null evidence metrics and are excluded from evidence averages.', 'Naive benchmark timestamps are interpreted as UTC for chronological ordering; no real-world timezone is inferred.', 'timestampPolicy defaults to strict-instant. Explicit question-day mode uses the end of the normalized UTC question day and may include history later than the stated question instant; each case reports its cutoff and affected session count.', 'Time budgets are checked between bounded SQLite operations; an individual synchronous operation cannot be preempted.', 'Protocol v1 lexical and hybrid lexical channels explicitly use overlap scoring, independently of the product ranking default. maxCandidates bounds lexical candidates and retained semantic candidates; semantic similarity scans all eligible indexed history before retaining its best candidates. Hybrid fusion combines up to 100 ranked lexical candidates with up to maxCandidates retained semantic candidates before selecting K.', 'No official dataset was downloaded or provenance authenticated by this runner. Caller embedding adapters determine their own networking and cost.'], protocolSources: LONGMEMEVAL_PROTOCOL_SOURCES };
+    limitations: ['Retrieval scores do not measure answer correctness, reasoning quality or semantic abstention.', 'K counts retrieved turns; evidence metrics deduplicate their session IDs. These are not official session-retrieval-at-K results.', 'Questions without evidence-session labels have null evidence metrics and are excluded from evidence averages.', 'Naive benchmark timestamps are interpreted as UTC for chronological ordering; no real-world timezone is inferred.', 'timestampPolicy defaults to strict-instant. Explicit question-day mode uses the end of the normalized UTC question day and may include history later than the stated question instant; each case reports its cutoff and affected session count.', 'Time budgets are checked between bounded SQLite operations; an individual synchronous operation cannot be preempted.', 'Protocol v1 lexical and hybrid lexical channels explicitly use overlap scoring, independently of the product ranking default. maxCandidates bounds lexical candidates and the dense channel is embedded only for a bounded window of the maxCandidates most recently created turns, independently of the unbounded full-history lexical index. Hybrid fusion combines up to 100 ranked lexical candidates with up to maxCandidates windowed semantic candidates before selecting K.', 'No official dataset was downloaded or provenance authenticated by this runner. Caller embedding adapters determine their own networking and cost.'], protocolSources: LONGMEMEVAL_PROTOCOL_SOURCES };
 }
 
 /** Bounded regular-file JSON reader; callers must already possess the dataset. */
