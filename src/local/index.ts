@@ -185,8 +185,11 @@ export class LocalMemory {
   #bm25TemporalBounds = { present: false };
   /** Highest clock reading this connection has taken at all — fed by `#time()`,
    * so writes count as well as recalls; see `liveClockSteppedBack` for why
-   * caching below it is unsafe. */
-  #bm25LiveClock = { highWater: '', seeded: false };
+   * caching below it is unsafe. `seededAt` is the `dataVersion` this mark was
+   * last seeded from the store at (undefined = never); see
+   * `seedLiveClockFromStore`'s doc comment for why keying on `dataVersion`
+   * instead of a one-time boolean matters (d2). */
+  #bm25LiveClock: { highWater: string; seededAt: number | undefined } = { highWater: '', seededAt: undefined };
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
@@ -496,9 +499,9 @@ export class LocalMemory {
    * the workspace must have scheduled no boundary crossing at all, and this
    * reading must not sit below the highest clock either this connection or the
    * store has seen. */
-  #liveStatsCacheable(now: string): boolean {
+  #liveStatsCacheable(now: string, dataVersion: number): boolean {
     if (hasTemporalBounds(this.#db, this.#workspaceId, this.#bm25TemporalBounds)) return false;
-    seedLiveClockFromStore(this.#db, this.#workspaceId, this.#bm25LiveClock);
+    seedLiveClockFromStore(this.#db, this.#workspaceId, this.#bm25LiveClock, dataVersion);
     return !liveClockSteppedBack(now, this.#bm25LiveClock);
   }
 
@@ -1728,18 +1731,28 @@ export class LocalMemory {
       AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0 AND s.token_count>0
       ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}`;
     const parameters = [this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds];
+    // Read once, before the cacheability check (which may itself re-seed the
+    // live clock mark from the store's own MAX(created_at) — d2 fix), and
+    // pass this same reading to both the seed and the cache entry below.
+    // Reading `data_version` first and `MAX(created_at)` second (inside
+    // `#liveStatsCacheable`) is the conservative order: if a foreign commit
+    // lands between the two reads, the seed may already see it, so the entry
+    // below is then stored under the *older* `dataVersion` and the next
+    // recall misses and re-seeds, rather than the reverse (stored under the
+    // new version with a seed that missed the commit).
+    const dataVersion = this.#dataVersion();
     const { documents, totalLength } = corpusStats({
       db: this.#db, cache: this.#bm25StatsCache, scope, parameters,
       key: corpusStatsCacheKey(input.includeUntrusted, kinds, time),
       // `||` short-circuits, so the live-only guard below is never reached for
       // a historical view — `liveClockSteppedBack` must not see a caller-chosen
       // `asOf`, only a clock reading.
-      cacheable: time.historical || this.#liveStatsCacheable(time.asOf),
+      cacheable: time.historical || this.#liveStatsCacheable(time.asOf, dataVersion),
       // The instant this scope is evaluated at. For a live view `#temporal()`
       // sets `asOf === knownAt === #time()`, so this is the reader's own clock
       // read once, with no extra tick of an injected or monotonic one.
       computedAt: time.asOf,
-      writeSeq: this.#writeSeq, dataVersion: this.#dataVersion(),
+      writeSeq: this.#writeSeq, dataVersion,
       isVisible: (temporalData) => !!this.#at(this.#decode({ data: temporalData })!, time),
     });
     if (!documents) return [];

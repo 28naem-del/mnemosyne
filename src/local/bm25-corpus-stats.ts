@@ -220,10 +220,24 @@ export function liveClockSteppedBack(now: string, state: { highWater: string }):
  * left is honest clock skew between engines, and declining to cache while this
  * reader is behind another writer's clock is the conservative answer for
  * precisely as long as the skew lasts.
+ *
+ * **Re-seeds, rather than seeding once** (d2 fix): a one-time boolean latch
+ * only covers the ordering "the foreign writer commits and closes *before*
+ * the reader exists". A foreign commit that lands *after* the reader's first
+ * live recall bumps `PRAGMA data_version` (correctly invalidating the cache
+ * entry) but, with a once-only latch, never raises `highWater` — so the
+ * recompute triggered by that invalidation is wrongly judged cacheable at the
+ * reader's own, still-low clock, and ordinary forward clock advance then
+ * serves that stale-low `documents` count forever: silent, total recall loss.
+ * Keying the reseed on `dataVersion` instead closes that gap at the same O(1)
+ * cost — this connection's own writes never change `data_version` (see
+ * {@link LocalMemory.#dataVersion}), so on a single connection the seed still
+ * runs exactly once, same as before; it only re-runs when some *other*
+ * connection has actually committed since the last time this ran.
  */
-export function seedLiveClockFromStore(db: DatabaseSync, workspaceId: string, state: { highWater: string; seeded: boolean }): void {
-  if (state.seeded) return;
-  state.seeded = true;
+export function seedLiveClockFromStore(db: DatabaseSync, workspaceId: string, state: { highWater: string; seededAt: number | undefined }, dataVersion: number): void {
+  if (state.seededAt === dataVersion) return;
+  state.seededAt = dataVersion;
   const row = db.prepare('SELECT MAX(created_at) AS high FROM memories WHERE workspace_id=?').get(workspaceId) as { high: string | null } | undefined;
   if (typeof row?.high === 'string' && row.high > state.highWater) state.highWater = row.high;
 }
