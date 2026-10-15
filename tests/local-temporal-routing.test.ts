@@ -405,3 +405,87 @@ describe('the ordering stage protects the podium a reranker produced', () => {
     expect(routed).toEqual([seeded[11], seeded[10], seeded[9], seeded[5], seeded[8], seeded[7], seeded[6], seeded[4], seeded[3], seeded[2], seeded[1], seeded[0]]);
   });
 });
+
+/**
+ * T1.4 option B, pre-registered in
+ * the T1.4 analysis note (option B): a "when did…" /
+ * "how long…" style question usually carries no parseable date of its own (the
+ * time is the ANSWER, not a constraint), so `#route` correctly declines it. This
+ * prior reorders candidates by whether their OWN text is time-bearing instead,
+ * strictly when routing is already opted in and the window parser found
+ * nothing — so it can never fire on the default path or compete with an actual
+ * parsed window.
+ */
+describe('T1.4 option B: the when-intent prior', () => {
+  /** Seven lexically-similar candidates; only one mentions an actual date, so
+   * nothing but that difference can move it. */
+  function seedWhenIntent(db: LocalMemory): { plain: string[]; dated: string } {
+    const plain = Array.from({ length: 6 }, (_value, index) =>
+      db.store(fact(`launch report filed by team member number ${index + 1}`)).id);
+    const dated = db.store(fact('launch report filed by team member number 7 on 10 March 2023')).id;
+    return { plain, dated };
+  }
+
+  it('changes nothing until temporal routing is opted in', () => {
+    const db = memory();
+    const { dated } = seedWhenIntent(db);
+    const query = 'when did the launch happen';
+    const plain = ids(db.recall({ query, limit: 10 }));
+    expect(ids(db.recall({ query, limit: 10, temporalRouting: 'off' }))).toEqual(plain);
+    expect(plain.indexOf(dated)).toBeGreaterThan(0);
+  });
+
+  it('promotes the candidate whose own text is time-bearing, without dropping any', () => {
+    const db = memory();
+    const { dated } = seedWhenIntent(db);
+    const query = 'when did the launch happen';
+    const off = ids(db.recall({ query, limit: 10 }));
+    const auto = ids(db.recall({ query, limit: 10, temporalRouting: 'auto' }));
+    expect(new Set(auto)).toEqual(new Set(off));
+    expect(auto).toHaveLength(off.length);
+    expect(auto[0]).toBe(dated);
+    // No window was parsed — this is the predicate prior, not window routing.
+    expect(retrievalOf(db).temporalRouting).toBeUndefined();
+  });
+
+  it('does not fire on a query that is not when-intent-shaped', () => {
+    const db = memory();
+    const { dated } = seedWhenIntent(db);
+    const query = 'tell me about the launch report';
+    const off = ids(db.recall({ query, limit: 10 }));
+    const auto = ids(db.recall({ query, limit: 10, temporalRouting: 'auto' }));
+    expect(auto).toEqual(off);
+    expect(off.indexOf(dated)).toBe(auto.indexOf(dated));
+  });
+
+  it('defers to real window routing when the query also names a parseable date', () => {
+    const db = memory();
+    seedWhenIntent(db);
+    const query = 'when did the launch happen before March 2023';
+    db.recall({ query, limit: 10, temporalRouting: 'auto' });
+    // The window parser won, not the when-intent predicate: a real relation is
+    // recorded, which only ever happens on the window-routing branch.
+    expect(retrievalOf(db).temporalRouting?.relation).toBe('before');
+  });
+
+  it('is a no-op on the lexical-only path, which never calls #hybridRecall', () => {
+    const db = memory({ embedder: null, retrieval: 'lexical' });
+    const { dated } = seedWhenIntent(db);
+    const query = 'when did the launch happen';
+    const off = ids(db.recall({ query, limit: 10 }));
+    const auto = ids(db.recall({ query, limit: 10, temporalRouting: 'auto' }));
+    expect(auto).toEqual(off);
+    expect(off.indexOf(dated)).toBe(auto.indexOf(dated));
+  });
+
+  it('promotes on the asynchronous hybrid path too', async () => {
+    const db = memory();
+    const { dated } = seedWhenIntent(db);
+    const query = 'when did the launch happen';
+    const options = { embedder: stubEmbedder() };
+    const off = ids(await db.recallHybrid({ query, limit: 10 }, options));
+    const auto = ids(await db.recallHybrid({ query, limit: 10, temporalRouting: 'auto' }, options));
+    expect(new Set(auto)).toEqual(new Set(off));
+    expect(auto[0]).toBe(dated);
+  });
+});

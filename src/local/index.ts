@@ -21,7 +21,7 @@ import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared
 // after './ledger.js' and directly after './reranking/shared.js', and this gap
 // is the one place a third insertion merges without a conflict.
 import type { LedgerTemporalRouting } from './types.js';
-import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR, TEMPORAL_WINDOW_BOUNDS, type TemporalWindow } from './temporal-query.js';
+import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR, TEMPORAL_WINDOW_BOUNDS, WHEN_INTENT_QUERY_RE, isTimeBearingText, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { buildContextPassage, contextBudget, contextualChannel, type ContextNeighbour } from './reranking/context.js';
 import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
@@ -85,6 +85,17 @@ const TEMPORAL_PRIORITY_SLACK_MS = 7 * 86_400_000;
  * guards against the FINAL pass demoting a strong match, not against the
  * candidate pass having changed which matches the reranker was shown. */
 const TEMPORAL_PRIORITY_KEEP = 3;
+/**
+ * Bound for the T1.4 option-B "when-intent" prior (see `WHEN_INTENT_QUERY_RE`
+ * and `#prioritizeTimeBearing`). Deliberately far shallower than
+ * `TEMPORAL_PRIORITY_DEPTH`: a time-bearing predicate is true for about 12% of
+ * all turns and about 79% of LoCoMo's own cat-2 evidence turns, so applying it
+ * at depth 1000 would let unrelated time-bearing turns from anywhere in the
+ * pool crowd the rerank slice. Bounding it to the top 100 fused candidates
+ * keeps the prior a reordering of candidates the ranker already thought were
+ * relevant, never a way to pull in an unrelated one.
+ */
+const TEMPORAL_WHEN_INTENT_DEPTH = 100;
 /** A query's own time expression, resolved into retrieval parameters. `window`
  * is the prioritisation window — the parsed one widened by
  * `TEMPORAL_PRIORITY_SLACK_MS` — while `entry.window` keeps the window the query
@@ -922,6 +933,35 @@ export class LocalMemory {
     return route ? this.#prioritize(results, route.window, (result) => result.memory.validFrom ?? result.memory.createdAt, TEMPORAL_PRIORITY_KEEP) : results;
   }
 
+  /**
+   * T1.4 option B: the "when-intent" prior. Stable partition of the candidate
+   * pool's head by whether each candidate's OWN text is time-bearing
+   * ({@link isTimeBearingText}), bounded to {@link TEMPORAL_WHEN_INTENT_DEPTH}
+   * rather than the full {@link TEMPORAL_PRIORITY_DEPTH}. Mirrors `#prioritize`'s
+   * partition mechanics exactly (same stability, same `keep`, same score
+   * reassignment) but tests the candidate's text instead of its date against a
+   * window, because there is no window here — the query named no date, only an
+   * intent to ask for one.
+   *
+   * ONLY ever called where the caller has already established `!route` (the
+   * window parser found nothing) and the caller opted into
+   * `temporalRouting: 'auto'`, so this can never fire on the default path and
+   * never competes with an actual parsed window.
+   */
+  #prioritizeTimeBearing<T extends { id: string; score: number }>(items: T[], keep: number, now: string): T[] {
+    const depth = Math.min(items.length, TEMPORAL_WHEN_INTENT_DEPTH);
+    const held = Math.min(keep, depth);
+    const head = items.slice(held, depth);
+    const inside: T[] = [], outside: T[] = [];
+    for (const item of head) {
+      const record = this.get(item.id);
+      (record && isTimeBearingText(record.text, now) ? inside : outside).push(item);
+    }
+    if (!inside.length || !outside.length) return items;
+    const scores = head.map((item) => item.score);
+    return [...items.slice(0, held), ...[...inside, ...outside].map((item, index) => ({ ...item, score: scores[index] }) as T), ...items.slice(depth)];
+  }
+
   #at(record: MemoryRecord, time: TemporalView, restoreInvalidated = true): MemoryRecord | null {
     if (record.createdAt > time.knownAt || (record.validFrom ?? record.createdAt) > time.asOf || (record.validUntil !== undefined && record.validUntil <= time.asOf)) return null;
     if (record.status === 'invalidated' && record.updatedAt <= time.knownAt && (!restoreInvalidated || !this.#historicalInvalidationValid(record, time))) return null;
@@ -1358,6 +1398,11 @@ export class LocalMemory {
     // never sees the in-window candidate cannot rank it, and the slice is where
     // that candidate would otherwise be lost.
     if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
+    // T1.4 option B: only when the window parser found nothing AND the caller
+    // opted into temporalRouting:'auto' AND the query's own wording asks for a
+    // time ("when did…", "how long…"). See WHEN_INTENT_QUERY_RE's doc.
+    const whenIntent = !route && input.temporalRouting === 'auto' && WHEN_INTENT_QUERY_RE.test(input.query);
+    if (whenIntent) ranked = this.#prioritizeTimeBearing(ranked, 0, time.asOf);
     // The contextual pass is offered only on the multi path, and only there does
     // #withReranker compose rather than replace: on the turn path the
     // cross-encoder's verdict is still the ranking, exactly as it always has been.
@@ -1368,6 +1413,7 @@ export class LocalMemory {
     // and the granularity blend is what defines that list. Prioritising first would let
     // the blend undo it.
     if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
+    if (whenIntent) ranked = this.#prioritizeTimeBearing(ranked, TEMPORAL_PRIORITY_KEEP, time.asOf);
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
@@ -2187,6 +2233,14 @@ export class LocalMemory {
     const multi = this.#multiGranularity(input, fused, { model, dimensions, query }, time, rrfK, rerankTopN, () => { this.#assertOpen(); this.#abort(options.signal); });
     let ranked = multi?.ranked ?? [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), 0);
+    // T1.4 option B: see the identical comment in #hybridRecall. On this
+    // asynchronous path the pre-rerank partition also decides membership in the
+    // reranked slice (candidates are truncated to rerankTopN right after), so
+    // this prior can promote a time-bearing candidate into the result set and
+    // not just its rank — the same property the window-based prior already has
+    // here, and a deliberate, measured part of what option B is meant to do.
+    const whenIntent = !route && input.temporalRouting === 'auto' && WHEN_INTENT_QUERY_RE.test(input.query);
+    if (whenIntent) ranked = this.#prioritizeTimeBearing(ranked, 0, time.asOf);
     if (options.reranker && ranked.length) {
       let candidates: (ScoredId & { memory: MemoryRecord })[] = [];
       // The subset of `candidates` a context window was actually built for. The
@@ -2239,6 +2293,7 @@ export class LocalMemory {
     // gates after provider work so corrections/failures cannot revive stale text.
     time = this.#temporal(input);
     if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
+    if (whenIntent) ranked = this.#prioritizeTimeBearing(ranked, TEMPORAL_PRIORITY_KEEP, time.asOf);
     const results: RecallResult[] = [];
     for (const entry of ranked) {
       const current = this.get(entry.id);
