@@ -205,7 +205,7 @@ export async function matchedBenchmark(args = process.argv.slice(2)): Promise<vo
   const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: {
     corpus: { type: 'string' }, systems: { type: 'string' }, 'top-k': { type: 'string' },
     'max-corpora': { type: 'string' }, 'max-questions': { type: 'string' }, out: { type: 'string' },
-    'corpus-offset': { type: 'string' }, merge: { type: 'string' }, stride: { type: 'string' },
+    'corpus-offset': { type: 'string' }, merge: { type: 'string' }, stride: { type: 'string' }, 'max-context-units': { type: 'string' },
     'mem0-extraction': { type: 'string' }, 'no-rerank': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, help: { type: 'boolean' },
   } });
   if (values.help) {
@@ -219,6 +219,8 @@ export async function matchedBenchmark(args = process.argv.slice(2)): Promise<vo
   --stride N                         score every Nth question (LongMemEval-S is grouped by
                                      category, so a prefix subset would be one category)
   --max-questions N                  bound the question count
+  --max-context-units N              packing budget per question in UTF-8 bytes (default 8192);
+                                     a budget that holds all K hits records the full ranked list
   --out DIR                          write one raw JSON report per corpus
   --merge DIR                        combine the part files in DIR into one report
   --mem0-extraction off|llm          Mem0 write path. off = no LLM, free, offline (default)
@@ -261,6 +263,8 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
   const stride = values.stride !== undefined ? Number(values.stride) : 1;
   if (!Number.isSafeInteger(stride) || stride < 1 || stride > 1000) throw new Error('--stride must be between 1 and 1000');
   const maxQuestions = values['max-questions'] !== undefined ? Number(values['max-questions']) : dry ? 20 : undefined;
+  const maxContextUnits = values['max-context-units'] !== undefined ? Number(values['max-context-units']) : undefined;
+  if (maxContextUnits !== undefined && (!Number.isSafeInteger(maxContextUnits) || maxContextUnits < 1 || maxContextUnits > 16_777_216)) throw new Error('--max-context-units must be between 1 and 16777216');
   const requested = (values.systems ?? '').split(',').map(entry => entry.trim()).filter(Boolean);
   const noSystems = requested.length === 1 && requested[0] === 'none';
 
@@ -301,6 +305,7 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
     const started = Date.now();
     const report = await runCorpusBenchmark(scoped, {
       topK, includeBm25: true, hybridLexicalScoring: 'bm25', includeHybridWithoutRerank: true,
+      ...(maxContextUnits !== undefined ? { maxContextUnits } : {}),
       ...(embedder ? { embedder: embedder.forPassages(), queryEmbedder: embedder.forQueries() } : {}),
       ...(reranker ? { reranker: asMemoryReranker(reranker), rerankTopN: 50 } : {}),
       ...(systems.length ? { systems } : {}),
