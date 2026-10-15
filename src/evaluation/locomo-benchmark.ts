@@ -35,7 +35,7 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
     file: { type: 'string' }, out: { type: 'string' }, 'top-k': { type: 'string' },
     'min-recall': { type: 'string' }, 'max-questions': { type: 'string' }, lexical: { type: 'boolean' }, help: { type: 'boolean' },
     'no-rerank': { type: 'boolean' }, 'rerank-top-n': { type: 'string' }, granularity: { type: 'string' }, 'rerank-context': { type: 'string' }, 'rerank-context-top-n': { type: 'string' }, 'corpus-index-base': { type: 'string' },
-    'temporal-routing': { type: 'boolean' }, 'temporal-category': { type: 'string' }, 'min-temporal-gain': { type: 'string' },
+    'temporal-routing': { type: 'boolean' }, 'temporal-category': { type: 'string' }, 'min-temporal-gain': { type: 'string' }, 'max-overall-drop': { type: 'string' },
   } });
   const granularity = values.granularity ?? 'turn';
   if (granularity !== 'turn' && granularity !== 'multi') throw new Error('--granularity must be turn or multi');
@@ -47,8 +47,10 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
     console.log('node dist/evaluation/locomo-benchmark.js [--file CORPUS.json] [--out REPORT.json] [--top-k 10] [--min-recall 70] [--max-questions N] [--lexical] [--no-rerank] [--rerank-top-n 50] [--granularity turn|multi] [--rerank-context 2] [--rerank-context-top-n 32]\n'
       + 'Defaults to benchmarks/data/locomo10.json, or $MNEMOSYNE_LOCOMO_PATH. --lexical skips both models and reports the zero-model baselines only.\n'
       + '--no-rerank measures the fused ranking without the cross-encoder, which is the T1.1 configuration.\n'
-      + '--temporal-routing [--temporal-category locomo:2] [--min-temporal-gain 3.0] scores a hybrid-temporal condition with the engine\'s\n'
-      + 'temporal query routing enabled beside the unrouted hybrid one, from a single ingestion, and reports every question category separately.\n'
+      + '--temporal-routing [--temporal-category locomo:2] [--min-temporal-gain 3.0] [--max-overall-drop 0.5] scores a hybrid-temporal\n'
+      + 'condition with the engine\'s temporal query routing enabled beside the unrouted hybrid one, from a single ingestion, and reports\n'
+      + 'every question category separately. The gate is the build brief\'s conjunction: the named category must gain at least\n'
+      + '--min-temporal-gain points AND overall recall@10 must not drop more than --max-overall-drop points — both printed and both checked.\n'
       + '--granularity multi also derives a session and summary index over the same chunks and fuses it into the hybrid condition.\n'
       + '--rerank-context K rescores each candidate a second time against a passage that leads with its own text and continues with\n'
       + 'its K in-session neighbours either side, and fuses that ordering as one more channel. It needs --granularity multi; at 0 or on\n'
@@ -105,6 +107,10 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   const temporalCategory = values['temporal-category'] ?? 'locomo:2';
   const minTemporalGain = Number(values['min-temporal-gain'] ?? 3);
   if (!Number.isFinite(minTemporalGain) || minTemporalGain < -100 || minTemporalGain > 100) throw new Error('--min-temporal-gain must be between -100 and 100');
+  // The build brief's own number (t1.4-temporal-routing/BRIEF.md:17): "overall
+  // recall@10 does not drop more than 0.5 pts". Never checked until now.
+  const maxOverallDrop = Number(values['max-overall-drop'] ?? 0.5);
+  if (!Number.isFinite(maxOverallDrop) || maxOverallDrop < -100 || maxOverallDrop > 100) throw new Error('--max-overall-drop must be between -100 and 100');
   const started = Date.now();
   const report = await runCorpusBenchmark(dataset, {
     topK, includeBm25: true, hybridLexicalScoring: 'bm25',
@@ -176,6 +182,25 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
       process.exitCode = 1; return;
     }
     console.log(`PASS: ${temporalCategory} recall@${topK} gained ${gain.toFixed(2)} points, at or above the required ${minTemporalGain.toFixed(2)}.`);
+    // The build brief's full Exit clause is a conjunction — the subset gain
+    // above AND "overall recall@10 does not drop more than --max-overall-drop
+    // pts" — but only the subset half was ever checked here. Printed and
+    // gated the same way, from the same single ingestion, so a routing change
+    // that helps the named subset by harming everything else cannot pass.
+    const overallOff = report.summaries.hybrid?.meanRecall;
+    const overallOn = report.summaries['hybrid-temporal']?.meanRecall;
+    if (overallOff === undefined || overallOff === null || overallOn === undefined || overallOn === null) {
+      console.error('FAIL: overall hybrid/hybrid-temporal recall has no scored value to compare.'); process.exitCode = 1; return;
+    }
+    const drop = (overallOff - overallOn) * 100;
+    const overallOffPct = overallOff * 100, overallOnPct = overallOn * 100;
+    if (drop > maxOverallDrop) {
+      console.error(`FAIL: overall recall@${topK} dropped ${drop.toFixed(2)} points (${overallOffPct.toFixed(2)} -> ${overallOnPct.toFixed(2)}), `
+        + `more than the allowed ${maxOverallDrop.toFixed(2)} (equivalently, a floor of ${(overallOffPct - maxOverallDrop).toFixed(2)} off this run's own baseline).`);
+      process.exitCode = 1; return;
+    }
+    console.log(`PASS: overall recall@${topK} ${overallOffPct.toFixed(2)} -> ${overallOnPct.toFixed(2)} (${drop >= 0 ? '-' : '+'}${Math.abs(drop).toFixed(2)}), `
+      + `within the allowed ${maxOverallDrop.toFixed(2)}-point drop.`);
   }
 }
 
