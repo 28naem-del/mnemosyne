@@ -755,5 +755,213 @@ describe('BM25 corpus statistics cache', () => {
       expect(probe.calls()).toBe(0); // still served from the warm entry
       rmSync(root, { recursive: true, force: true });
     });
+
+    // --- d2 regression: seedLiveClockFromStore's `seeded` boolean latch only
+    // ever reads the store's MAX(created_at) once per connection. A foreign
+    // commit that lands AFTER the reader's first live recall can never raise
+    // `highWater` after that point, so the recompute triggered by the commit
+    // (correctly invalidated via `data_version`) is wrongly judged cacheable
+    // at the reader's low clock, and ordinary forward advance then serves it
+    // forever. Fixed by keying the seed on `PRAGMA data_version` instead of a
+    // boolean, so a later foreign commit re-seeds `highWater` too.
+    it('does not serve statistics cached below a clock another connection wrote at AFTER the reader\'s first recall (d2)', () => {
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-d2-crossconn-after-'));
+      const path = join(root, 'memory.sqlite');
+      const shared = { path, workspaceId: 'test', retrieval: 'lexical' as const };
+
+      const seed = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(1)) });
+      seed.store(fact('widget alpha one', { visibility: 'workspace' }));
+      seed.store(fact('widget beta two', { visibility: 'workspace' }));
+      seed.store(fact('widget gamma three', { visibility: 'workspace' }));
+      seed.store(fact('widget delta four', { visibility: 'workspace' }));
+      seed.close();
+
+      let current = 3; // reader opens behind, and takes its FIRST live recall here
+      const reader = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(current)) });
+      opened.push(reader);
+      expect(reader.recall({ query: 'widget', lexicalScoring: 'bm25' })).toHaveLength(4); // latches `seeded`
+
+      const writer = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(12)) });
+      writer.store(fact('widget epsilon five', { visibility: 'workspace' }));
+      writer.store(fact('widget zeta six', { visibility: 'workspace' }));
+      writer.close(); // bumps the reader's `data_version`, but NOT after seeding above
+
+      reader.recall({ query: 'widget', lexicalScoring: 'bm25' }); // recomputes at day(3); must not cache a stale-low count
+
+      const probe = countCorpusStatsCalls();
+      current = 20; // ordinary forward advance, no step back anywhere
+      const after = reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      const recomputed = probe.calls();
+      vi.restoreAllMocks();
+
+      const cold = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(20)) });
+      opened.push(cold);
+      const truth = cold.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(truth).toHaveLength(6);
+      expect(after).toHaveLength(6); // d2: this returned 0
+      expect(pairs(after)).toEqual(pairs(truth));
+      expect(recomputed).toBe(1); // the day(20) recall must recompute, not hit a stale entry
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    // Minimal shape (MIN-d2): the reader's first live recall sees an EMPTY
+    // store, so `documents === 0` and `#bm25Recall`'s `if (!documents) return
+    // []` fires total loss for every query on that connection, not just the
+    // one whose df crosses `documents`. Pins that an unrelated term also
+    // recovers its true rows once the store is no longer empty from the
+    // reader's point of view.
+    it('does not serve a stale empty-at-reader-clock entry after a later foreign write (MIN-d2 shape)', () => {
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-min-d2-'));
+      const path = join(root, 'memory.sqlite');
+      const shared = { path, workspaceId: 'test', retrieval: 'lexical' as const };
+
+      let current = 5;
+      const reader = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(current)) });
+      opened.push(reader);
+      expect(reader.recall({ query: 'widget', lexicalScoring: 'bm25' })).toHaveLength(0); // store is empty: latches `seeded` at documents=0
+
+      const writer = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(25)) });
+      writer.store(fact('widget alpha three', { visibility: 'workspace' }));
+      writer.store(fact('widget beta four', { visibility: 'workspace' }));
+      writer.store(fact('gadget unrelated five', { visibility: 'workspace' }));
+      writer.close();
+
+      reader.recall({ query: 'widget', lexicalScoring: 'bm25' }); // recomputes at day(5): still 0 rows visible, still correct
+
+      current = 29; // ordinary forward advance past every created_at
+      const warmWidget = reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      const warmGadget = reader.recall({ query: 'gadget', lexicalScoring: 'bm25' }); // unrelated term, same cache entry
+
+      const cold = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(29)) });
+      opened.push(cold);
+      expect(warmWidget).toHaveLength(2); // MIN-d2: this returned 0
+      expect(warmGadget).toHaveLength(1); // the total-loss path drops every query, not just the df-crossing one
+      expect(cold.recall({ query: 'widget', lexicalScoring: 'bm25' })).toHaveLength(2);
+      expect(cold.recall({ query: 'gadget', lexicalScoring: 'bm25' })).toHaveLength(1);
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    // The blast radius VERIFY-FULL widened: compile() always uses the lexical
+    // (#rankedRecall -> #bm25Recall) path regardless of retrieval mode, so a
+    // fully modelled hybrid engine still loses every citation when d2 fires,
+    // even though recall()'s dense channel can mask the same loss.
+    it('does not lose compile() citations to a post-first-recall foreign commit, on a hybrid engine', () => {
+      const constant = Object.freeze({
+        model: 'test-bm25-clock-embedder@1', dimensions: 4,
+        embedSync: (texts: string[]) => texts.map(() => [0, 1, 0, 0]),
+        embed: async (texts: string[]) => texts.map(() => [0, 1, 0, 0]),
+        forQueries: () => ({ model: 'test-bm25-clock-embedder@1', dimensions: 4, embed: async (texts: string[]) => texts.map(() => [0, 1, 0, 0]) }),
+        forPassages: () => ({ model: 'test-bm25-clock-embedder@1', dimensions: 4, embed: async (texts: string[]) => texts.map(() => [0, 1, 0, 0]) }),
+        close: () => {},
+      });
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-d2-compile-'));
+      const path = join(root, 'memory.sqlite');
+      const shared = { path, workspaceId: 'test', retrieval: 'hybrid' as const, embedder: constant };
+
+      const seed = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(1)) });
+      seed.store(fact('widget alpha one', { visibility: 'workspace' }));
+      seed.store(fact('widget beta two', { visibility: 'workspace' }));
+      seed.store(fact('widget gamma three', { visibility: 'workspace' }));
+      seed.store(fact('widget delta four', { visibility: 'workspace' }));
+      seed.close();
+
+      let current = 3;
+      const reader = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(current)) });
+      opened.push(reader);
+      reader.recall({ query: 'widget', lexicalScoring: 'bm25' }); // latches `seeded`
+
+      const writer = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(12)) });
+      writer.store(fact('widget epsilon five', { visibility: 'workspace' }));
+      writer.store(fact('widget zeta six', { visibility: 'workspace' }));
+      writer.close();
+
+      reader.recall({ query: 'widget', lexicalScoring: 'bm25' }); // recomputes and caches at the low clock
+
+      current = 20;
+      const warm = reader.compile({ query: 'widget', maxTokens: 4096 });
+
+      const cold = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(20)) });
+      opened.push(cold);
+      const truth = cold.compile({ query: 'widget', maxTokens: 4096 });
+      expect(truth.citations).toHaveLength(6);
+      expect(warm.citations).toHaveLength(6); // d2: this was 0 even on the default hybrid constructor
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    // Cost guard: the seed must not become a per-recall cost, but it also must
+    // not stay latched forever — it should re-run exactly when another
+    // connection has committed since the last time it ran, and not otherwise.
+    it('re-seeds the live clock mark only when another connection has committed since the last seed', () => {
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-d2-reseed-guard-'));
+      const path = join(root, 'memory.sqlite');
+      const shared = { path, workspaceId: 'test', retrieval: 'lexical' as const };
+      const seed = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(1)) });
+      seed.store(fact('widget alpha', { visibility: 'workspace' }));
+      seed.close();
+
+      let seeds = 0;
+      const prepare = DatabaseSync.prototype.prepare;
+      vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function(this: DatabaseSync, sql: string) {
+        if (sql.includes('MAX(created_at)')) seeds++;
+        return prepare.call(this, sql);
+      });
+
+      let current = 3;
+      const reader = createLocalMemory({ ...shared, agentId: 'reader', now: () => new Date(day(current)) });
+      opened.push(reader);
+      reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(seeds).toBe(1); // first live recall on this connection
+
+      current = 4; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      current = 5;
+      reader.store(fact('widget beta', { visibility: 'workspace' })); // this connection's OWN write: never moves data_version
+      reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(seeds).toBe(1); // no foreign commit yet
+
+      const writer = createLocalMemory({ ...shared, agentId: 'writer', now: () => new Date(day(9)) });
+      writer.store(fact('widget gamma', { visibility: 'workspace' }));
+      writer.close(); // a foreign commit: bumps this reader's data_version
+
+      current = 6; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(seeds).toBe(2); // re-seeded exactly once for the foreign commit
+
+      current = 7; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      current = 8; reader.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(seeds).toBe(2); // and not again until the next foreign commit
+      vi.restoreAllMocks();
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    // Ordinary multi-handle use with a SHARED clock must keep caching exactly
+    // as before: every foreign `created_at` is <= the shared clock's current
+    // reading, so a re-seed can never push `highWater` above `now`, and the
+    // fix must not turn this into a per-recall cost.
+    it('still caches across a foreign commit when both handles share one clock', () => {
+      const root = mkdtempSync(join(tmpdir(), 'mnemosyne-bm25-d2-shared-clock-'));
+      const path = join(root, 'memory.sqlite');
+      const shared = { path, workspaceId: 'test', retrieval: 'lexical' as const };
+      const clock = { t: 5 };
+      const now = () => new Date(day(clock.t));
+
+      const a = createLocalMemory({ ...shared, agentId: 'a', now });
+      opened.push(a);
+      a.store(fact('widget alpha', { visibility: 'workspace' }));
+      a.recall({ query: 'widget', lexicalScoring: 'bm25' }); // latches the seed on `a`
+
+      const b = createLocalMemory({ ...shared, agentId: 'b', now });
+      b.store(fact('widget beta', { visibility: 'workspace' })); // foreign commit from `a`'s point of view, same clock instant
+      b.close();
+
+      const probe = countCorpusStatsCalls();
+      clock.t = 6;
+      const first = a.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(probe.calls()).toBe(1); // the foreign commit correctly forces one recompute
+      clock.t = 7;
+      const second = a.recall({ query: 'widget', lexicalScoring: 'bm25' });
+      expect(probe.calls()).toBe(1); // and is cached from there on, same clock never looking stepped-back
+      expect(first).toHaveLength(2);
+      expect(second).toHaveLength(2);
+      rmSync(root, { recursive: true, force: true });
+    });
   });
 });
