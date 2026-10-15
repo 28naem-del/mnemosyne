@@ -1,0 +1,26 @@
+=== tag=optb convs=0-9 parts=10 total attempts=11916 ===
+dist used for summarizeAttempts: <job-dir>/lane
+
+Overall recall@10 by condition:
+  hybrid           recall@10=73.57  annotated=1531  questions=1986  completed=1986  errors=0
+  hybrid-temporal  recall@10=75.34  annotated=1531  questions=1986  completed=1986  errors=0
+
+Per-category recall@10, routing off -> on:
+  locomo:1      [ 281]  49.29 -> 49.18  -0.12
+  locomo:2 *    [ 320]  79.92 -> 83.20  +3.28
+  locomo:3      [  89]  42.86 -> 47.91  +5.06
+  locomo:4      [ 841]  82.52 -> 83.99  +1.47
+  locomo:5      [   0]  n/a -> n/a  n/a
+
+--- Gate check 1: category gain ---
+PASS: locomo:2 recall@10 gained 3.28 points, at or above the required 3.00.
+--- Gate check 2: overall floor ---
+PASS: overall recall@10 73.57 -> 75.34 (+1.76), within the allowed 0.50-point drop.
+
+--- Routed-subset analysis (selected top-10 differs between hybrid and hybrid-temporal) ---
+questions where routing changed the top-10 selection: 550 (of which locomo:2: 301)
+questions byte-identical (unrouted): 1436 (of which locomo:2: 20)
+routed-subset recall@10: off=78.25  on=83.89  delta=+5.64  n=550
+per-question byte-identity count for unrouted questions: 1436 / 1986 total paired questions
+
+=== end ===

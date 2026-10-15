@@ -1,0 +1,8 @@
+=== T1.2 GATE reading run2 (same config as run1) — tree 9bb34a1 ===
+ 1:29  up  4:15, 3 users, load averages: 2.71 3.62 4.79
+config=gate  store=<job-dir>/.benchmark-ann/store1m.sqlite  maxCandidates=1000  rerank=false  ledger=true  n=300  warmup=20  records=1000000
+  cold-start (1st recall, HNSW load + pending-vector drain + corpusStats miss): 23632.92ms
+  hybrid recall()    n=300  p50=105.24ms  p95=146.87ms [CI 141.12-161.14]  p99=182.81ms  max=349.65ms
+DONE config=gate
+wall 61s
+ 1:30  up  4:16, 3 users, load averages: 2.54 3.42 4.64

@@ -1,0 +1,1 @@
+tip-c1 (worktree tip build) vs optb-c1 (option-B build): {"no-memory":{"same":105,"diff":0},"full-context":{"same":105,"diff":0},"lexical":{"same":105,"diff":0},"bm25":{"same":105,"diff":0},"hybrid":{"same":105,"diff":0},"hybrid-temporal":{"same":105,"diff":0}} impl d724e7378c07 vs 4e16531fe7cf

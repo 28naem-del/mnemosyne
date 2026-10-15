@@ -1,0 +1,11 @@
+optb-c0: hybrid identical 199/199
+optb-c1: hybrid identical 105/105
+optb-c2: hybrid identical 193/193
+optb-c3: hybrid identical 260/260
+optb-c4: hybrid identical 242/242
+optb-c5: hybrid identical 158/158
+optb-c6: hybrid identical 190/190
+optb-c7: hybrid identical 239/239
+optb-c8: hybrid identical 196/196
+optb-c9: hybrid identical 204/204
+TOTAL optb: identical 1986, different 0, missing convs []

@@ -1,0 +1,18 @@
+=== T1.2 GATE reading run1: hybrid recall(), real ONNX query embed, rerank OFF, ledger ON, mc=1000, n=300 — tree 9bb34a1 ===
+ 1:28  up  4:13, 3 users, load averages: 1.95 3.75 4.93
+config=gate  store=<job-dir>/.benchmark-ann/store1m.sqlite  maxCandidates=1000  rerank=false  ledger=true  n=300  warmup=20  records=1000000
+  cold-start (1st recall, HNSW load + pending-vector drain + corpusStats miss): 26381.31ms
+  hybrid recall()    n=300  p50=102.38ms  p95=139.40ms [CI 132.34-154.15]  p99=166.81ms  max=539.75ms
+DONE config=gate
+       63.27 real        40.01 user        13.54 sys
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                  16  messages sent
+                  10  messages received
+                   0  signals received
+wall 64s
+ 1:29  up  4:14, 3 users, load averages: 2.77 3.64 4.81

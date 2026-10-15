@@ -23,7 +23,11 @@ on this branch and can be read with `git show <sha>`.
   degrading. No mode changes what a record scores or whether it may be returned: every candidate an
   index proposes is re-authorized and rescored against the stored vector, so an index is a shortlist
   and never an authority. `c8f994c`, `0f244e5`, `7730916`, `ab60b9a`, `ef8458f`, `745c299`,
-  `2dcdf7a`.
+  `2dcdf7a`. **Its Tier 1 exit target, p95 recall latency under 50 ms at 1,000,000 records, is not
+  met.** Hybrid `recall()` on a 1M-record `hnsw` store (real query embedding, reranker off, ledger
+  on) measured p95 139.4, 146.9 and 223.3 ms in three fresh processes of 300 queries each on a quiet
+  host; the BM25 channel alone is p95 69.5 ms at that size. Commands and outputs are in
+  `reports/t1-targets/`.
 - **`sqliteVecPath`** — an explicit path to a `sqlite-vec` loadable extension, with deliberately no
   environment-variable equivalent, so a machine-wide variable can no longer decide what every
   `LocalMemory` on the host `dlopen`s. `a5b9db7`.
@@ -34,7 +38,14 @@ on this branch and can be read with `git show <sha>`.
 - **Opt-in temporal routing** on `recall` and context compilation: a retrieval query's absolute and
   relative dates are parsed and can set an `asOf`, behind an explicit switch and a minimum parser
   confidence. A query-parsed clock can never reach past the present. `f76ded0`, `efea0a9`,
-  `3a420ae`, `9c5634b`; the benchmark reports the temporal-reasoning subset separately in `bb6e698`.
+  `3a420ae`, `9c5634b`; the benchmark reports the temporal-reasoning subset separately in `bb6e698`. The same switch now
+  also applies a when-intent prior (`f5cc379`): when a query asks *when* something happened but
+  carries no date the router can use, candidates whose own text carries a parseable date are promoted
+  within a fixed depth. On the full LoCoMo set (1,531 annotated questions) the date window alone gains
+  **+2.45 pts** recall@10 on the temporal category (79.92 → 82.37), **short of its +3.0 gate**; with
+  the prior the gain is **+3.28** (79.92 → 83.20) and overall recall@10 rises 73.57 → 75.34, which
+  meets the gate by 0.28 pts. The prior's pattern was designed by reading that same category, so the
+  margin is in-sample. The LoCoMo benchmark now checks the gate's overall-floor half too (`464a42b`).
 - **Cross-encoder reranking** of the fused candidate set, with a bundled int8 ONNX embedder that
   runs synchronously and offline. `72dcb20`, `ebb48ed`, `6503021`.
 - **Contextual reranking (T1.3)** — a candidate is scored with its in-session neighbours rather
@@ -71,6 +82,26 @@ on this branch and can be read with `git show <sha>`.
   computed by its generator rather than hardcoded, and the npm keyword claiming the system
   improves itself — a v1 leftover asserting an unbuilt capability — is removed. `03061fc`,
   `2fd354c`, `4dd6769`, `4a45c0e`, `88d8501`.
+- **`get()` and the outcome lookup reuse prepared statements** instead of re-preparing per call;
+  results are unchanged (differential over 60 queries, identical scores and outcomes). `9591e03`.
+- **The benchmark reader adapter** (`createCompatibleBenchmarkReader`) accepts a reply whose JSON
+  object is followed by prose, takes named prompt versions (`promptVersion`; the default is
+  byte-identical to before) and forwards an optional `asOf`. `9a5724d`, `a8e400e`, `3c1d9cd`. With
+  prompt `v4_stacked`, `asOf` and weekday-formatted dates, and the top-20 reranked hits packed to
+  16 KB, `anthropic/claude-sonnet-4.6` answers **409 of LongMemEval-S's 500 questions correctly
+  (81.8%, 95% CI 78.2–84.9)** by the `anthropic/claude-haiku-4.5` judge, against 71.2% for the
+  default prompt at 8 KB on a 250-question sample; exact match is 7.6%. The prompt and budget were
+  chosen on 100 of the 500 questions; the other 400 score 82.3%. This is a separate driver
+  (`reports/t1.7-accuracy/`), not the LongMemEval runner, which still leaves answer quality
+  unevaluated.
+
+### Fixed
+
+- **A second connection's BM25 statistics could go stale-low and silently drop every result.** A
+  reader whose first live BM25 recall happened before another connection's writes kept the corpus
+  size it saw at that first read, so `recall()` returned 0 rows where 6 were true and `compile()`
+  lost its citations on the default hybrid path. The live clock is now re-seeded whenever
+  `PRAGMA data_version` moves. `e3f5f00` (regression tests, red before the fix), `2d2ddb7`.
 
 ## [2.0.0-rc.9] — packaging and release documentation, 2026-09-13
 

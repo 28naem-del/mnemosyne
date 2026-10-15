@@ -1,0 +1,16 @@
+== orig convs 0-4
+  locomo:2 *    [ 156]  84.99 -> 86.27  +1.28
+FAIL: locomo:2 recall@10 gained 1.28 points, below the required 3.00.
+PASS: overall recall@10 73.77 -> 74.34 (+0.57), within the allowed 0.50-point drop.
+== orig convs 5-9
+  locomo:2 *    [ 164]  75.10 -> 78.66  +3.56
+PASS: locomo:2 recall@10 gained 3.56 points, at or above the required 3.00.
+PASS: overall recall@10 73.38 -> 76.02 (+2.63), within the allowed 0.50-point drop.
+== optb convs 0-4
+  locomo:2 *    [ 156]  84.99 -> 87.23  +2.24
+FAIL: locomo:2 recall@10 gained 2.24 points, below the required 3.00.
+PASS: overall recall@10 73.77 -> 74.53 (+0.77), within the allowed 0.50-point drop.
+== optb convs 5-9
+  locomo:2 *    [ 164]  75.10 -> 79.37  +4.27
+PASS: locomo:2 recall@10 gained 4.27 points, at or above the required 3.00.
+PASS: overall recall@10 73.38 -> 76.13 (+2.74), within the allowed 0.50-point drop.

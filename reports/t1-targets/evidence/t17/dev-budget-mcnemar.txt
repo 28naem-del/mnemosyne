@@ -1,0 +1,6 @@
+== 24576 vs 8192
+"mcnemar":{"pairedN":100,"baselineCorrect":76,"runCorrect":79,"gained":5,"lost":2,"pTwoSidedExact":0.4531
+== 16384 vs 8192
+"mcnemar":{"pairedN":100,"baselineCorrect":76,"runCorrect":81,"gained":6,"lost":1,"pTwoSidedExact":0.125
+== 16384 vs 24576
+"mcnemar":{"pairedN":100,"baselineCorrect":79,"runCorrect":81,"gained":3,"lost":1,"pTwoSidedExact":0.625

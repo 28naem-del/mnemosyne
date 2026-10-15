@@ -1,0 +1,8 @@
+turn             r10=74.77 any=82.36 all=67.94 mrr=0.6376 p50=181 p95=218
+multi            r10=76.85 any=83.77 all=70.34 mrr=0.6071 p50=243 p95=294
+ctx14(shipped)   r10=77.92 any=85.17 all=71.34 mrr=0.6404 p50=362 p95=432
+cmp-ctx          r10=77.74 any=84.77 all=71.34 mrr=0.6511 p50=524 p95=658
+vs multi: WON 6 LOST 1 net 5
+vs ctx14: WON 3 LOST 3 net 0
+vs turn: WON 23 LOST 6 net 17
+allHit questions 356/499 = 71.34; full-set gate needs ceil(0.728*1531)=1115 of 1531

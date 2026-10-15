@@ -1,0 +1,11 @@
+orig-c0: hybrid identical 199/199
+orig-c1: hybrid identical 105/105
+orig-c2: hybrid identical 193/193
+orig-c3: hybrid identical 260/260
+orig-c4: hybrid identical 242/242
+orig-c5: hybrid identical 158/158
+orig-c6: hybrid identical 190/190
+orig-c7: hybrid identical 239/239
+orig-c8: hybrid identical 196/196
+orig-c9: hybrid identical 204/204
+TOTAL orig: identical 1986, different 0, missing convs []

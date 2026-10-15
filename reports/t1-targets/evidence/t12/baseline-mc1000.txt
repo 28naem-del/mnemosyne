@@ -1,0 +1,11 @@
+=== T1.2 rejoin, baseline repro (unchanged benchmark-ann-scale.mjs, fixture embedder) — tree 9bb34a1 ===
+ 1:26  up  4:11, 3 users, load averages: 2.95 4.72 5.43
+1000000
+mode=hnsw  reported={"requested":"hnsw","mode":"hnsw","size":1000000}  records=1000000  maxCandidates=1000
+  hybrid recall()   p50=234.4ms  p95=663.4ms  p99=1138.2ms  max=1145.5ms
+  lexical-only      p50=42.8ms  p95=69.5ms   (the BM25 channel's share of the above)
+  dense channel     p95 ~= 593.9ms  (hybrid p95 minus lexical p95)
+  store on disk     5.91 GB
+      133.08 real        27.68 user        20.17 sys
+wall 133s
+ 1:28  up  4:13, 3 users, load averages: 2.03 3.80 4.96

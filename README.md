@@ -129,7 +129,7 @@ const memory = createLocalMemory({
 | `exact` | Scores every authorized vector. No optional binaries, no index files, and the answer every other mode is measured against. |
 | `auto` *(default)* | sqlite-vec when the extension loads, otherwise `exact`. Still an exact search — `vec0` scores the same vectors in C instead of in JS. |
 | `sqlite-vec` | As `auto`, but **throws** instead of degrading silently when the extension is unavailable. |
-| `hnsw` | Approximate and sublinear, for stores past a few hundred thousand vectors. The one retrieval component here that can *miss* a true neighbour — which is why it is **never selected on your behalf**. |
+| `hnsw` | Approximate and sublinear, for stores past a few hundred thousand vectors. The one retrieval component here that can *miss* a true neighbour — which is why it is **never selected on your behalf**. Its 50 ms p95 target at 1M records is not met: 139–223 ms measured (see [CHANGELOG](CHANGELOG.md)). |
 
 Asking explicitly for `sqlite-vec` or `hnsw` and not getting it is an error, not a downgrade: those
 two modes throw when the backend is unavailable. `auto` is the only mode that degrades, and it only

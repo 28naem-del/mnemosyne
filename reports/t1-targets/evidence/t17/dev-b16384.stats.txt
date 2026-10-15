@@ -1,0 +1,12 @@
+file <job-dir>/evidence/t17/rejoin/dev-b16384.json
+completed 100/100  errors 0  systemPromptSha256 01ade7be75acf1b39b9f786ab026c6630226431d775bcaffdcee6e3618dfc8ea
+ALL                          n=100  judge 81/100 = 81.00%  [95% Wilson 72.22–87.49]  exact 5/100 = 5.00%  abstain 12  answered-wrong(answerable) 12  unanswerable-abstained 6/6
+DEV (src i%10 in {0,2})      n=100  judge 81/100 = 81.00%  [95% Wilson 72.22–87.49]  exact 5/100 = 5.00%  abstain 12  answered-wrong(answerable) 12  unanswerable-abstained 6/6
+HOLDOUT (other)              n=  0  judge 0/0 = NaN%  [95% Wilson 0.00–0.00]  exact 0/0 = NaN%  abstain 0  answered-wrong(answerable) 0  unanswerable-abstained 0/0
+  knowledge-update           n= 16  judge 15/16 = 93.75%  [95% Wilson 71.67–98.89]  exact 1/16 = 6.25%  abstain 1  answered-wrong(answerable) 1  unanswerable-abstained 1/1
+  multi-session              n= 28  judge 20/28 = 71.43%  [95% Wilson 52.94–84.75]  exact 0/28 = 0.00%  abstain 3  answered-wrong(answerable) 7  unanswerable-abstained 3/3
+  single-session-assistant   n= 10  judge 10/10 = 100.00%  [95% Wilson 72.25–100.00]  exact 0/10 = 0.00%  abstain 0  answered-wrong(answerable) 0  unanswerable-abstained 0/0
+  single-session-preference  n=  6  judge 4/6 = 66.67%  [95% Wilson 30.00–90.32]  exact 0/6 = 0.00%  abstain 1  answered-wrong(answerable) 1  unanswerable-abstained 0/0
+  single-session-user        n= 14  judge 13/14 = 92.86%  [95% Wilson 68.53–98.73]  exact 4/14 = 28.57%  abstain 1  answered-wrong(answerable) 0  unanswerable-abstained 0/0
+  temporal-reasoning         n= 26  judge 19/26 = 73.08%  [95% Wilson 53.92–86.30]  exact 0/26 = 0.00%  abstain 6  answered-wrong(answerable) 3  unanswerable-abstained 2/2
+tokens reader 520853/15617 judge 19927/2176  list cost $1.8276 (sonnet $3/$15, haiku $1/$5 per Mtok)

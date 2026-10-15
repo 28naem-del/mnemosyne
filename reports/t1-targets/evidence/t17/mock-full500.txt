@@ -1,0 +1,8 @@
+}
+exact-match accuracy 500/500 = 100.0%
+judge accuracy       500/500 = 100.0%
+}
+exact-match accuracy 500/500 = 100.0%
+judge accuracy       500/500 = 100.0%
+mock-full500-default.json rows 500 completed 500 uniqueIds 500
+mock-full500-b16384.json rows 500 completed 500 uniqueIds 500
