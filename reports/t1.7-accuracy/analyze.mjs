@@ -9,10 +9,22 @@ const argv = process.argv.slice(2);
 const flag = (name, fallback) => { const i = argv.indexOf(`--${name}`); return i < 0 ? fallback : argv[i + 1]; };
 const read = path => JSON.parse(path.endsWith('.gz') ? gunzipSync(readFileSync(path)) : readFileSync(path, 'utf8'));
 
-const runPath = flag('run'), baselinePath = flag('baseline');
+const runPath = flag('run'), baselinePath = flag('baseline'), idsSpec = flag('ids'), excludeIdsSpec = flag('exclude-ids');
 if (!runPath) throw new Error('Missing --run <output.json>');
 const run = read(runPath);
-const rows = run.rows;
+// `--ids <file|comma list>` restricts the analysis to a question-id subset, e.g. the HOLDOUT-400
+// (the complement of the dev-100 ids this lane tuned on) for the full-500 confirm. `--exclude-ids`
+// does the opposite (drop a set, e.g. the dev ids). At most one of the two may be given.
+function parseIdSpec(spec) {
+  if (spec === undefined) return null;
+  let text; try { text = readFileSync(spec, 'utf8'); } catch { text = spec; }
+  const trimmed = text.trim();
+  return new Set(trimmed.startsWith('[') ? JSON.parse(trimmed) : trimmed.split(/[\s,]+/).filter(Boolean));
+}
+if (idsSpec && excludeIdsSpec) throw new Error('Pass only one of --ids / --exclude-ids');
+const idsFilter = parseIdSpec(idsSpec), excludeFilter = parseIdSpec(excludeIdsSpec);
+const rows = run.rows.filter(r => (!idsFilter || idsFilter.has(r.questionId)) && (!excludeFilter || !excludeFilter.has(r.questionId)));
+if (idsFilter && rows.length !== idsFilter.size) console.error(`WARNING: --ids listed ${idsFilter.size} ids but only ${rows.length} were found in this run's rows`);
 
 function wilson95(k, n) {
   if (n === 0) return [0, 0];
