@@ -95,10 +95,20 @@ function fixtureEncodeOne(text) {
  * `mixed` config's db.store() calls) is NOT cost-faithful — it just returns
  * the fixture vector directly — because the mixed config's purpose is to
  * show the write-invalidation cliff (corpus-stats + pending-vector drain),
- * not to add a second real-ONNX cost on top of it. */
+ * not to add a second real-ONNX cost on top of it.
+ *
+ * `model` MUST stay byte-identical to `benchmark-ann-scale.mjs`'s
+ * `'ann-scale-fixture@v1'` (same string the 1M fixture's `local_settings`
+ * identity row was written with). `createDenseIndex`
+ * (`src/local/vector/index.ts` `moved = ... || recorded.model !== wanted.model
+ * || ...`) treats ANY model-name mismatch as an identity change and calls
+ * `HnswIndex.discard(path)` — deleting the 1.7GB HNSW sidecar on open. This
+ * cost this lane the sidecar once already (recovered from the `pristine/`
+ * `cp -c` backup taken before first use); do not repeat that mistake by
+ * giving this embedder its own model name. */
 function costFaithfulEmbedder(onnx) {
   const self = {
-    model: 'ann-scale-fixture@v1+onnx-query-cost', dimensions: DIMENSIONS,
+    model: 'ann-scale-fixture@v1', dimensions: DIMENSIONS,
     embedSync: (texts, role) => {
       if (role === 'query') onnx.embedSync(texts, 'query'); // real cost, paid and discarded
       return texts.map(fixtureEncodeOne);
@@ -165,7 +175,7 @@ async function main() {
     cleanupDir = mkdtempSync(join(tmpdir(), 'bm1m-mixed-'));
     storePath = join(cleanupDir, 'store.sqlite');
     mkdirSync(dirname(storePath), { recursive: true });
-    for (const suffix of ['', '-hnsw', '-hnsw.meta.json']) copyFileSync(STORE + suffix, storePath + suffix);
+    for (const suffix of ['', '-wal', '-shm', '-hnsw', '-hnsw.meta.json']) { try { copyFileSync(STORE + suffix, storePath + suffix); } catch { /* -wal/-shm absent after a checkpoint, fine */ } }
     console.log(`mixed config: writing to a throwaway clone at ${storePath} (source store untouched)`);
   } else { console.error(`unknown --config ${CONFIG}`); process.exit(1); }
 
