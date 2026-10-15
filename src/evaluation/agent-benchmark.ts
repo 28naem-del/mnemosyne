@@ -38,6 +38,8 @@ export interface BenchmarkReaderRequest {
   sourceKeys: string[];
   seed: number;
   maxOutputTokens: number;
+  /** Optional wall-clock reference the question is asked "as of". Evidence carries its own dates; without this a reader cannot resolve "how many days ago". Readers that ignore it behave exactly as before. */
+  asOf?: string;
   signal: AbortSignal;
 }
 export interface BenchmarkAnswer {

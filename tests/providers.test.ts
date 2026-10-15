@@ -38,6 +38,62 @@ describe('explicit provider adapters using loopback fixtures only', () => {
     }
   });
 
+  it('tolerates a leading JSON object followed or preceded by prose, but still rejects malformed JSON (T1.7 reader-prompt fix)', async () => {
+    const replies: string[] = [
+      // 1. plain JSON, nothing else.
+      JSON.stringify({ answer: 'violet', action: 'act', citations: ['orchid'] }),
+      // 2. JSON followed by trailing prose.
+      `${JSON.stringify({ answer: 'violet', action: 'act', citations: ['orchid'] })}\n\nI am confident because the evidence says so.`,
+      // 3. prose (containing no braces) followed by JSON.
+      `Here is my answer: ${JSON.stringify({ answer: 'violet', action: 'act', citations: ['orchid'] })}`,
+      // 4. braces inside a string value, plus trailing prose that itself contains braces.
+      `${JSON.stringify({ answer: 'use {curly} braces, not "}" literally', action: 'act', citations: ['orchid'] })}\n\nNote: {this trailing remark} also has braces.`,
+      // 5. malformed: the leading object is never closed.
+      '{"answer": "violet", "action": "act", "citations": ["orchid"]',
+      // 6. malformed: no object at all.
+      'I cannot answer without more context.',
+    ];
+    const options = await provider((_request, response) => { json(response, { choices: [{ message: { content: replies.shift() } }] }); });
+    const reader = createCompatibleBenchmarkReader({ ...options, revision: 'fixture-v1' });
+    const input = { query: 'Orchid color?', context: 'violet', sourceKeys: ['orchid'], seed: 17, maxOutputTokens: 40, signal: signal() };
+    await expect(reader.run(input)).resolves.toMatchObject({ answer: 'violet', action: 'act', citations: ['orchid'] });
+    await expect(reader.run(input)).resolves.toMatchObject({ answer: 'violet', action: 'act', citations: ['orchid'] });
+    await expect(reader.run(input)).resolves.toMatchObject({ answer: 'violet', action: 'act', citations: ['orchid'] });
+    await expect(reader.run(input)).resolves.toMatchObject({ answer: 'use {curly} braces, not "}" literally', action: 'act', citations: ['orchid'] });
+    await expect(reader.run(input)).rejects.toThrow('invalid JSON');
+    await expect(reader.run(input)).rejects.toThrow('invalid JSON');
+  });
+
+  it('selects a named reader-prompt version without editing source, defaulting to the byte-identical shipped baseline', async () => {
+    const seenSystemPrompts: string[] = [];
+    const options = await provider((_request, response, body) => {
+      seenSystemPrompts.push((body as { messages: { role: string; content: string }[] }).messages.find(m => m.role === 'system')!.content);
+      json(response, { choices: [{ message: { content: JSON.stringify({ answer: 'violet', action: 'act', citations: ['orchid'] }) } }] });
+    });
+    const input = { query: 'Orchid color?', context: 'violet', sourceKeys: ['orchid'], seed: 17, maxOutputTokens: 40, signal: signal() };
+    await createCompatibleBenchmarkReader({ ...options, revision: 'fixture-v1' }).run(input);
+    await createCompatibleBenchmarkReader({ ...options, revision: 'fixture-v1', promptVersion: 'baseline' }).run(input);
+    await createCompatibleBenchmarkReader({ ...options, revision: 'fixture-v1', promptVersion: 'v4_stacked' }).run(input);
+    expect(seenSystemPrompts[0]).toBe(seenSystemPrompts[1]);
+    expect(seenSystemPrompts[0]).toContain('If evidence is insufficient, answer "unknown" and abstain.');
+    expect(seenSystemPrompts[2]).not.toBe(seenSystemPrompts[0]);
+    expect(seenSystemPrompts[2]).toContain('weekday');
+    expect(() => createCompatibleBenchmarkReader({ ...options, revision: 'fixture-v1', promptVersion: 'no-such-version' })).toThrow('Unknown reader prompt version');
+  });
+
+  it('forwards an optional asOf into the user message only when the caller supplies one, leaving old callers byte-identical', async () => {
+    const seenUserMessages: string[] = [];
+    const options = await provider((_request, response, body) => {
+      seenUserMessages.push((body as { messages: { role: string; content: string }[] }).messages.find(m => m.role === 'user')!.content);
+      json(response, { choices: [{ message: { content: JSON.stringify({ answer: 'violet', action: 'act', citations: ['orchid'] }) } }] });
+    });
+    const reader = createCompatibleBenchmarkReader({ ...options, revision: 'fixture-v1' });
+    await reader.run({ query: 'Orchid color?', context: 'violet', sourceKeys: ['orchid'], seed: 17, maxOutputTokens: 40, signal: signal() });
+    await reader.run({ query: 'Orchid color?', context: 'violet', sourceKeys: ['orchid'], seed: 17, maxOutputTokens: 40, asOf: '2023-05-30 (Tue) 23:40', signal: signal() });
+    expect(JSON.parse(seenUserMessages[0])).not.toHaveProperty('asOf');
+    expect(JSON.parse(seenUserMessages[1]).asOf).toBe('2023-05-30 (Tue) 23:40');
+  });
+
   it('runs a bounded explicit host responder with only supplied visible input and memory', async () => {
     const seen: unknown[] = [];
     const options = await provider((_request, response, body) => { seen.push(body); json(response, { choices: [{ message: { content: 'Violet, according to orchid.' } }] }); });
