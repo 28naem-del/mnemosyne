@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import * as v from './validation.js';
 import type {
@@ -190,6 +190,16 @@ export class LocalMemory {
    * `seedLiveClockFromStore`'s doc comment for why keying on `dataVersion`
    * instead of a one-time boolean matters (d2). */
   #bm25LiveClock: { highWater: string; seededAt: number | undefined } = { highWater: '', seededAt: undefined };
+  /** Per-connection cache of `this.#db.prepare(sql)`, keyed by the exact SQL
+   * text. Only ever used for call sites whose SQL string is a fixed literal
+   * (no interpolated scope/kinds/placeholder-count), so the same key always
+   * means the same statement. `node:sqlite`'s own `prepare()` has no internal
+   * cache (measured: ~14us to re-prepare vs ~2.6us to reuse, T1.2 1M-record
+   * dossier), and `#outcomes()`/`get()` can run thousands of times inside one
+   * `#bm25Recall`/hydration pass at scale — purely a latency optimisation,
+   * since a `StatementSync` is reused only for repeated `.get()`/`.all()`
+   * calls with different bound parameters and never mutates what it returns. */
+  #preparedCache = new Map<string, StatementSync>();
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
@@ -517,10 +527,21 @@ export class LocalMemory {
     return row ? JSON.parse((row as DataRow).data) as MemoryRecord : null;
   }
 
+  /** `this.#db.prepare(sql)`, memoized by the literal SQL text for this
+   * connection's lifetime. `#db` is assigned exactly once, in the
+   * constructor, so a statement prepared against it stays valid for as long
+   * as this cache does. Callers must pass a SQL string with no per-call
+   * interpolation (fixed column/placeholder lists) — see `#preparedCache`. */
+  #prepared(sql: string): StatementSync {
+    let statement = this.#preparedCache.get(sql);
+    if (!statement) { statement = this.#db.prepare(sql); this.#preparedCache.set(sql, statement); }
+    return statement;
+  }
+
   get(id: string): MemoryRecord | null {
     this.#assertOpen();
     v.string(id, 'id', 160);
-    return this.#decode(this.#db.prepare(`SELECT data FROM memories WHERE id = ? AND ${SCOPE}`).get(id, this.#workspaceId, this.#agentId));
+    return this.#decode(this.#prepared(`SELECT data FROM memories WHERE id = ? AND ${SCOPE}`).get(id, this.#workspaceId, this.#agentId));
   }
 
   #owned(id: string, active = false): MemoryRecord {
@@ -1020,7 +1041,7 @@ export class LocalMemory {
   }
 
   #outcomes(id: string, knownAt?: string): { successes: number; failures: number } {
-    const rows = this.#db.prepare(`SELECT o.data FROM outcomes o JOIN memories m ON o.memory_id=m.id WHERE m.id=? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND o.workspace_id=m.workspace_id AND o.agent_id=m.agent_id`).all(id, this.#workspaceId, this.#agentId) as DataRow[];
+    const rows = this.#prepared(`SELECT o.data FROM outcomes o JOIN memories m ON o.memory_id=m.id WHERE m.id=? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') AND o.workspace_id=m.workspace_id AND o.agent_id=m.agent_id`).all(id, this.#workspaceId, this.#agentId) as DataRow[];
     const result = { successes: 0, failures: 0 };
     for (const row of rows) { const outcome = JSON.parse(row.data) as OutcomeRecord; if (knownAt === undefined || outcome.createdAt <= knownAt) result[outcome.success ? 'successes' : 'failures']++; }
     return result;
