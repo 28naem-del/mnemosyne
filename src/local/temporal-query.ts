@@ -447,3 +447,29 @@ export function parseTemporalQuery(query: string, options: TemporalQueryOptions 
   }
   return { ...base, relation: 'after', window: { from: iso(directed.inclusive ? found.anchor.from : found.anchor.to), to: iso(FAR_FUTURE) } };
 }
+
+/**
+ * T1.4 option B ("when-intent evidence prior"), pre-registered in
+ * `<job-dir>` §6.B before any
+ * measurement. Many "when did/was/is…", "how long…", "what/which year/month…"
+ * questions carry no parseable date themselves — the time is the ANSWER, not a
+ * constraint in the query — so {@link parseTemporalQuery} correctly returns no
+ * window for them. This regex identifies that intent from the query's own
+ * wording alone, so a caller can choose to prioritise candidates whose own text
+ * is time-bearing instead of giving up on routing entirely. It is deliberately
+ * conservative (anchored at the start of the cleaned query): on LoCoMo it matches
+ * 268/321 category-2 (temporal) questions and only 34/1665 questions in every
+ * other category (ESTIMATE in the dossier, re-verified by the probe in this lane).
+ */
+export const WHEN_INTENT_QUERY_RE: RegExp = /^\s*(when\b|how long\b|what year\b|what month\b|which year\b)/i;
+
+/**
+ * Whether a piece of EVIDENCE text (not a query) itself carries a time
+ * expression, reusing the exact same deterministic parser and the exact same
+ * floor as routing, so "time-bearing" means one thing everywhere in this
+ * module. `now` only bounds relative expressions ("last week") the same way it
+ * would for a query; it does not have to be the record's own date.
+ */
+export function isTimeBearingText(text: string, now: string): boolean {
+  return parseTemporalQuery(text, { now }).confidence > 0;
+}
