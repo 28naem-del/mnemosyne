@@ -1,0 +1,10 @@
+report: evidence/t15-tip/locomo-k10.json
+conditions: on="hybrid" off="hybrid-norerank"  K(report-native)=10  n=1531 paired annotated questions
+MRR off=0.4606  on=0.6240  delta=+0.1634
+paired bootstrap 95% CI (resamples=10000, seed=7): [0.1460, 0.1806]
+wins=599 losses=133 ties=799
+per-category:
+  locomo:1       n= 281  off=0.3477 on=0.5494  delta=+0.2017
+  locomo:2       n= 320  off=0.5524 on=0.6778  delta=+0.1254
+  locomo:3       n=  89  off=0.2587 on=0.3343  delta=+0.0756
+  locomo:4       n= 841  off=0.4848 on=0.6591  delta=+0.1743

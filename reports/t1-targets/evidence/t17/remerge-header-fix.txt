@@ -1,0 +1,4 @@
+remerge with 8407012 driver (packing carried from parts); rows must be identical to the pre-fix merge
+full500-b16384: packing new={'budget': 16384, 'order': 'rank', 'dateFormat': 'weekday'} old={'budget': None, 'order': 'rank', 'dateFormat': 'iso'} rows_identical=True sample_identical=True judge=409/500 exact=38
+dev-b16384: packing new={'budget': 16384, 'order': 'rank', 'dateFormat': 'weekday'} old={'budget': None, 'order': 'rank', 'dateFormat': 'iso'} rows_identical=True sample_identical=True judge=81/100 exact=5
+dev-b24576: packing new={'budget': 24576, 'order': 'rank', 'dateFormat': 'weekday'} old={'budget': None, 'order': 'rank', 'dateFormat': 'iso'} rows_identical=True sample_identical=True judge=79/100 exact=7
