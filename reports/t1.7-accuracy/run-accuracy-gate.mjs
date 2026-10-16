@@ -458,7 +458,9 @@ writeFileSync(options.out, `${JSON.stringify({
   // T1-targets (lane t17): default {budget:null, order:'rank', dateFormat:'iso'} byte-identical to
   // the pre-existing driver (asserted per-row above). Any non-default value here means at least one
   // row's rendered context bytes differ from what the retrieval report itself recorded.
-  packing: { budget: options.budget ?? null, order: options.order, dateFormat: options.dateFormat },
+  // A merged output reports its parts' packing (the merge above refuses parts whose packing differs);
+  // writing the merge command's own defaults here mislabelled every merged budget run as budget:null/iso.
+  packing: merged ? merged.parts[0].packing : { budget: options.budget ?? null, order: options.order, dateFormat: options.dateFormat },
   ...(merged ? { mergedFrom: options.mergeRows.split(',').map(path => path.trim()) } : {}),
   summary, rows,
 }, null, 2)}\n`);

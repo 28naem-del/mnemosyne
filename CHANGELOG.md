@@ -24,10 +24,10 @@ on this branch and can be read with `git show <sha>`.
   index proposes is re-authorized and rescored against the stored vector, so an index is a shortlist
   and never an authority. `c8f994c`, `0f244e5`, `7730916`, `ab60b9a`, `ef8458f`, `745c299`,
   `2dcdf7a`. **Its Tier 1 exit target, p95 recall latency under 50 ms at 1,000,000 records, is not
-  met.** Hybrid `recall()` on a 1M-record `hnsw` store (real query embedding, reranker off, ledger
-  on) measured p95 139.4, 146.9 and 223.3 ms in three fresh processes of 300 queries each on a quiet
-  host; the BM25 channel alone is p95 69.5 ms at that size. Commands and outputs are in
-  `reports/t1-targets/`.
+  met.** Hybrid `recall()` on a synthetic 1M-record `hnsw` fixture store (each query pays a real ONNX
+  embedding pass, the search runs on the fixture's vectors; reranker off, ledger on) measured p95
+  139.4, 146.9 and 223.3 ms in three fresh processes of 300 queries each, host load average 2–3.
+  Commands and outputs are in `reports/t1-targets/`.
 - **`sqliteVecPath`** — an explicit path to a `sqlite-vec` loadable extension, with deliberately no
   environment-variable equivalent, so a machine-wide variable can no longer decide what every
   `LocalMemory` on the host `dlopen`s. `a5b9db7`.
@@ -44,8 +44,11 @@ on this branch and can be read with `git show <sha>`.
   within a fixed depth. On the full LoCoMo set (1,531 annotated questions) the date window alone gains
   **+2.45 pts** recall@10 on the temporal category (79.92 → 82.37), **short of its +3.0 gate**; with
   the prior the gain is **+3.28** (79.92 → 83.20) and overall recall@10 rises 73.57 → 75.34, which
-  meets the gate by 0.28 pts. The prior's pattern was designed by reading that same category, so the
-  margin is in-sample. The LoCoMo benchmark now checks the gate's overall-floor half too (`464a42b`).
+  meets the gate by 0.28 pts — less than one question, since each of the 320 temporal questions is
+  worth 0.31. Against the date window alone the prior wins 10 temporal questions and loses 7, which is
+  not a significant difference; on conversations 0–4 alone the prior gains only +2.24. Its pattern
+  was designed by reading that same category, so the pass is in-sample and fragile; no out-of-sample
+  check has been run. The LoCoMo benchmark now checks the gate's overall-floor half too (`464a42b`).
 - **Cross-encoder reranking** of the fused candidate set, with a bundled int8 ONNX embedder that
   runs synchronously and offline. `72dcb20`, `ebb48ed`, `6503021`.
 - **Contextual reranking (T1.3)** — a candidate is scored with its in-session neighbours rather

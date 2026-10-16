@@ -465,10 +465,13 @@ export const WHEN_INTENT_QUERY_RE: RegExp = /^\s*(when\b|how long\b|what year\b|
 
 /**
  * Whether a piece of EVIDENCE text (not a query) itself carries a time
- * expression, reusing the exact same deterministic parser and the exact same
- * floor as routing, so "time-bearing" means one thing everywhere in this
- * module. `now` only bounds relative expressions ("last week") the same way it
- * would for a query; it does not have to be the record's own date.
+ * expression, reusing the exact same deterministic parser as routing. The
+ * floor is NOT routing's: any parse at all (confidence > 0) counts, where a
+ * query needs more than the routing minimum (0.6) before it may set an `asOf`.
+ * Promoting a candidate within a bounded depth is a much weaker act than moving
+ * the recall clock, so the weaker test is the one the when-intent prior was
+ * measured with. `now` only bounds relative expressions ("last week") the same
+ * way it would for a query; it does not have to be the record's own date.
  */
 export function isTimeBearingText(text: string, now: string): boolean {
   return parseTemporalQuery(text, { now }).confidence > 0;
