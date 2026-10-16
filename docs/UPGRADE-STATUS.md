@@ -34,7 +34,7 @@ The synthetic [evidence lifecycle diagnostic](evaluation/EVIDENCE-PROTOCOL.md) s
 - **Semantic and answer evaluation:** run pinned local semantic providers and stronger summary baselines on held-out tasks, measuring quality, cost, latency and negative transfer together.
 - **Native integration validation:** generic protocols and explicit event adapters are available; six native framework lifecycle integrations have not been validated end to end.
 - **Managed operations:** database/backup encryption, enterprise identity, bidirectional synchronization and a hosted service are not included.
-- **Larger collections:** measure the new BM25 default on representative large workloads. The ANN path is no longer outstanding work: `indexMode` now offers `sqlite-vec` and `hnsw` as opt-in dense indexes that preserve scope, time and erasure behavior because every candidate is re-authorized and rescored against the stored vector before return. Historical 100,000-record overlap timings do not describe BM25 performance.
+- **Larger collections:** measure the new BM25 default on representative large workloads. The ANN path is no longer outstanding work: `indexMode` now offers `sqlite-vec` and `hnsw` as opt-in dense indexes that preserve scope, time and erasure behavior because every candidate is re-authorized and rescored against the stored vector before return. Its Tier 1 latency target, p95 under 50 ms at 1,000,000 records, is not met: hybrid recall through `hnsw` on a synthetic 1M-record fixture measured p95 139–223 ms (see the [changelog](../CHANGELOG.md)). Historical 100,000-record overlap timings do not describe BM25 performance.
 
 ## Evaluate before adopting
 
