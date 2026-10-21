@@ -449,9 +449,9 @@ export function parseTemporalQuery(query: string, options: TemporalQueryOptions 
 }
 
 /**
- * T1.4 option B ("when-intent evidence prior"), pre-registered in
- * `<job-dir>` §6.B before any
- * measurement. Many "when did/was/is…", "how long…", "what/which year/month…"
+ * T1.4 option B ("when-intent evidence prior"), pre-registered in the T1.4
+ * analysis note (option B) before any measurement; the CHANGELOG records the
+ * measured result. Many "when did/was/is…", "how long…", "what/which year/month…"
  * questions carry no parseable date themselves — the time is the ANSWER, not a
  * constraint in the query — so {@link parseTemporalQuery} correctly returns no
  * window for them. This regex identifies that intent from the query's own

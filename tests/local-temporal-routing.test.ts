@@ -407,8 +407,7 @@ describe('the ordering stage protects the podium a reranker produced', () => {
 });
 
 /**
- * T1.4 option B, pre-registered in
- * the T1.4 analysis note (option B): a "when did…" /
+ * T1.4 option B, pre-registered in the T1.4 analysis note (option B): a "when did…" /
  * "how long…" style question usually carries no parseable date of its own (the
  * time is the ANSWER, not a constraint), so `#route` correctly declines it. This
  * prior reorders candidates by whether their OWN text is time-bearing instead,

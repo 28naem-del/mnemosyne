@@ -23,7 +23,7 @@ npm install mnemosy-ai@2.0.0-rc.10      # prerelease channel: mnemosy-ai@next
 npx --no-install mnemosy demo            # offline: no API key, no server, no Docker
 ```
 
-Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The database file and its parent directory are created on first use (mode `0700`). Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
+Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
 
 ```json
 {
@@ -56,7 +56,7 @@ The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory
 | **Reranker gain**, LoCoMo, 1,531 annotated questions | MRR@10 0.461 → 0.624, **+0.163** (paired bootstrap 95% CI 0.146–0.181; 599 wins, 133 losses) | The same hybrid candidate set with and without the bundled cross-encoder, on the shipped build. |
 | **Against Mem0 OSS**, same corpus, chunks, K, packing budget, scorer, one process | LoCoMo recall@10 **73.57 vs 63.72** with reranking; our *unreranked* path **loses to Mem0 at every K**; on LongMemEval-S the two tie on recall@20 and Mem0 takes MRR | [COMPARISON.md](COMPARISON.md), every loss in the same tables |
 
-**What these numbers do not say.** The 81.8% is not a paired gain over the earlier 71.2%: that baseline used a different 250-question sample, prompt and budget, so the improvement belongs to the whole bundle of changes. The reader is nondeterministic; rerunning one configuration moved its score by about a point. Retrieval numbers measure coverage, not answers. Two Tier 1 targets of this release are **not met** and ship disclosed: recall latency at one million records is p95 139–223 ms against a 50 ms goal (opt-in `indexMode: 'hnsw'`, see [Tune the dense index](#tune-the-dense-index)), and contextual reranking is four questions short of its gate (1,111 of 1,531 against a 1,115 line). Commands, raw outputs and an independent re-derivation of every number are in [`reports/t1-targets/VERIFY-u9.md`](reports/t1-targets/VERIFY-u9.md) and the [changelog](CHANGELOG.md).
+**What these numbers do not say.** The 81.8% is not a paired gain over the earlier 71.2%: that baseline used a different 250-question sample, prompt and budget, so the improvement belongs to the whole bundle of changes. The reader is nondeterministic; rerunning one configuration moved its score by about a point. Retrieval numbers measure coverage, not answers. Two Tier 1 targets of this release are **not met** and ship disclosed: recall latency at one million records is p95 139–223 ms against a 50 ms goal (opt-in `indexMode: 'hnsw'`, see [Tune the dense index](#tune-the-dense-index)), and contextual reranking ships at 71.98% all-evidence hit against a 72.80% gate, 0.82 points (13 of 1,531 questions) short; the best variant tried was still four short and was not merged. Commands and raw outputs are in [`reports/t1-targets/evidence/`](reports/t1-targets/evidence/) and every number is restated with its commit in the [changelog](CHANGELOG.md).
 
 ## Choose your engine
 
