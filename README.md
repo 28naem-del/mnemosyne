@@ -3,7 +3,7 @@
 # Mnemosyne
 
 [![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
-[![Release candidate: 2.0.0-rc.9](https://img.shields.io/badge/npm-2.0.0--rc.9-b8f6dd?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.9)
+[![Release candidate: 2.0.0-rc.10](https://img.shields.io/badge/npm-2.0.0--rc.10-b8f6dd?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.10)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
 
 **The next agent starts wiser.**
@@ -12,13 +12,13 @@ Persistent memory for AI agents that need to carry work forward, recover origina
 
 Mnemosyne connects memory to its consequences: a corrected requirement can retire a dependent procedure, a failed trial can withhold a skill, and a new agent can resume from an explicit handoff. Run the local engine in one SQLite file; connect your host through TypeScript, MCP, CLI, or authenticated HTTP with a Python client and live inspector.
 
-**2.0.0-rc.9 · Release candidate · MIT · Node.js ≥22.16**
+**2.0.0-rc.10 · Release candidate · MIT · Node.js ≥22.16**
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.9) · [Contributing](CONTRIBUTING.md)
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.10) · [Contributing](CONTRIBUTING.md)
 
 ## Choose your engine
 
-**Both engines ship in 2.0.0-rc.9.** Choose the storage and runtime that fit your application:
+**Both engines ship in 2.0.0-rc.10.** Choose the storage and runtime that fit your application:
 
 | Engine | Best starting point | SDK entry point | Guide |
 |---|---|---|---|
@@ -34,7 +34,7 @@ Engine choice is separate from release channel: stable `mnemosy-ai@latest` remai
 Install the exact release candidate in your project. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
 
 ```sh
-npm install mnemosy-ai@2.0.0-rc.9
+npm install mnemosy-ai@2.0.0-rc.10
 npx --no-install mnemosy demo
 npx --no-install mnemosy learning-demo
 ```
@@ -44,7 +44,7 @@ The prerelease channel is `mnemosy-ai@next`. Pin the exact version for reproduci
 To build and run the same candidate from source:
 
 ```sh
-git clone --branch v2.0.0-rc.9 --depth 1 https://github.com/28naem-del/mnemosyne.git
+git clone --branch v2.0.0-rc.10 --depth 1 https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm ci --ignore-scripts
 npm run build
@@ -54,7 +54,7 @@ npm run demo:learning
 
 The first demo uses a temporary database to show a handoff, correction, private scope and forgetting. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
 
-For full contributor validation, run `npm run check`, `npm run check:docs` and `npm run check:public`. RC9 refreshes packaging, contact details and release guidance over the RC8 engine; the recorded evaluation reports remain historical measurements of the versions and conditions they name.
+For full contributor validation, run `npm run check`, `npm run check:docs` and `npm run check:public`. RC10 adds the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging; the recorded evaluation reports remain historical measurements of the versions and conditions they name.
 
 To consume your built checkout from another project, run `npm install /absolute/path/to/mnemosyne` in that project. Keep the checkout and its `dist` directory available. The older [RC8 GitHub release and checksummed downloads](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) remain unchanged.
 

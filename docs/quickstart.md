@@ -4,7 +4,7 @@ Run Mnemosyne locally, see a correction retire old advice, then connect your age
 
 ## Choose your engine
 
-Version **2.0.0-rc.9 includes both engines**:
+Version **2.0.0-rc.10 includes both engines**:
 
 - **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` with configured external services. Start with the [existing backend example](../examples/basic-usage.ts) and review the [version 2 migration notes](MIGRATION-v2.md).
 - **Local Engine:** use `createLocalMemory` from `mnemosy-ai/local` for a SQLite store. The demonstrations below and the [local API](api.md) use this engine. The [MemoryAgent adapter](AGENT.md) runs on its local runtime.
@@ -16,7 +16,7 @@ They use separate schemas; installing version 2 does not migrate or synchronize 
 In your Node.js project:
 
 ```sh
-npm install mnemosy-ai@2.0.0-rc.9
+npm install mnemosy-ai@2.0.0-rc.10
 npx --no-install mnemosy demo
 npx --no-install mnemosy learning-demo
 ```
@@ -26,7 +26,7 @@ Use the exact version above or `mnemosy-ai@next` for the prerelease channel. Unq
 ## Build the tagged source release
 
 ```sh
-git clone --branch v2.0.0-rc.9 --depth 1 https://github.com/28naem-del/mnemosyne.git
+git clone --branch v2.0.0-rc.10 --depth 1 https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm ci --ignore-scripts
 npm run build
@@ -34,7 +34,7 @@ npm run demo
 npm run demo:learning
 ```
 
-These commands build **2.0.0-rc.9**. It refreshes packaging and release guidance over the RC8 engine. The older [RC8 GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) and its checksummed downloads remain unchanged. Python is a separate publication channel; install the bundled client with `python -m pip install ./python` from the checkout.
+These commands build **2.0.0-rc.10**. It adds the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging; see the [changelog](../CHANGELOG.md) for the measured results and the two gates that are not met. The older [RC8 GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) and its checksummed downloads remain unchanged. Python is a separate publication channel; install the bundled client with `python -m pip install ./python` from the checkout.
 
 The first demo exercises handoff, scoped sharing, correction propagation and forgetting. The learning demo adds original evidence, a scripted observation job, a controller skill trial and retirement after correction. Both use synthetic temporary databases, clean up their own data, and make no external model calls. Passing these fixtures establishes the demonstrated behavior, not general agent intelligence.
 

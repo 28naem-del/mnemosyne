@@ -69,7 +69,7 @@ jobs:
           const file = process.argv[2];
           const manifest = JSON.parse(readFileSync(file, 'utf8'));
           manifest.dependencies['@huggingface/transformers'] = '3.8.1';
-          manifest.overrides = { ...manifest.overrides, '@huggingface/transformers@3.8.1': { sharp: '0.35.4' } };
+          manifest.overrides = { ...manifest.overrides, '@huggingface/transformers@3.8.1': { sharp: '0.35.5' } };
           writeFileSync(file, JSON.stringify(manifest, null, 2));
           NODE
           npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund

@@ -1,6 +1,6 @@
-# Release status: 2.0.0-rc.9
+# Release status: 2.0.0-rc.10
 
-Mnemosyne 2.0.0-rc.9 is a release candidate for developer evaluation. The [README quickstart](../README.md#start-with-a-working-demonstration) covers exact-version npm installation and building the matching source tag. Its npm channel is `next`; `latest` remains on the stable 1.x line. This packaging refresh includes the corrected contact details and release checks over the RC8 engine. It does not introduce new benchmark results or publish the Python client to PyPI.
+Mnemosyne 2.0.0-rc.10 is a release candidate for developer evaluation. The [README quickstart](../README.md#start-with-a-working-demonstration) covers exact-version npm installation and building the matching source tag. Its npm channel is `next`; `latest` remains on the stable 1.x line. This packaging refresh includes the corrected contact details and release checks over the RC8 engine. It does not introduce new benchmark results or publish the Python client to PyPI.
 
 ## Implemented in this candidate
 

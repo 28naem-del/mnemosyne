@@ -7,11 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0-rc.10] — Tier 1 retrieval, unreleased
+## [2.0.0-rc.10] — Tier 1 retrieval, 2026-10-21
 
-Tier 1 reconciled onto the published RC9 packaging. `package.json` still reads `2.0.0-rc.9`: the
-version bump belongs to the publish step, which has not happened. Every commit referenced below is
-on this branch and can be read with `git show <sha>`.
+Tier 1 retrieval reconciled onto the published RC9 packaging and released on the `next` channel;
+`latest` stays on 1.0.1. Two of the Tier 1 exit gates are not met and are stated where the feature
+is described below (T1.2 recall latency at one million records, T1.3 contextual reranking). Every
+commit referenced below is on `main` and can be read with `git show <sha>`.
 
 ### Added
 
