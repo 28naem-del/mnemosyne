@@ -25,7 +25,7 @@ traceability pass, so the counts quoted in the docs are measured on the tree
 those docs ship with.
 
 $ git rev-parse HEAD
-a01e5dd  (plus one uncommitted wording change in CHANGELOG.md, committed
+a31a706  (plus one uncommitted wording change in CHANGELOG.md, committed
           immediately after this run as the honesty-grep fix; no code, no test)
 
 $ npm run check

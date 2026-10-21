@@ -40,7 +40,7 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   relative dates are parsed and can set an `asOf`, behind an explicit switch and a minimum parser
   confidence. A query-parsed clock can never reach past the present. `691c957`, `37374f0`,
   `9b08819`, `450360d`; the benchmark reports the temporal-reasoning subset separately in `b834028`. The same switch now
-  also applies a when-intent prior (`7abdbb9`): when a query asks *when* something happened but
+  also applies a when-intent prior (`a82d500`): when a query asks *when* something happened but
   carries no date the router can use, candidates whose own text carries a parseable date are promoted
   within a fixed depth. On the full LoCoMo set (1,531 annotated questions) the date window alone gains
   **+2.45 pts** recall@10 on the temporal category (79.92 → 82.37), **short of its +3.0 gate**; with
@@ -49,12 +49,12 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   worth 0.31. Against the date window alone the prior wins 10 temporal questions and loses 7, which is
   not a significant difference; on conversations 0–4 alone the prior gains only +2.24. Its pattern
   was designed by reading that same category, so the pass is in-sample and fragile; no out-of-sample
-  check has been run. The LoCoMo benchmark now checks the gate's overall-floor half too (`0f86f3b`).
+  check has been run. The LoCoMo benchmark now checks the gate's overall-floor half too (`9eda585`).
 - **Cross-encoder reranking** of the fused candidate set, with a bundled int8 ONNX embedder that
   runs synchronously and offline. `72dcb20`, `ebb48ed`, `6503021`.
 - **Contextual reranking (T1.3)** — a candidate is scored with its in-session neighbours rather
   than alone, bounded by `--rerank-context-top-n`. **This merged with its `g3` gate not met: the
-  measured result is short of the gate by 0.82.** `a6bfb14`, `a6e98eb`, `2b948e4`, `d1ccbec`.
+  measured result is short of the gate by 0.82.** `a6bfb14`, `a6e98eb`, `2b948e4`, `b286fb4`.
 - **Full-candidate provenance and outcome ledger** — the ledger records the complete retrieval
   candidate set rather than only what was returned. `1b146d7`, `a40e470`.
 - **A matched competitor benchmark.** Competitor systems are scored as conditions inside our own
@@ -87,10 +87,10 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   improves itself — a v1 leftover asserting an unbuilt capability — is removed. `ad14cf5`,
   `5cf631c`, `bfb1595`, `f3f9b35`, `811dc00`.
 - **`get()` and the outcome lookup reuse prepared statements** instead of re-preparing per call;
-  results are unchanged (differential over 60 queries, identical scores and outcomes). `32ea3f3`.
+  results are unchanged (differential over 60 queries, identical scores and outcomes). `e5d9acc`.
 - **The benchmark reader adapter** (`createCompatibleBenchmarkReader`) accepts a reply whose JSON
   object is followed by prose, takes named prompt versions (`promptVersion`; the default is
-  byte-identical to before) and forwards an optional `asOf`. `8ba6fb6`, `746ad29`, `5ea0e38`. With
+  byte-identical to before) and forwards an optional `asOf`. `fac8771`, `de2af6b`, `fc92973`. With
   prompt `v4_stacked`, `asOf` and weekday-formatted dates, and the top-20 reranked hits packed to
   16 KB, `anthropic/claude-sonnet-4.6` answers **409 of LongMemEval-S's 500 questions correctly
   (81.8%, 95% CI 78.2–84.9)** by the `anthropic/claude-haiku-4.5` judge, against 71.2% for the
@@ -105,7 +105,7 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   reader whose first live BM25 recall happened before another connection's writes kept the corpus
   size it saw at that first read, so `recall()` returned 0 rows where 6 were true and `compile()`
   lost its citations on the default hybrid path. The live clock is now re-seeded whenever
-  `PRAGMA data_version` moves. `e756b92` (regression tests, red before the fix), `3be381a`.
+  `PRAGMA data_version` moves. `368bb95` (regression tests, red before the fix), `be393dc`.
 
 ## [2.0.0-rc.9] — packaging and release documentation, 2026-09-13
 
