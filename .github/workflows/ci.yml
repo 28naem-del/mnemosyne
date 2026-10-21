@@ -38,6 +38,7 @@ jobs:
         env:
           MNEMOSYNE_MODEL_CACHE: ${{ runner.temp }}/mnemosyne-models
         run: |
+          npm run build
           npm rebuild hnswlib-node
           npm run setup:embedder
           npm run setup:reranker
