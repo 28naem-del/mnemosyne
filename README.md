@@ -46,7 +46,7 @@ Claude Code can register the same server from the shell:
 claude mcp add mnemosyne -- npx -y -p mnemosy-ai@2.0.0-rc.10 mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
 ```
 
-The server exposes 17 `memory_*` tools (`memory_store`, `memory_recall`, `memory_context`, `memory_correct`, `memory_checkpoint`, `memory_resume`, `memory_observe`, `memory_skill`, …). Add `--read-only` to omit every mutation tool; forgetting needs an explicit `--allow-destructive` launch. A model cannot switch workspace, raise its own trust or report its own skill trials through MCP. Agent-readable summaries of this repository are in [`llms.txt`](llms.txt) and [`AGENTS.md`](AGENTS.md); the full MCP contract is in [Connect through MCP](#connect-through-mcp).
+The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory_context`, `memory_correct`, `memory_checkpoint`, `memory_resume`, `memory_observe`, `memory_skill`, …); `memory_forget` is added only when the server is launched with `--allow-destructive`. Add `--read-only` to omit every mutation tool. A model cannot switch workspace, raise its own trust or report its own skill trials through MCP. Agent-readable summaries of this repository are in [`llms.txt`](llms.txt) and [`AGENTS.md`](AGENTS.md); the full MCP contract is in [Connect through MCP](#connect-through-mcp).
 
 ## Measured: 409 of 500 on LongMemEval-S, with the misses printed
 

@@ -236,7 +236,7 @@
     "url": "https://github.com/28naem-del/mnemosyne/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.3.1",
     "onnxruntime-node": "^1.29.0",
     "uuid": "^14.0.2",
     "zod": "^4.6.2"
@@ -254,7 +254,7 @@
     }
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "^25.9.6",
     "@vitest/coverage-v8": "^5.0.0",
     "ioredis": "^5.11.1",
