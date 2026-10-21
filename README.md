@@ -8,13 +8,55 @@
 
 **The next agent starts wiser.**
 
-Persistent memory for AI agents that need to carry work forward, recover original evidence, and stop following a lesson when its source changes.
+**Mnemosyne is local-first, long-term memory for AI agents: one SQLite file that keeps what an agent learned together with the evidence it came from, served to any host over TypeScript, MCP, CLI or HTTP.** When a source is corrected, every memory that depended on it is retired, so the next agent starts from what is still true instead of repeating a stale lesson.
 
 Mnemosyne connects memory to its consequences: a corrected requirement can retire a dependent procedure, a failed trial can withhold a skill, and a new agent can resume from an explicit handoff. Run the local engine in one SQLite file; connect your host through TypeScript, MCP, CLI, or authenticated HTTP with a Python client and live inspector.
 
 **2.0.0-rc.10 · Release candidate · MIT · Node.js ≥22.16**
 
 [Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.10) · [Contributing](CONTRIBUTING.md)
+
+## Install and connect an agent
+
+```sh
+npm install mnemosy-ai@2.0.0-rc.10      # prerelease channel: mnemosy-ai@next
+npx --no-install mnemosy demo            # offline: no API key, no server, no Docker
+```
+
+Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The database file and its parent directory are created on first use (mode `0700`). Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
+
+```json
+{
+  "mcpServers": {
+    "mnemosyne": {
+      "command": "npx",
+      "args": [
+        "-y", "-p", "mnemosy-ai@2.0.0-rc.10", "mnemosy", "mcp",
+        "--db", "./.mnemosyne/memory.sqlite",
+        "--workspace", "my-project", "--agent", "assistant"
+      ]
+    }
+  }
+}
+```
+
+Claude Code can register the same server from the shell:
+
+```sh
+claude mcp add mnemosyne -- npx -y -p mnemosy-ai@2.0.0-rc.10 mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
+```
+
+The server exposes 17 `memory_*` tools (`memory_store`, `memory_recall`, `memory_context`, `memory_correct`, `memory_checkpoint`, `memory_resume`, `memory_observe`, `memory_skill`, …). Add `--read-only` to omit every mutation tool; forgetting needs an explicit `--allow-destructive` launch. A model cannot switch workspace, raise its own trust or report its own skill trials through MCP. Agent-readable summaries of this repository are in [`llms.txt`](llms.txt) and [`AGENTS.md`](AGENTS.md); the full MCP contract is in [Connect through MCP](#connect-through-mcp).
+
+## Measured: 409 of 500 on LongMemEval-S, with the misses printed
+
+| What | Result | How it was measured |
+|---|---|---|
+| **Answer accuracy**, LongMemEval-S, all 500 questions | **409 / 500 correct (81.8%)**, Wilson 95% CI 78.2–84.9; exact match 7.6% | Mnemosyne reranked retrieval, top-20 hits packed to 16 KB, read by `claude-sonnet-4.6`, judged by `claude-haiku-4.5`. Prompt and budget were chosen on 100 of the questions; the other 400 score 82.3%. |
+| **Reranker gain**, LoCoMo, 1,531 annotated questions | MRR@10 0.461 → 0.624, **+0.163** (paired bootstrap 95% CI 0.146–0.181; 599 wins, 133 losses) | The same hybrid candidate set with and without the bundled cross-encoder, on the shipped build. |
+| **Against Mem0 OSS**, same corpus, chunks, K, packing budget, scorer, one process | LoCoMo recall@10 **73.57 vs 63.72** with reranking; our *unreranked* path **loses to Mem0 at every K**; on LongMemEval-S the two tie on recall@20 and Mem0 takes MRR | [COMPARISON.md](COMPARISON.md), every loss in the same tables |
+
+**What these numbers do not say.** The 81.8% is not a paired gain over the earlier 71.2%: that baseline used a different 250-question sample, prompt and budget, so the improvement belongs to the whole bundle of changes. The reader is nondeterministic; rerunning one configuration moved its score by about a point. Retrieval numbers measure coverage, not answers. Two Tier 1 targets of this release are **not met** and ship disclosed: recall latency at one million records is p95 139–223 ms against a 50 ms goal (opt-in `indexMode: 'hnsw'`, see [Tune the dense index](#tune-the-dense-index)), and contextual reranking is four questions short of its gate (1,111 of 1,531 against a 1,115 line). Commands, raw outputs and an independent re-derivation of every number are in [`reports/t1-targets/VERIFY-u9.md`](reports/t1-targets/VERIFY-u9.md) and the [changelog](CHANGELOG.md).
 
 ## Choose your engine
 
@@ -191,7 +233,7 @@ The local database holds memories, vectors and runtime state. Optional local CPU
 
 ### Connect through MCP
 
-After building, add a server entry to your MCP client. Replace the example path and choose an existing parent directory for the database.
+With the npm package, use the `npx` entry shown in [Install and connect an agent](#install-and-connect-an-agent). From a source checkout, point the client at the built CLI instead; the database's parent directory is created on first use.
 
 ```json
 {

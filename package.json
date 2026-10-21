@@ -1,7 +1,7 @@
 {
   "name": "mnemosy-ai",
   "version": "2.0.0-rc.10",
-  "description": "Evidence-backed agent memory with observation, hybrid recall, temporal history, tested skills, and local MCP/HTTP",
+  "description": "Local-first long-term memory for AI agents: an evidence-backed SQLite store with hybrid recall, cross-encoder reranking, corrections that retire stale guidance and temporal history, served over TypeScript, MCP, CLI and HTTP",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -130,6 +130,8 @@
   "files": [
     "dist",
     "README.md",
+    "llms.txt",
+    "AGENTS.md",
     "LICENSE",
     "NOTICE.md",
     "ARCHITECTURE.md",
@@ -205,7 +207,19 @@
     "local-first",
     "temporal-memory",
     "memory-migration",
-    "agent-memory"
+    "agent-memory",
+    "mcp-server",
+    "model-context-protocol",
+    "claude-code",
+    "cursor",
+    "long-term-memory",
+    "llm-memory",
+    "ai-memory",
+    "persistent-memory",
+    "rag",
+    "sqlite",
+    "longmemeval",
+    "agent-tools"
   ],
   "license": "MIT",
   "author": {
