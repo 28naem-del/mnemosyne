@@ -38,9 +38,9 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   `optionalDependencies` so neither is required to install. `ca98458`.
 - **Opt-in temporal routing** on `recall` and context compilation: a retrieval query's absolute and
   relative dates are parsed and can set an `asOf`, behind an explicit switch and a minimum parser
-  confidence. A query-parsed clock can never reach past the present. `f76ded0`, `efea0a9`,
-  `3a420ae`, `9c5634b`; the benchmark reports the temporal-reasoning subset separately in `bb6e698`. The same switch now
-  also applies a when-intent prior (`f5cc379`): when a query asks *when* something happened but
+  confidence. A query-parsed clock can never reach past the present. `691c957`, `37374f0`,
+  `9b08819`, `450360d`; the benchmark reports the temporal-reasoning subset separately in `b834028`. The same switch now
+  also applies a when-intent prior (`7abdbb9`): when a query asks *when* something happened but
   carries no date the router can use, candidates whose own text carries a parseable date are promoted
   within a fixed depth. On the full LoCoMo set (1,531 annotated questions) the date window alone gains
   **+2.45 pts** recall@10 on the temporal category (79.92 → 82.37), **short of its +3.0 gate**; with
@@ -49,20 +49,20 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   worth 0.31. Against the date window alone the prior wins 10 temporal questions and loses 7, which is
   not a significant difference; on conversations 0–4 alone the prior gains only +2.24. Its pattern
   was designed by reading that same category, so the pass is in-sample and fragile; no out-of-sample
-  check has been run. The LoCoMo benchmark now checks the gate's overall-floor half too (`464a42b`).
+  check has been run. The LoCoMo benchmark now checks the gate's overall-floor half too (`0f86f3b`).
 - **Cross-encoder reranking** of the fused candidate set, with a bundled int8 ONNX embedder that
   runs synchronously and offline. `72dcb20`, `ebb48ed`, `6503021`.
 - **Contextual reranking (T1.3)** — a candidate is scored with its in-session neighbours rather
   than alone, bounded by `--rerank-context-top-n`. **This merged with its `g3` gate not met: the
-  measured result is short of the gate by 0.82.** `6d1b301`, `819aaca`, `5571d83`, `fc24fa7`.
+  measured result is short of the gate by 0.82.** `a6bfb14`, `a6e98eb`, `2b948e4`, `d1ccbec`.
 - **Full-candidate provenance and outcome ledger** — the ledger records the complete retrieval
   candidate set rather than only what was returned. `1b146d7`, `a40e470`.
 - **A matched competitor benchmark.** Competitor systems are scored as conditions inside our own
   `runCorpusBenchmark` loop — one process, one chunk set, one K, one packing budget, one evidence
   scorer — rather than having their published numbers quoted. Results, including every condition
-  where Mem0 OSS beats us, are in [COMPARISON.md](COMPARISON.md). `cf031cf`, `868c8a8`, `7a4452b`,
-  `3133199`; Mem0's paid `infer:true` extraction path measured separately in `21b6bb0`, and the
-  full-corpus projection made to reproduce from its own inputs in `3f907df`.
+  where Mem0 OSS beats us, are in [COMPARISON.md](COMPARISON.md). `cf031cf`, `868c8a8`, `79afea3`,
+  `aec71e8`; Mem0's paid `infer:true` extraction path measured separately in `e7c572b`, and the
+  full-corpus projection made to reproduce from its own inputs in `e94a261`.
 
 ### Changed
 
@@ -79,18 +79,18 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   clock that steps backwards across a temporal bound. `a8b3c77`, `e2db2e0`, `fc3d5b7`, `9645cd5`,
   `418b99b`, `28ba5b6`, `716dc2f`, `a8ffc58`, `e27763c`.
 - The LongMemEval dense channel is bounded to a recent window, matching `LongMemEvalOptions`'
-  documented intent instead of silently covering full history. `0c296c8`, `b31f560`.
+  documented intent instead of silently covering full history. `0c296c8`, `48433a4`.
 - The MCP `memory_context` tool passes `asOf`, `knownAt` and `lexicalScoring` through. `478c715`.
 - Documentation corrections from the release audit: the docs no longer deny the ANN index this
   release ships or the matched competitor run it carries, the matched run's compression figure is
   computed by its generator rather than hardcoded, and the npm keyword claiming the system
-  improves itself — a v1 leftover asserting an unbuilt capability — is removed. `03061fc`,
-  `2fd354c`, `4dd6769`, `4a45c0e`, `88d8501`.
+  improves itself — a v1 leftover asserting an unbuilt capability — is removed. `ad14cf5`,
+  `5cf631c`, `bfb1595`, `f3f9b35`, `811dc00`.
 - **`get()` and the outcome lookup reuse prepared statements** instead of re-preparing per call;
-  results are unchanged (differential over 60 queries, identical scores and outcomes). `9591e03`.
+  results are unchanged (differential over 60 queries, identical scores and outcomes). `32ea3f3`.
 - **The benchmark reader adapter** (`createCompatibleBenchmarkReader`) accepts a reply whose JSON
   object is followed by prose, takes named prompt versions (`promptVersion`; the default is
-  byte-identical to before) and forwards an optional `asOf`. `9a5724d`, `a8e400e`, `3c1d9cd`. With
+  byte-identical to before) and forwards an optional `asOf`. `8ba6fb6`, `746ad29`, `5ea0e38`. With
   prompt `v4_stacked`, `asOf` and weekday-formatted dates, and the top-20 reranked hits packed to
   16 KB, `anthropic/claude-sonnet-4.6` answers **409 of LongMemEval-S's 500 questions correctly
   (81.8%, 95% CI 78.2–84.9)** by the `anthropic/claude-haiku-4.5` judge, against 71.2% for the
@@ -105,7 +105,7 @@ commit referenced below is on `main` and can be read with `git show <sha>`.
   reader whose first live BM25 recall happened before another connection's writes kept the corpus
   size it saw at that first read, so `recall()` returned 0 rows where 6 were true and `compile()`
   lost its citations on the default hybrid path. The live clock is now re-seeded whenever
-  `PRAGMA data_version` moves. `e3f5f00` (regression tests, red before the fix), `2d2ddb7`.
+  `PRAGMA data_version` moves. `e756b92` (regression tests, red before the fix), `3be381a`.
 
 ## [2.0.0-rc.9] — packaging and release documentation, 2026-09-13
 
