@@ -60,21 +60,21 @@
   },
   "dataPolicy": "Aggregate measurements only. No source conversations, private memory, credentials or local filesystem paths are included.",
   "publication": {
-    "githubRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.10",
+    "githubRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0",
     "measuredSourceRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8",
     "npm": {
       "published": true,
       "package": "mnemosy-ai",
-      "version": "2.0.0-rc.10",
-      "distTag": "next",
-      "latestVersion": "1.0.1",
-      "url": "https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.10"
+      "version": "2.0.0",
+      "distTag": "latest",
+      "latestVersion": "2.0.0",
+      "url": "https://www.npmjs.com/package/mnemosy-ai/v/2.0.0"
     },
     "pypi": {
       "published": false,
       "distribution": "mnemosyne-memory-client",
       "availability": "source checkout"
     },
-    "note": "Publication status is separate from the frozen rc.8 evaluation above. The rc.10 release carries the Tier 1 retrieval work; its measurements (LongMemEval-S answer accuracy 409/500 by an LLM judge, LoCoMo reranker MRR, the matched Mem0 run and the two unmet gates) are recorded in CHANGELOG.md and COMPARISON.md, not in this file."
+    "note": "Publication status is separate from the frozen rc.8 evaluation above. The 2.0.0 release (the rc.10 candidate promoted to stable with no source change beyond one dependency security patch, npm latest from 2026-10-27) carries the Tier 1 retrieval work; its measurements (LongMemEval-S answer accuracy 409/500 by an LLM judge, LoCoMo reranker MRR, the matched Mem0 run and the two unmet gates) are recorded in CHANGELOG.md and COMPARISON.md, not in this file."
   }
 }

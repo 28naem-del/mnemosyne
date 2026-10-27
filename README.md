@@ -3,7 +3,7 @@
 # Mnemosyne
 
 [![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
-[![Release candidate: 2.0.0-rc.10](https://img.shields.io/badge/npm-2.0.0--rc.10-b8f6dd?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.10)
+[![npm: 2.0.0](https://img.shields.io/badge/npm-2.0.0-b8f6dd?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
 
 **The next agent starts wiser.**
@@ -12,14 +12,14 @@
 
 Mnemosyne connects memory to its consequences: a corrected requirement can retire a dependent procedure, a failed trial can withhold a skill, and a new agent can resume from an explicit handoff. Run the local engine in one SQLite file; connect your host through TypeScript, MCP, CLI, or authenticated HTTP with a Python client and live inspector.
 
-**2.0.0-rc.10 · Release candidate · MIT · Node.js ≥22.16**
+**2.0.0 · Stable release · MIT · Node.js ≥22.16**
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0-rc.10) · [Contributing](CONTRIBUTING.md)
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0) · [Contributing](CONTRIBUTING.md)
 
 ## Install and connect an agent
 
 ```sh
-npm install mnemosy-ai@2.0.0-rc.10      # prerelease channel: mnemosy-ai@next
+npm install mnemosy-ai                   # latest = 2.0.0; pin mnemosy-ai@2.0.0 to reproduce
 npx --no-install mnemosy demo            # offline: no API key, no server, no Docker
 ```
 
@@ -31,7 +31,7 @@ Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the proje
     "mnemosyne": {
       "command": "npx",
       "args": [
-        "-y", "-p", "mnemosy-ai@2.0.0-rc.10", "mnemosy", "mcp",
+        "-y", "-p", "mnemosy-ai@2.0.0", "mnemosy", "mcp",
         "--db", "./.mnemosyne/memory.sqlite",
         "--workspace", "my-project", "--agent", "assistant"
       ]
@@ -43,7 +43,7 @@ Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the proje
 Claude Code can register the same server from the shell:
 
 ```sh
-claude mcp add mnemosyne -- npx -y -p mnemosy-ai@2.0.0-rc.10 mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
+claude mcp add mnemosyne -- npx -y -p mnemosy-ai@2.0.0 mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
 ```
 
 The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory_context`, `memory_correct`, `memory_checkpoint`, `memory_resume`, `memory_observe`, `memory_skill`, …); `memory_forget` is added only when the server is launched with `--allow-destructive`. Add `--read-only` to omit every mutation tool. A model cannot switch workspace, raise its own trust or report its own skill trials through MCP. Agent-readable summaries of this repository are in [`llms.txt`](llms.txt) and [`AGENTS.md`](AGENTS.md); the full MCP contract is in [Connect through MCP](#connect-through-mcp).
@@ -60,7 +60,7 @@ The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory
 
 ## Choose your engine
 
-**Both engines ship in 2.0.0-rc.10.** Choose the storage and runtime that fit your application:
+**Both engines ship in 2.0.0.** Choose the storage and runtime that fit your application:
 
 | Engine | Best starting point | SDK entry point | Guide |
 |---|---|---|---|
@@ -69,24 +69,24 @@ The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory
 
 The `MemoryAgent` adapter uses the Local Engine's runtime. These engines have separate schemas and do not automatically migrate or synchronize data. To transition gradually, explicitly connect your existing store through the [read-only migration bridge](docs/BRIDGE.md); it leaves that store unchanged.
 
-Engine choice is separate from release channel: stable `mnemosy-ai@latest` remains on version 1.x, while `mnemosy-ai@next` selects the version 2 candidate containing **both** engines. Review the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application.
+Engine choice is separate from version: `mnemosy-ai@latest` is 2.0.0 and contains **both** engines; the 1.x line stays installable as `mnemosy-ai@1`. **Upgrading from 1.x is a breaking change**: read the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application.
 
 ## Start with a working demonstration
 
-Install the exact release candidate in your project. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
+Install the package in your project. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
 
 ```sh
-npm install mnemosy-ai@2.0.0-rc.10
+npm install mnemosy-ai
 npx --no-install mnemosy demo
 npx --no-install mnemosy learning-demo
 ```
 
-The prerelease channel is `mnemosy-ai@next`. Pin the exact version for reproducible deployments; unqualified `npm install mnemosy-ai` follows the stable `latest` channel and still selects version 1.x. Evaluate this candidate on your own workload before production. Python registry publication is separate; the bundled Python client can be installed from the checkout.
+Unqualified `npm install mnemosy-ai` follows the `latest` channel, which is 2.0.0 from 27 October 2026; pin `mnemosy-ai@2.0.0` for reproducible deployments. If you are upgrading from the 1.x line, read the [migration notes](docs/MIGRATION-v2.md) first: version 2 changes vector retrieval scoring, startup indexing and erasure, and does not migrate an existing database. Evaluate on your own workload before production. Python registry publication is separate; the bundled Python client can be installed from the checkout.
 
-To build and run the same candidate from source:
+To build and run the same release from source:
 
 ```sh
-git clone --branch v2.0.0-rc.10 --depth 1 https://github.com/28naem-del/mnemosyne.git
+git clone --branch v2.0.0 --depth 1 https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm ci --ignore-scripts
 npm run build
@@ -96,7 +96,7 @@ npm run demo:learning
 
 The first demo uses a temporary database to show a handoff, correction, private scope and forgetting. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
 
-For full contributor validation, run `npm run check`, `npm run check:docs` and `npm run check:public`. RC10 adds the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging; the recorded evaluation reports remain historical measurements of the versions and conditions they name.
+For full contributor validation, run `npm run check`, `npm run check:docs` and `npm run check:public`. 2.0.0 is the 2.0.0-rc.10 candidate promoted to stable with no source change (one dependency security patch, `zod` 4.6.2 → 4.6.7, is noted in the changelog); it carries the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging. The recorded evaluation reports remain historical measurements of the versions and conditions they name.
 
 To consume your built checkout from another project, run `npm install /absolute/path/to/mnemosyne` in that project. Keep the checkout and its `dist` directory available. The older [RC8 GitHub release and checksummed downloads](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) remain unchanged.
 

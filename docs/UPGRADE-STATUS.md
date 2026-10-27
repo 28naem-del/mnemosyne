@@ -1,8 +1,8 @@
-# Release status: 2.0.0-rc.10
+# Release status: 2.0.0
 
-Mnemosyne 2.0.0-rc.10 is a release candidate for developer evaluation. The [README quickstart](../README.md#start-with-a-working-demonstration) covers exact-version npm installation and building the matching source tag. Its npm channel is `next`; `latest` remains on the stable 1.x line. This packaging refresh includes the corrected contact details and release checks over the RC8 engine. It does not introduce new benchmark results or publish the Python client to PyPI.
+Mnemosyne 2.0.0 is the stable release of the version 2 line: the 2.0.0-rc.10 candidate promoted on 27 October 2026 with no source change (one dependency security patch, noted in the changelog). The [README quickstart](../README.md#start-with-a-working-demonstration) covers npm installation and building the matching source tag. Its npm channel is `latest`; the 1.x line stays installable as `mnemosy-ai@1`, and upgrading from it is a breaking change (see [version migration](MIGRATION-v2.md)). The release carries the Tier 1 retrieval work over the RC9 packaging; its measured results and the two release targets that are not met (recall latency at one million records, contextual reranking) are stated in the [changelog](../CHANGELOG.md). It does not publish the Python client to PyPI.
 
-## Implemented in this candidate
+## Implemented in this release
 
 | Area | Available behavior | Important boundary |
 |---|---|---|

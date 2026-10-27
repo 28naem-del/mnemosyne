@@ -1,6 +1,6 @@
 # Build with Mnemosyne
 
-Start with the [keyless local quickstart](quickstart.md), then choose the integration that fits your application. The [15 examples](../examples/README.md) distinguish offline fixtures, optional local models and external services. This guide targets **2.0.0-rc.10**: use `npm install mnemosy-ai@2.0.0-rc.10` or build the matching source tag. The npm prerelease channel is `next`; the stable `latest` channel remains on 1.x. Python registry publication is separate. The older [RC8 GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) and its checksummed assets remain unchanged.
+Start with the [keyless local quickstart](quickstart.md), then choose the integration that fits your application. The [15 examples](../examples/README.md) distinguish offline fixtures, optional local models and external services. This guide targets **2.0.0**: use `npm install mnemosy-ai` (the `latest` channel), pin `mnemosy-ai@2.0.0`, or build the matching source tag. Upgrading from the 1.x line is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. Python registry publication is separate. The older [RC8 GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) and its checksummed assets remain unchanged.
 
 ## Choose a task
 

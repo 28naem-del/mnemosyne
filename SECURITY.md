@@ -1,6 +1,6 @@
 # Security policy
 
-Mnemosyne 2.0.0-rc.8 is a release candidate. Review [migration notes](docs/MIGRATION-v2.md) before upgrading existing applications. Report security issues affecting this candidate or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
+Mnemosyne 2.0.0 is the stable release of the version 2 line. Review [migration notes](docs/MIGRATION-v2.md) before upgrading existing applications. Report security issues affecting this release or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
 
 ## Report a vulnerability privately
 

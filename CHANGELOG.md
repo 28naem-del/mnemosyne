@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] — stable release, 2026-10-27
+
+The 2.0.0-rc.10 candidate promoted to stable **with no source change**: the tree is the rc.10 tree
+plus the version strings, the install and MCP snippets, the site and release metadata, this entry
+and one dependency security patch. npm `latest` now points at 2.0.0 (it was 1.0.1); the 1.x line
+stays installable as `mnemosy-ai@1`.
+
+### Security
+
+- **`zod` 4.6.2 → 4.6.7** (range `^4.6.7`) for [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5),
+  "Zod can exhaust memory while validating oversized constrained collections" (high, published
+  2026-10-01, patched in 4.6.6). `zod` validates the MCP tool arguments in this package. No
+  behaviour change was observed: the full suite (78 files, 1,505 tests, 38 environment-gated)
+  passes unchanged on the patched tree.
+
+**Upgrading from 1.x is a breaking change.** Read [docs/MIGRATION-v2.md](docs/MIGRATION-v2.md)
+before moving an existing Vector Engine application: version 2 corrects retrieval scoring, awaits
+paginated startup indexing, disables query-based forgetting, requires Node.js >= 22.16 and ships as
+ESM. A `^1` dependency range keeps resolving to 1.x; a fresh unpinned `npm install mnemosy-ai`
+now installs 2.0.0. No existing database is migrated or deleted.
+
+**Two Tier 1 exit gates remain unmet and ship disclosed, unchanged from rc.10:**
+
+- **T1.2 recall latency at one million records** — target p95 under 50 ms; measured p95 139.4,
+  146.9 and 223.3 ms for hybrid `recall()` through the opt-in `indexMode: 'hnsw'` on a synthetic
+  1M-record fixture, three fresh processes of 300 queries each. Commands and outputs are in
+  `reports/t1-targets/`.
+- **T1.3 contextual reranking** — gate 72.80% all-evidence hit on LoCoMo (1,531 annotated
+  questions); shipped at 71.98%, 0.82 points (13 questions) short. The best variant tried was still
+  four questions short and was not merged.
+
+The measured results are the rc.10 results: LongMemEval-S answer accuracy 409/500 (81.8%, Wilson 95%
+CI 78.2–84.9) by an LLM judge, LoCoMo reranker gain MRR@10 +0.163, and the matched Mem0 OSS run with
+every loss published in [COMPARISON.md](COMPARISON.md). The T1.4 temporal-routing gate passes by
+0.28 points in-sample and is described as fragile where the feature is listed under rc.10 below.
+Everything else about this version is described in the rc.10 entry.
+
 ## [2.0.0-rc.10] — Tier 1 retrieval, 2026-10-21
 
 Tier 1 retrieval reconciled onto the published RC9 packaging and released on the `next` channel;

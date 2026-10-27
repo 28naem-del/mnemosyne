@@ -1,6 +1,6 @@
-# Migration to the 2.0 release candidate
+# Migration to Mnemosyne 2.0
 
-This release candidate adds local memory alongside the existing Qdrant engine and intentionally changes unsafe behavior. Test against isolated copies before production use. No automatic database migration runs.
+Version 2.0.0 adds local memory alongside the existing Qdrant engine and intentionally changes unsafe behavior. **From 27 October 2026 it is the npm `latest` channel.** An existing `^1` dependency range keeps resolving to the 1.x line, but a fresh unpinned `npm install mnemosy-ai` now installs 2.0.0, so read this page before you upgrade. Test against isolated copies before production use. No automatic database migration runs.
 
 For an explicit import from legacy Mnemosyne/Qdrant, Mem0, Letta or Markdown, use the [rc5 export migration guide](MIGRATION.md). It adds a pure preview, exact-source plan, atomic application, guarded undo and source-identity forgetting. The compatibility and same-scope snapshot behavior below remains separate.
 

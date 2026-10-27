@@ -4,29 +4,29 @@ Run Mnemosyne locally, see a correction retire old advice, then connect your age
 
 ## Choose your engine
 
-Version **2.0.0-rc.10 includes both engines**:
+Version **2.0.0 includes both engines**:
 
 - **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` with configured external services. Start with the [existing backend example](../examples/basic-usage.ts) and review the [version 2 migration notes](MIGRATION-v2.md).
 - **Local Engine:** use `createLocalMemory` from `mnemosy-ai/local` for a SQLite store. The demonstrations below and the [local API](api.md) use this engine. The [MemoryAgent adapter](AGENT.md) runs on its local runtime.
 
-They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. Release channels are a separate choice: `latest` stays on stable version 1.x; `next` provides the version 2 candidate with both engines.
+They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. From 27 October 2026 the npm `latest` channel is 2.0.0 with both engines; the older 1.x line stays installable as `mnemosy-ai@1`.
 
-## Install the release candidate
+## Install the package
 
 In your Node.js project:
 
 ```sh
-npm install mnemosy-ai@2.0.0-rc.10
+npm install mnemosy-ai
 npx --no-install mnemosy demo
 npx --no-install mnemosy learning-demo
 ```
 
-Use the exact version above or `mnemosy-ai@next` for the prerelease channel. Unqualified installation follows `latest`, which remains on the stable 1.x line. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
+Unqualified installation follows `latest`, which is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install. Upgrading an existing 1.x application is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
 
 ## Build the tagged source release
 
 ```sh
-git clone --branch v2.0.0-rc.10 --depth 1 https://github.com/28naem-del/mnemosyne.git
+git clone --branch v2.0.0 --depth 1 https://github.com/28naem-del/mnemosyne.git
 cd mnemosyne
 npm ci --ignore-scripts
 npm run build
@@ -34,7 +34,7 @@ npm run demo
 npm run demo:learning
 ```
 
-These commands build **2.0.0-rc.10**. It adds the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging; see the [changelog](../CHANGELOG.md) for the measured results and the two gates that are not met. The older [RC8 GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) and its checksummed downloads remain unchanged. Python is a separate publication channel; install the bundled client with `python -m pip install ./python` from the checkout.
+These commands build **2.0.0**, the 2.0.0-rc.10 candidate promoted to stable with no source change; the only dependency change is a security patch noted in the [changelog](../CHANGELOG.md). It adds the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging; see the [changelog](../CHANGELOG.md) for the measured results and the two gates that are not met. The older [RC8 GitHub prerelease](https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8) and its checksummed downloads remain unchanged. Python is a separate publication channel; install the bundled client with `python -m pip install ./python` from the checkout.
 
 The first demo exercises handoff, scoped sharing, correction propagation and forgetting. The learning demo adds original evidence, a scripted observation job, a controller skill trial and retirement after correction. Both use synthetic temporary databases, clean up their own data, and make no external model calls. Passing these fixtures establishes the demonstrated behavior, not general agent intelligence.
 

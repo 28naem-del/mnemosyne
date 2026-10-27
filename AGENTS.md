@@ -8,7 +8,7 @@ Instructions for coding agents (Claude Code, Cursor, Codex, Copilot and others) 
 
 ## Use it as memory for your own agent
 
-- Install: `npm install mnemosy-ai@2.0.0-rc.10` (prerelease channel `next`; `latest` is the older 1.x engine).
+- Install: `npm install mnemosy-ai` (`latest` is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install; the older 1.x engine stays installable as `mnemosy-ai@1`).
 - MCP: see the server entry in the [README](README.md#install-and-connect-an-agent). Tools are named `memory_*`; `--read-only` removes mutation tools; `--allow-destructive` is required for forgetting.
 - SDK: `createLocalMemory` from `mnemosy-ai/local`; contracts in [docs/api.md](docs/api.md) and [docs/CONTEXT.md](docs/CONTEXT.md).
 - Trust and scope are controller assertions. A model talking to the MCP server cannot change its workspace, raise its own trust or record its own skill trials.
