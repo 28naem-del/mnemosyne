@@ -223,11 +223,12 @@ export class NameIndex {
  * and drop the one rare term at the end that names the subject. Keeping the N
  * rarest — by document frequency in scope, ties by first occurrence — keeps the
  * terms that carry the most evidence, and the result keeps query order so the
- * selection is easy to read back. Below the cap nothing changes.
+ * selection is easy to read back. A term no record contains scores nothing, so
+ * it ranks after every term that does. Below the cap nothing changes.
  */
 export function selectTerms(terms: readonly string[], max: number, frequency: (term: string) => number): string[] {
   if (terms.length <= max) return [...terms];
-  const ranked = terms.map((term, index) => ({ term, index, df: frequency(term) }))
+  const ranked = terms.map((term, index) => { const df = frequency(term); return { term, index, df: df > 0 ? df : Number.MAX_SAFE_INTEGER }; })
     .sort((a, b) => a.df - b.df || a.index - b.index).slice(0, max);
   return ranked.sort((a, b) => a.index - b.index).map((entry) => entry.term);
 }
