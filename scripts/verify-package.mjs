@@ -137,7 +137,7 @@ try {
   if (typeof bins.mnemosy !== 'string') fail('Package must provide the mnemosy executable');
   const cli = join(install, 'node_modules', '.bin', 'mnemosy');
   if (runProcess(cli, ['--version'], install).trim() !== source.version) fail('Installed CLI/package versions disagree');
-  const demo = JSON.parse(runProcess(cli, ['demo'], install));
+  const demo = JSON.parse(runProcess(cli, ['demo', '--classic'], install));
   const learning = JSON.parse(runProcess(cli, ['learning-demo'], install));
   for (const [label, report] of [['demo', demo], ['learning-demo', learning]]) {
     if (!Number.isSafeInteger(report.checksTotal) || report.checksTotal < 1 || report.checksPassed !== report.checksTotal) fail(`Installed ${label} checks failed`);
