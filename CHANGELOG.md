@@ -7,6 +7,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.2] — draft, not released
+
+Draft entry for the second 3.0.0 release candidate, which builds on rc.1 below. The root package
+version in this tree is still 2.0.0, and nothing in this section has been published. Every number
+reproduces offline, with no API key, no paid model and no LLM judge, using the command given next
+to it. The protocols and limits are in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
+Measured on the merged tree `64ec27c` (PrecisionMemBench reports in `c87b17c`): 92 test files,
+1,545 tests passed.
+
+### Added
+
+- **Precision controls in `recall()`.** All of them are opt-in, set either per call or as a
+  `createLocalMemory` default, and all of them are model-free on the lexical path.
+  - **`requireNamedMatch: true | 'auto'` (names gate).** A record's `metadata.names` (a canonical
+    name and its aliases) must occur in the query as a whole token phrase. With `'auto'` this
+    applies only to records that declare names. The names stage is also a fused candidate
+    channel, and `RETRIEVAL_STAGES` gains `'names'`.
+  - **`fuzzy: true`.** Guarded single-edit typo tolerance: OSA distance 1, the same first two
+    letters, at least four letters, no digits, and half weight. It lives in `src/local/fuzzy.ts`.
+  - **`metadata` predicate.** A string or string-array equality on metadata keys, evaluated in the
+    SQL of every channel before ranking. It is capped at 32 keys and 64 values per key, and it is a
+    scope selector, not an authentication boundary.
+  - **Lifecycle prefilter.** Superseded and expired records are dropped in SQL before ranking on
+    the overlap scorer and the dense channel. This is a strict subset of what the as-of filter
+    already withheld.
+  - **Score floors.** `minScores: { keyword, semantic, reranker, final, finalRelative }`
+    (`RecallScoreFloors`). Floors exclude results and never reorder them.
+  - **Native abstention.** When nothing passes the gates, recall returns `[]`. The ledger's
+    `retrieval.abstained` entry records `{ reason: 'no-candidates' | 'no-named-match' |
+    'below-floor', floors, topScore }`, and `retrieval.config` records the controls in force.
+  - **`ContextPacket.abstention` and `AdaptiveContextPacket.abstention`.** An empty packet says
+    why it is empty. The reason is the recall's own, or `budget` or `withheld`.
+- **`correct(id, { dependencies })`.** It adds declared dependencies to the successor (the old
+  record's dependencies are always inherited), and it throws on duplicates and unknown ids. This
+  is the only after-the-fact way to declare a dependency. It is ledgered, carries a reason, and its
+  cascade reaches the successor through the new edge.
+- **Ledger receipt events.** There are two new events, `consolidation` and `dependency`, and
+  `LocalMemory.appendLedgerReceipt()` appends one inside the caller's transaction.
+- **Outcome-gated, reversible consolidation** (`mnemosy-ai/consolidation`, also exported from the
+  root). [docs/CONSOLIDATION.md](docs/CONSOLIDATION.md) describes it.
+  - **Functions.** `proposeConsolidation`, `gateConsolidation`, `consolidate`,
+    `rollbackConsolidation`, `verifyConsolidationChain` and `createConsolidationSigner`.
+  - **What a pass is.** A signed diff (Ed25519) from a closed menu of proposals, checked against
+    eleven invariants. It is replayed on the agent's own judged retrievals: the full set, a 20 %
+    hold-out once there are at least 10 tasks, a no-memory control, and each proposal alone.
+  - **Verdicts.** A pass is `kept` only when nothing regresses. The other verdicts are
+    `rolled_back`, `no_evidence`, `invalid_run` and `conflict`, and every verdict writes a signed
+    receipt that is hash-chained to the previous one.
+  - **Rollback.** One call restores the identical `replayState().stateSha256`.
+  - **Backoff.** A faulted proposal is not proposed again until the replay set has doubled.
+  - **CLI.** `mnemosy consolidate [scope] --propose [--out DIFF] | --apply [--file DIFF] |
+    --rollback PASS_ID | --verify-chain`, plus `mnemosy consolidate --demo`. The signature format
+    and chain are described in [docs/CONSOLIDATION-SIGNING.md](docs/CONSOLIDATION-SIGNING.md).
+- **Undeclared-dependency inference** (`mnemosy-ai/dependencies`, also exported from the root).
+  [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) describes it.
+  - **`inferDependencies`.** Proposes (dependent, premise) pairs from successful co-use in traces,
+    the retrieval ledger and outcome events (rule `co-use-success-v1`).
+  - **`reviewDependency`.** A reviewer accepts or rejects each proposal. The decision is ledgered,
+    and an acceptance goes through `correct(id, { dependencies })`.
+  - **`createPremiseGuard`.** A read-only filter that holds a dependent whose co-used premise
+    changed before anyone reviewed the pair.
+  - **CLI.** `mnemosy dependencies [scope] --infer [--min-support N]` and `--review DIGEST
+    --accept|--reject --reviewer NAME`.
+- **Premise-linked skills (M6).** `MemoryRuntime.linkPremise(skillId, memoryId, receiptId)` links
+  a skill to a premise named by an accepted `dependency` receipt. When that premise is corrected,
+  `getSkill` reports the skill `retired`, and `trialSkill` refuses it. `RuntimeSkill.premises` and
+  `premiseFingerprint` are added as optional fields.
+- **`mnemosy demo` is the five-moment demo.** It runs offline, on synthetic corpora and the
+  zero-model lexical path, and each moment prints a PROOF line measured in that run. The moments
+  are: replay determinism; a correction that reaches dependents nobody linked; bisect; the
+  poisoning suite run live; and a consolidation pass kept, another rolled back, and the kept one
+  undone. [docs/DEMO.md](docs/DEMO.md) explains each one. The programmatic entry point is
+  `runBreakthroughDemo()` in `src/evaluation/breakthrough-demo.ts`.
+- **Poisoning suite consolidation mode.** `--consolidation` and `--ungated-control` are new flags
+  on `dist/evaluation/poisoning/cli.js`. `dist/consolidation/rejected-passes.js` publishes every
+  rolled-back pass with its receipt.
+- **Dependency suite v1.** A synthetic corpus, generator and eval are in
+  `benchmarks/dependencies/` and `src/evaluation/dependencies/`.
+
+### Measured (commands in docs/BENCHMARKS-TRUST.md)
+
+- **PrecisionMemBench, protocol-exact, no wrapper-side filter, retrieval mode, no LLM judge.**
+  - Single-turn: **70/77** on both the lexical and the hybrid path, with mean precision 0.871 and
+    recall 1.000. Session: **12/12** turns.
+  - Commands: `node benchmarks/precisionmembench/run.mjs --label merged-lexical --retrieval lexical
+    --metadata protocol --both`, and the same with `--retrieval hybrid`.
+  - rc.1 was 48/77 with sweep-chosen wrapper filters, and 22/77 unfiltered.
+  - Ablations: names gate off 20/77, fuzzy off 64/77.
+  - The 7 remaining failures need lifecycle fields that the single-turn protocol does not send.
+  - This is the public 35-belief fixture the controls were designed against, so it is not a
+    held-out estimate.
+- **Poisoning suite v1 with consolidation on.**
+  - 227 synthetic cases: **0/167 escapes, 0/60 false quarantines**, 0 errors.
+  - 294 gate decisions: 11 kept, 184 rolled back, 99 `no_evidence`. No laundering pass was kept.
+  - The ungated negative control has 85/167 escapes.
+  - Command: `node dist/evaluation/poisoning/cli.js --cases benchmarks/poisoning/v1/cases.jsonl
+    --out reports/poisoning/v1-consolidation --consolidation`.
+  - Default mode is unchanged and byte-identical: 0/167 escapes, 0/60 false quarantines.
+- **Dependency suite v1 (synthetic, seed 20261028).**
+  - Invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), and **0**
+    stale-procedure executions through the premise guard (248 checks, 120 corrections).
+  - Ten robustness seeds: recall 92.4–96.8 %, precision 95.1–99.4 %, stale 0.
+  - Command: `node dist/evaluation/dependencies/cli.js --corpus benchmarks/dependencies/v1/corpus.json
+    --out reports/dependencies/v1 --seeds 1,2,3,4,5,11,12,13,14,15`.
+- **The default retrieval path did not move.** Before and after this work:
+  - LoCoMo zero-model recall@10: 40.49 (overlap) and 52.47 (BM25);
+  - LongMemEval-S lexical mean recall 89.72, BM25 95.08.
+
+### Changed (behaviour)
+
+- **`mnemosy demo` (and `npm run demo`) now runs the five-moment demo.** It streams text and exits
+  1 if an implemented proof fails. The previous single-scenario JSON demo is `mnemosy demo
+  --classic`, and `scripts/verify-package.mjs` now calls it that way. `demo --record FILE` saves
+  the new report shape. To record the old shape, use `demo --classic --record FILE`.
+- **The root export gains a `consolidate`.** It is the outcome-gated function above. It is not the
+  legacy blind `consolidate()` that rc.1 removed: the name is the same, but the signature and
+  semantics are different.
+- **New package exports:** `./consolidation` and `./dependencies`. The root also re-exports
+  `consolidate`, `createConsolidationSigner`, `gateConsolidation`, `proposeConsolidation`,
+  `rollbackConsolidation`, `verifyConsolidationChain`, `inferDependencies`, `reviewDependency` and
+  `createPremiseGuard`.
+- **New ledger `retrieval.config` keys.** `requireNamedMatch`, `fuzzy`, `minScores`, `kinds` and
+  `metadataFilter` are written only when they are set. A recall that passes `kinds` therefore gets
+  a different configuration hash, while calls without the new options keep their old hash.
+- **`recallHybrid` rejects the precision options with a `TypeError`.** It does not apply them.
+
+### Known limits
+
+- **PrecisionMemBench.** The names gate abstains, by design, on queries that refer to a named
+  record without naming it. Recall latency under the new controls was not established on an idle
+  machine: a loaded-machine sample showed about +10–25 % p50.
+- **Consolidation.**
+  - Replay is lexical.
+  - A store with the default `queries: 'digest'` ledger setting records no query text, so every
+    pass on it is `no_evidence`.
+  - `supersede` and `delete` proposals are never applied live.
+  - The signing key lives in `<db>.consolidation.key` (mode 0600), and key-rotation receipts are
+    not written yet.
+  - In the suite the synthetic verifier never exercises a regression rollback.
+  - No improvement-from-experience lift has been measured.
+- **Dependencies.**
+  - Stale = 0 holds only when the executor uses the premise guard. The kernel alone runs 7 stale
+    procedures on the gate seed.
+  - The eval reviewer accepts everything, so precision on real controller traces is unmeasured.
+  - Some thresholds and one corpus parameter were chosen after seeing results; all of these
+    choices are disclosed.
+  - Only the lexical path was measured.
+- **Benchmarks not scored.** MemSecBench is not scored (it needs the authors' cases and paid judge
+  calls), and ConsolidationBench is still blocked.
+- **Docs not updated.** `site/` pages still describe the classic demo.
+
 ## [3.0.0-rc.1] — draft, not released
 
 Draft entry for the first 3.0.0 release candidate. The root package version in this tree is still
@@ -61,6 +212,7 @@ the branch with the commands in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST
 
 - `recall()`/`compile()` have no native abstention threshold; the PrecisionMemBench wrapper
   applies disclosed filters on its side. Fixing this in the kernel is the first 3.x item.
+  (Addressed in rc.2: native abstention and opt-in precision controls, no wrapper filter.)
 - The poisoning suite exercises the lexical path only and tests the trust-label gate, not
   content inspection.
 - `site/docs/index.html` still describes both engines; CI does not yet run `test:legacy`.

@@ -38,13 +38,29 @@ These commands build **2.0.0**, the 2.0.0-rc.10 candidate promoted to stable wit
 
 The first demo exercises handoff, scoped sharing, correction propagation and forgetting. The learning demo adds original evidence, a scripted observation job, a controller skill trial and retirement after correction. Both use synthetic temporary databases, clean up their own data, and make no external model calls. Passing these fixtures establishes the demonstrated behavior, not general agent intelligence.
 
+In a checkout of the current source tree, which is the 3.0.0 draft and is not yet on npm, `mnemosy demo` runs the [five-moment demo](DEMO.md) instead:
+
+1. replay of a past belief;
+2. a correction that reaches dependents nobody linked;
+3. `bisect`;
+4. the poisoning suite, run live;
+5. a consolidation kept and another rolled back.
+
+Each moment prints a `PROOF` line measured in that run, on synthetic corpora and the zero-model lexical path. The 2.0.0 demo described above is `mnemosy demo --classic`:
+
+```sh
+npm run build
+node dist/cli/index.js demo             # five moments, each PROOF line measured live
+node dist/cli/index.js demo --classic   # the 2.0.0 single-scenario demo
+```
+
 To keep a receipt, choose a new output filename:
 
 ```sh
 node dist/cli/index.js demo --record demo-evidence.json
 ```
 
-Recording refuses to overwrite an existing file. Contributor validation is a separate step: run `npm run check` for typechecking, tests and example typechecking. See [contributing](../CONTRIBUTING.md) for the current documentation and release checks.
+Recording refuses to overwrite an existing file. In the 3.0.0 source tree, `demo --record` saves the five-moment report; to record the 2.0.0 report shape, use `demo --classic --record`. Contributor validation is a separate step: run `npm run check` for typechecking, tests and example typechecking. See [contributing](../CONTRIBUTING.md) for the current documentation and release checks.
 
 ## Store and recall shared evidence
 
