@@ -1,0 +1,77 @@
+{
+  "name": "mnemosy-ai-legacy",
+  "version": "2.0.0",
+  "private": true,
+  "description": "The Mnemosyne 1.x/2.x Qdrant engine (createMnemosyne, graph, broadcast, cognitive layers), split out of mnemosy-ai for 3.0.0. Unpublished; install from this folder.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./cognitive": {
+      "types": "./dist/cognitive/index.d.ts",
+      "import": "./dist/cognitive/index.js"
+    },
+    "./graph": {
+      "types": "./dist/graph/index.d.ts",
+      "import": "./dist/graph/index.js"
+    },
+    "./broadcast": {
+      "types": "./dist/broadcast/index.d.ts",
+      "import": "./dist/broadcast/index.js"
+    },
+    "./pipeline": {
+      "types": "./dist/pipeline/index.d.ts",
+      "import": "./dist/pipeline/index.js"
+    },
+    "./cache": {
+      "types": "./dist/cache/index.d.ts",
+      "import": "./dist/cache/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "check": "npm run build && npm run typecheck:examples && npm test"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Aristotle Intelligence Inc.",
+    "email": "28naem@gmail.com",
+    "url": "https://mnemosy.ai"
+  },
+  "homepage": "https://mnemosy.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/28naem-del/mnemosyne",
+    "directory": "packages/legacy"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "peerDependencies": {
+    "ioredis": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": true
+    }
+  }
+}

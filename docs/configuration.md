@@ -8,7 +8,7 @@ The database directory must already exist. File permissions reduce accidental ac
 
 ## Qdrant mode
 
-Pass configuration to `createMnemosyne` as JavaScript options. Environment variables in your deployment must be read and passed explicitly by your application.
+Pass configuration to `createMnemosyne` as JavaScript options. From 3.0 the factory is imported from the separate `mnemosy-ai-legacy` package ([migration notes](MIGRATION-v3.md)). Environment variables in your deployment must be read and passed explicitly by your application.
 
 ```ts
 const memory = await createMnemosyne({

@@ -6,7 +6,7 @@ Run Mnemosyne locally, see a correction retire old advice, then connect your age
 
 Version **2.0.0 includes both engines**:
 
-- **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` with configured external services. Start with the [existing backend example](../examples/basic-usage.ts) and review the [version 2 migration notes](MIGRATION-v2.md).
+- **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` 2.x (from 3.0, the separate `mnemosy-ai-legacy` package) with configured external services. Start with the [existing backend example](../packages/legacy/examples/basic-usage.ts) and review the [version 2](MIGRATION-v2.md) and [version 3](MIGRATION-v3.md) migration notes.
 - **Local Engine:** use `createLocalMemory` from `mnemosy-ai/local` for a SQLite store. The demonstrations below and the [local API](api.md) use this engine. The [MemoryAgent adapter](AGENT.md) runs on its local runtime.
 
 They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. From 27 October 2026 the npm `latest` channel is 2.0.0 with both engines; the older 1.x line stays installable as `mnemosy-ai@1`.

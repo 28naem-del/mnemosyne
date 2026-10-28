@@ -62,34 +62,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./core": {
-      "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js"
-    },
-    "./cognitive": {
-      "types": "./dist/cognitive/index.d.ts",
-      "import": "./dist/cognitive/index.js"
-    },
-    "./graph": {
-      "types": "./dist/graph/index.d.ts",
-      "import": "./dist/graph/index.js"
-    },
-    "./broadcast": {
-      "types": "./dist/broadcast/index.d.ts",
-      "import": "./dist/broadcast/index.js"
-    },
-    "./pipeline": {
-      "types": "./dist/pipeline/index.d.ts",
-      "import": "./dist/pipeline/index.js"
-    },
-    "./cache": {
-      "types": "./dist/cache/index.d.ts",
-      "import": "./dist/cache/index.js"
-    },
-    "./tools": {
-      "types": "./dist/tools/index.d.ts",
-      "import": "./dist/tools/index.js"
-    },
     "./evaluation": {
       "types": "./dist/evaluation/index.d.ts",
       "import": "./dist/evaluation/index.js"
@@ -189,10 +161,11 @@
     "setup:reranker": "node scripts/fetch-local-reranker.mjs",
     "test": "vitest run --reporter=default --reporter=json --outputFile.json=.vitest-report.json",
     "test:coverage": "vitest run --coverage",
+    "test:legacy": "npm --prefix packages/legacy run check",
     "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/basic-usage.ts examples/with-redis.ts examples/with-falkordb.ts examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts examples/agent-loop.ts examples/adaptive-context.ts examples/agent-benchmark.ts examples/backup-restore.ts examples/profiles.ts examples/gradual-migration.ts examples/local-semantic.ts"
+    "typecheck:examples": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --ignoreConfig --types node examples/runtime-learning.ts examples/anthropic-memory.ts examples/provider-memory-tools.ts examples/migration.ts examples/maintenance.ts examples/agent-loop.ts examples/adaptive-context.ts examples/agent-benchmark.ts examples/backup-restore.ts examples/profiles.ts examples/gradual-migration.ts examples/local-semantic.ts"
   },
   "keywords": [
     "ai",

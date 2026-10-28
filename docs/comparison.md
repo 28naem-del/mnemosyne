@@ -14,7 +14,7 @@ For a measured head-to-head against another memory system — a matched competit
 | MCP or authenticated HTTP | A client that needs a process or language boundary | Scoped tools; HTTP adds bearer principals, capability checks and a browser inspector. | Client configuration and secure token handling; remote hosting needs its own TLS and identity deployment. |
 | Gradual migration | Keep the current memory system while adopting a new one | Read-only legacy search, private source staging, paired-query adoption and fallback. | An owner-scoped adapter with stable record IDs/revisions. Legacy search stays connected. |
 | Full export migration | A deliberate bulk transfer | Eleven profiles, source-byte preview, completeness checks, atomic apply and guarded undo. | A supported export and an explicit source-owner/destination mapping. Unsupported semantics need review. |
-| Compatibility service API | Maintain an existing `createMnemosyne` application | The existing vector-backed API and explicitly configured graph/broadcast modules. | The original services and embedding endpoint; local runtime semantics are separate. |
+| Compatibility service API | Maintain an existing `createMnemosyne` application (`mnemosy-ai-legacy` from 3.0) | The existing vector-backed API and explicitly configured graph/broadcast modules. | The original services and embedding endpoint; local runtime semantics are separate. |
 
 See [examples](../examples/README.md) for a runnable path and [integration coverage](README.md#integration-coverage) for what has actually been checked. An adapter contract or export parser is not a promise that every external framework, account API or SDK version works without integration work.
 

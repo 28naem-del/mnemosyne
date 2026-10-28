@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { migrationOriginIdentity } from './origins.js';
-import { MEMORY_TYPES } from '../core/types.js';
+// Memory types written by the 1.x/2.x Qdrant engine (now mnemosy-ai-legacy);
+// used only to recognize its payloads during migration planning.
+const MEMORY_TYPES = ['episodic', 'semantic', 'preference', 'relationship', 'procedural', 'profile', 'core'] as const;
 import { parseJsonWithSpans, JsonSpanError, type JsonSpanNode } from './json-spans.js';
 import { MIGRATION_PROFILES, MigrationPlanError, type MigrationArtifact, type MigrationFamily, type MigrationFieldMapping, type MigrationFieldStatus, type MigrationInputReport, type MigrationIssue, type MigrationPlan, type MigrationPlannedRecord, type MigrationPlanOptions, type MigrationProfile, type NormalizedMigrationOptions } from './types.js';
 

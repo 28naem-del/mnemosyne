@@ -64,12 +64,12 @@ The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory
 
 | Engine | Best starting point | SDK entry point | Guide |
 |---|---|---|---|
-| **Vector Engine** | An application using the existing service-backed memory architecture. Requires configured external services. | `createMnemosyne` from `mnemosy-ai` | [Working example](examples/basic-usage.ts) · [Version 2 changes](docs/MIGRATION-v2.md) |
+| **Vector Engine** | An application using the existing service-backed memory architecture. Requires configured external services. | `createMnemosyne` from `mnemosy-ai` 2.x; from 3.0 in the separate `mnemosy-ai-legacy` package | [Working example](packages/legacy/examples/basic-usage.ts) · [Version 2 changes](docs/MIGRATION-v2.md) · [3.0 split](docs/MIGRATION-v3.md) |
 | **Local Engine** | A self-contained SQLite memory store with evidence, corrections and agent lifecycle tools. | `createLocalMemory` from `mnemosy-ai/local` | [Local API](docs/api.md) · [Agent lifecycle](docs/AGENT.md) |
 
 The `MemoryAgent` adapter uses the Local Engine's runtime. These engines have separate schemas and do not automatically migrate or synchronize data. To transition gradually, explicitly connect your existing store through the [read-only migration bridge](docs/BRIDGE.md); it leaves that store unchanged.
 
-Engine choice is separate from version: `mnemosy-ai@latest` is 2.0.0 and contains **both** engines; the 1.x line stays installable as `mnemosy-ai@1`. **Upgrading from 1.x is a breaking change**: read the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application.
+Engine choice is separate from version: `mnemosy-ai@latest` is 2.0.0 and contains **both** engines; the 1.x line stays installable as `mnemosy-ai@1`. **Upgrading from 1.x is a breaking change**: read the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application. In this source tree, prepared for 3.0.0, the Vector Engine has moved out of `mnemosy-ai` into the unpublished [`mnemosy-ai-legacy`](packages/legacy/README.md) package; see the [3.0 migration notes](docs/MIGRATION-v3.md).
 
 ## Start with a working demonstration
 
@@ -229,7 +229,7 @@ flowchart LR
 
 The host chooses identities, trust assertions, providers and execution budgets. Construction starts no worker or model download. `MemoryAgent` can prepare context before a turn and capture supplied visible input/output afterward; background work runs only when the host starts it. [Host loop](docs/AGENT.md).
 
-The local database holds memories, vectors and runtime state. Optional local CPU providers run cached inference in separate processes after explicit provisioning. Their dependency requirements, model identities and licenses are documented in the [local model guide](docs/LOCAL-MODELS.md). The existing backend integration remains available through `createMnemosyne`; it does not automatically synchronize with the local engine. [Version 1 migration notes](docs/MIGRATION-v2.md).
+The local database holds memories, vectors and runtime state. Optional local CPU providers run cached inference in separate processes after explicit provisioning. Their dependency requirements, model identities and licenses are documented in the [local model guide](docs/LOCAL-MODELS.md). The existing backend integration remains available through `createMnemosyne` (in `mnemosy-ai-legacy` from 3.0); it does not automatically synchronize with the local engine. [Version 1 migration notes](docs/MIGRATION-v2.md).
 
 ### Connect through MCP
 

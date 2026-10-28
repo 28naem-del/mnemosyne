@@ -40,14 +40,14 @@ The example fails clearly when its cache is missing. Add `--download` only when 
 
 ## External service examples
 
-These three examples use the separate compatibility APIs. Provide isolated development endpoints; their configuration names below are actual runtime identifiers.
+These three examples use the separate Vector Engine compatibility APIs, which moved to the [`mnemosy-ai-legacy`](../packages/legacy/README.md) package for 3.0 ([migration notes](../docs/MIGRATION-v3.md)); the files now live in `packages/legacy/examples/`. Build that package first (`npm --prefix packages/legacy run build`). Provide isolated development endpoints; their configuration names below are actual runtime identifiers.
 
 | Example | Required configuration | Side effects and coverage |
 |---|---|---|
-| [basic-usage.ts](basic-usage.ts) | `QDRANT_URL` and full `EMBEDDING_URL`; optional provider credentials and model settings are listed in the file. | Writes to isolated `example_*` collections, recalls and forgets sample records. It leaves the collections in place and calls the selected embedding service. |
-| [with-redis.ts](with-redis.ts) | `REDIS_URL` | Publishes/subscribes to one synthetic broadcast with a bounded delivery wait and disconnect. |
-| [with-falkordb.ts](with-falkordb.ts) | `GRAPH_URL` | Writes sample nodes and a relation in `mnemosyne_example_graph`; these sample nodes remain. |
+| [basic-usage.ts](../packages/legacy/examples/basic-usage.ts) | `QDRANT_URL` and full `EMBEDDING_URL`; optional provider credentials and model settings are listed in the file. | Writes to isolated `example_*` collections, recalls and forgets sample records. It leaves the collections in place and calls the selected embedding service. |
+| [with-redis.ts](../packages/legacy/examples/with-redis.ts) | `REDIS_URL` | Publishes/subscribes to one synthetic broadcast with a bounded delivery wait and disconnect. |
+| [with-falkordb.ts](../packages/legacy/examples/with-falkordb.ts) | `GRAPH_URL` | Writes sample nodes and a relation in `mnemosyne_example_graph`; these sample nodes remain. |
 
-All 15 examples are included in strict example typechecking. Live backend conformance is not part of the default local test suite; an empty graph lookup is not proof that a live write succeeded. Use [deployment](../docs/deployment.md) for the service configuration and keep example writes separate from production data.
+All 15 examples are included in strict example typechecking: the 12 in this folder by `npm run typecheck:examples`, the three legacy ones by `npm run test:legacy`. Live backend conformance is not part of the default local test suite; an empty graph lookup is not proof that a live write succeeded. Use [deployment](../docs/deployment.md) for the service configuration and keep example writes separate from production data.
 
 Pass environment variables through your shell. If you choose an environment file, add Node's `--env-file=.env` option explicitly; these examples do not load one automatically. Do not commit credentials, memory databases or backups.

@@ -129,3 +129,25 @@ describe('shared installed artifact verifier', () => {
     try { const result = verify(); expect(result.status).toBe(1); expect(result.stderr).toContain('pack integrity'); } finally { tarball = original; }
   });
 });
+
+describe('3.0 package shape: kernel root, legacy engine split out', () => {
+  const legacySubpaths = ['./core', './cognitive', './graph', './broadcast', './pipeline', './cache', './tools'];
+  const legacyRootNames = ['createMnemosyne', 'QdrantDB', 'EmbeddingsClient', 'FalkorDBClient', 'MemoryPublisher', 'MemorySubscriber', 'SharedBlockManager',
+    'runConsolidation', 'runDreamConsolidation', 'maintainMemory', 'runPatternMining', 'looksLikePromptInjection', 'escapeMemoryForPrompt', 'MEMORY_TYPES', 'DEFAULT_COLLECTIONS', 'default'];
+  it('declares no legacy engine subpath and ships no legacy package folder', () => {
+    const manifest = json(resolve('package.json'));
+    for (const subpath of legacySubpaths) expect(manifest.exports).not.toHaveProperty([subpath]);
+    for (const subpath of ['.', './local', './runtime', './mcp', './reflection', './connectors', './migration']) expect(manifest.exports).toHaveProperty([subpath]);
+    expect(manifest.files.some((entry: string) => entry.startsWith('packages'))).toBe(false);
+  });
+  it('exports only the local kernel from the package root', async () => {
+    const root: Record<string, unknown> = await import('../src/index.js');
+    for (const name of ['LocalMemory', 'createLocalMemory', 'reflect', 'commitVerifiedLesson', 'resolveConfig']) expect(root[name]).toBeTypeOf('function');
+    for (const name of legacyRootNames) expect(root).not.toHaveProperty([name]);
+  });
+  it('keeps the legacy engine as a private mnemosy-ai-legacy package with the old subpaths', () => {
+    const legacy = json(resolve('packages/legacy/package.json'));
+    expect(legacy).toMatchObject({ name: 'mnemosy-ai-legacy', private: true, type: 'module' });
+    for (const subpath of ['.', ...legacySubpaths]) expect(legacy.exports).toHaveProperty([subpath]);
+  });
+});

@@ -42,7 +42,7 @@ Action read sets bind the proposed action, arguments and declared supporting mem
 - [Profiles](PROFILES.md) retain typed known, unknown and conflicting fields. [Relations and branches](RUNTIME.md#time-entities-and-branches) support evidence-backed traversal and reviewed staged changes.
 - [Recovery](OPERATIONS.md) creates consistent whole-database backup bundles, verifies integrity and restores to a new path. Bundles include all owners and are plaintext. A digest is not an authenticity signature.
 
-The `createMnemosyne` compatibility API retains its separately configured vector, graph and broadcast integrations. It does not automatically gain every local lifecycle behavior; follow the [existing-installation migration guide](MIGRATION-v2.md).
+The `createMnemosyne` compatibility API (the separate `mnemosy-ai-legacy` package from 3.0, see [3.0 migration](MIGRATION-v3.md)) retains its separately configured vector, graph and broadcast integrations. It does not automatically gain every local lifecycle behavior; follow the [existing-installation migration guide](MIGRATION-v2.md).
 
 ## Published measurements and pending validation
 

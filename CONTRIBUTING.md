@@ -29,7 +29,7 @@ The Python client tests require Python ≥3.10. `npm run check` typechecks, buil
 | Transports and client | `src/mcp`, `src/http`, `src/cli`, `python` | [Runtime interfaces](docs/RUNTIME.md) |
 | Experiments and diagnostics | `src/evaluation` | [Corpus protocol](docs/evaluation/CORPUS_PROTOCOL.md), [evidence protocol](docs/evaluation/EVIDENCE-PROTOCOL.md) |
 
-The root factory and `src/core`, `cognitive`, `graph`, `cache`, `broadcast`, `pipeline` and `tools` maintain the existing backend path. Read [architecture](ARCHITECTURE.md), [security](SECURITY.md) and [version migration](docs/MIGRATION-v2.md) before changing shared behavior.
+The existing backend path (`createMnemosyne` and its `core`, `cognitive`, `graph`, `cache`, `broadcast`, `pipeline` and `tools` layers) lives in [`packages/legacy`](packages/legacy/README.md); run `npm run test:legacy` after changing it. Read [architecture](ARCHITECTURE.md), [security](SECURITY.md) and [version migration](docs/MIGRATION-v2.md) before changing shared behavior.
 
 ## Submit a reviewable change
 

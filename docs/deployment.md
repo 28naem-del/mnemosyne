@@ -98,7 +98,7 @@ MNEMOSYNE_WORKSPACE=my-project MNEMOSYNE_AGENT=coding-agent \
 
 ## Existing Qdrant applications
 
-Existing Qdrant collections are not imported, renamed, or deleted by the local engine. Keep using `createMnemosyne()` for the vector-backed API and select collection names explicitly when needed. Do not repoint a production application to a new database merely to try the local demo.
+Existing Qdrant collections are not imported, renamed, or deleted by the local engine. Keep using `createMnemosyne()` for the vector-backed API (from `mnemosy-ai-legacy` from 3.0; see [the 3.0 migration notes](MIGRATION-v3.md)) and select collection names explicitly when needed. Do not repoint a production application to a new database merely to try the local demo.
 
 The Compose services `qdrant`, `redis`, `falkordb`, and `mongo` are under the optional `legacy` profile. Their existing named-volume keys remain `qdrant-data`, `redis-data`, `falkordb-data`, and `mongo-data`. Docker Compose prefixes volume names with its project name, so retain your existing project name and volume mapping when maintaining an existing installation. Never use `docker compose down --volumes` on memory data you intend to keep.
 
@@ -113,7 +113,7 @@ An embedding endpoint is also required. Optional Redis and FalkorDB services mus
 Example application configuration:
 
 ```typescript
-import { createMnemosyne } from 'mnemosy-ai';
+import { createMnemosyne } from 'mnemosy-ai-legacy'; // mnemosy-ai 2.x: from 'mnemosy-ai'
 
 const memory = await createMnemosyne({
   vectorDbUrl: 'http://127.0.0.1:6333',

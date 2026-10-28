@@ -1,6 +1,6 @@
 # Mnemosyne architecture
 
-Mnemosyne connects an agent's evidence, reusable procedures and current context through an inspectable local lifecycle. Its portable engine uses SQLite; the separate `createMnemosyne` compatibility API supports existing service-backed installations. Starting the local engine does not connect those services or create a distributed memory mesh.
+Mnemosyne connects an agent's evidence, reusable procedures and current context through an inspectable local lifecycle. Its portable engine uses SQLite; the separate `createMnemosyne` compatibility API supports existing service-backed installations and, from 3.0, lives in the [`mnemosy-ai-legacy`](packages/legacy/README.md) package rather than `mnemosy-ai`. Starting the local engine does not connect those services or create a distributed memory mesh.
 
 ## Local data flow
 
@@ -66,7 +66,7 @@ New applications can select `RECOMMENDED_SKILL_PROMOTION_POLICY`: successful tri
 
 The [bridge](docs/BRIDGE.md) copies encountered legacy records while continuing to query the old system for reconciliation. Adoption credit concerns observed queries, not a complete account scan or answer correctness. [Full migration](docs/MIGRATION.md) previews explicit export profiles, validates scope and source bytes, then applies a reviewed plan atomically. Neither path converts unsupported foreign semantics or silently changes the old backend.
 
-The compatibility vector API retains its actual Qdrant, graph and broadcast identifiers. It uses separate backend configuration and lifecycle behavior; the local runtime is not silently enabled by starting optional services. See [deployment](docs/deployment.md) and [migration from existing versions](docs/MIGRATION-v2.md).
+The compatibility vector API retains its actual Qdrant, graph and broadcast identifiers. It uses separate backend configuration and lifecycle behavior; the local runtime is not silently enabled by starting optional services. See [deployment](docs/deployment.md), [migration from existing versions](docs/MIGRATION-v2.md) and [the 3.0 package split](docs/MIGRATION-v3.md).
 
 ## Operations and evidence
 

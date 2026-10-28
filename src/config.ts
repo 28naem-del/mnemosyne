@@ -2,7 +2,15 @@
  * Configuration for Mnemosyne Memory OS.
  */
 
-import { DEFAULT_COLLECTIONS } from "./core/types.js";
+// Default Qdrant collection names of the 1.x/2.x engine. The engine itself
+// moved to mnemosy-ai-legacy (packages/legacy) in 3.0.0; this copy keeps
+// resolveConfig self-contained in the kernel package.
+const DEFAULT_COLLECTIONS = {
+  SHARED: "memory_shared",
+  PRIVATE: "memory_private",
+  PROFILES: "agent_profiles",
+  SKILLS: "skill_library",
+} as const;
 
 export type MnemosyneConfig = {
   // Required

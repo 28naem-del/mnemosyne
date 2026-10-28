@@ -31,7 +31,7 @@ Start with the [keyless local quickstart](quickstart.md), then choose the integr
 | Provider memory tools | Native memory commands and explicit function-call envelopes | Synthetic request/result, replay, policy and error cases; no universal live-provider or framework certification. |
 | Migration | Eleven export profiles plus a host-supplied legacy search adapter | Offline format, completeness, scope, replay, correction and erasure fixtures. Export support is not automatic account access. |
 | Optional local models | Pinned CPU embedding and reranking integration | Separate cached CPU smoke checks; model artifacts are not installed or downloaded by the default quickstart or CI examples. |
-| Existing service-backed API | `createMnemosyne` and optional graph/broadcast modules | Typed examples and mocked contracts; live backend conformance requires your own isolated services. |
+| Existing service-backed API | `createMnemosyne` and optional graph/broadcast modules, in [`mnemosy-ai-legacy`](../packages/legacy/README.md) from 3.0 ([migration](MIGRATION-v3.md)) | Typed examples and mocked contracts; live backend conformance requires your own isolated services. |
 
 ## Understand the system
 

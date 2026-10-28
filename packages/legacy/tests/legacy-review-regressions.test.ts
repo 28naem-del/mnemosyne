@@ -173,10 +173,10 @@ describe("independent review regressions", () => {
     expect(writes.every(path => path.includes("review_private"))).toBe(true);
   });
 
-  it("exposes the v2 local and reflection APIs at the package root", () => {
-    expect(root.LocalMemory).toBeTypeOf("function");
-    expect(root.createLocalMemory).toBeTypeOf("function");
-    expect(root.reflect).toBeTypeOf("function");
-    expect(root.commitVerifiedLesson).toBeTypeOf("function");
+  it("keeps the legacy root separate from the local kernel exported by mnemosy-ai", () => {
+    expect(root.createMnemosyne).toBeTypeOf("function");
+    expect(root.resolveConfig).toBeTypeOf("function");
+    const kernel = root as Record<string, unknown>;
+    for (const name of ["LocalMemory", "createLocalMemory", "reflect", "commitVerifiedLesson"]) expect(kernel[name]).toBeUndefined();
   });
 });

@@ -71,7 +71,7 @@ Model tools have narrower authority than the controller SDK. They cannot choose 
 ## Qdrant compatibility API
 
 ```ts
-import { createMnemosyne } from 'mnemosy-ai';
+import { createMnemosyne } from 'mnemosy-ai-legacy'; // mnemosy-ai 2.x: from 'mnemosy-ai'
 const vectorMemory = await createMnemosyne({
   vectorDbUrl: 'http://127.0.0.1:6333',
   embeddingUrl: 'http://127.0.0.1:11434/v1/embeddings',
@@ -79,4 +79,4 @@ const vectorMemory = await createMnemosyne({
 });
 ```
 
-The factory probes embedding dimensions, checks collection compatibility, and awaits bounded keyword indexing. `bm25Status` reports readiness and per-collection coverage/truncation. `store`, `recall`, `search`, `stats`, `update`, `feedback`, `consolidate`, and `dream` retain their typed interfaces. Erasure requires `forget({ id, collection? })`; query erasure is disabled. Low-level backend classes assume a trusted controller and are not a public authentication layer. [Configuration](configuration.md) and [migration](MIGRATION-v2.md) describe boundaries.
+The factory probes embedding dimensions, checks collection compatibility, and awaits bounded keyword indexing. `bm25Status` reports readiness and per-collection coverage/truncation. `store`, `recall`, `search`, `stats`, `update`, `feedback`, `consolidate`, and `dream` retain their typed interfaces. Erasure requires `forget({ id, collection? })`; query erasure is disabled. Low-level backend classes assume a trusted controller and are not a public authentication layer. [Configuration](configuration.md) and [migration](MIGRATION-v2.md) describe boundaries. From 3.0 this API is the separate `mnemosy-ai-legacy` package; see [the 3.0 migration notes](MIGRATION-v3.md).
