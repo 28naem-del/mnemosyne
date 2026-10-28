@@ -92,8 +92,11 @@
         event.preventDefault();
         select(keys[event.key], true);
       });
-      byId('moments-previous').addEventListener('click', () => select(selected - 1));
-      byId('moments-next').addEventListener('click', () => select(selected + 1));
+      const previous = byId('moments-previous'), next = byId('moments-next');
+      // A button that becomes disabled under focus would drop focus to the page; hand it to the other one.
+      const step = (delta, from, to) => { select(selected + delta); if (from.disabled && document.activeElement !== to) to.focus(); };
+      previous.addEventListener('click', () => step(-1, previous, next));
+      next.addEventListener('click', () => step(1, next, previous));
       for (const limitation of report.limitations) byId('moments-limits').append(node('li', '', limitation));
       render(false);
       byId('moments-loading').hidden = true;

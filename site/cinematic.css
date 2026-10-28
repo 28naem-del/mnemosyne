@@ -546,6 +546,13 @@ html[data-motion=paused] .chapter-nav { transition: none; }
   .chapter-nav a, #motion-toggle { display: inline-flex; align-items: center; min-height: 44px; }
   .demo-pagination button { min-height: 44px; }
   .scene-tools button { min-height: 44px; }
+  .site-header:not(.nav-enhanced) .nav a { display: inline-flex; align-items: center; min-height: 44px; }
+  .brand, .hero-scroll a, .step-button, .inspector-tab { min-height: 44px; }
+  .footer-links a, .company-footer a, .nav-enhanced .nav a, .chapter-nav a { min-width: 44px; justify-content: center; }
+  .demo-disclosure summary, .article details > summary { min-height: 44px; }
+  .article details > summary { padding-block: 9px; }
+  .text-link, .feature-index a, .architecture-step a, .migration-providers a, .company-email a, .reference-return a { display: inline-flex; align-items: center; min-height: 44px; }
+  .release-current { display: flex; align-items: center; min-height: 44px; margin-top: 14px; }
 }
 .scene-tools .scene-load { color: var(--mint); border-color: #6fa59699; }
 .not-found-links { margin: 0 0 110px; max-width: 760px; }
