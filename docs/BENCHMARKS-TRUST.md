@@ -2,8 +2,8 @@
 
 **Status: draft.** The rc.2 numbers on this page were produced on 2026-10-28 on branch
 `feat/breakthrough`, which merges the precision, consolidation, dependency and demo work (merge
-commit `64ec27c`; the PrecisionMemBench reports were re-run at `50a1eee` without the wrapper `kinds`
-predicate). They were run
+commit `16cd9c0`, which also carries the verifier-driven fixes; the PrecisionMemBench reports were
+re-run at that commit without the wrapper `kinds` predicate). They were run
 offline, with no API key, no paid model and no LLM judge, and each one comes with the command
 that reproduces it from a fresh clone. The rc.1 numbers (branch `feat/unit1-proof-sprint`, commit
 range `e0bbb47..c97270c`, based on 2.0.0) are kept in their own subsections and marked as
@@ -28,7 +28,7 @@ The page follows the project's wording rules:
 | Dependency suite v1 (synthetic) | invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), **0** stale-procedure executions with the premise guard (inference alone: 7/248; guard false-hold rate 92.78 %) | seed 20261028, accept-all eval reviewer, guarded executor, lexical path | `reports/dependencies/v1/` |
 | `mnemosy demo` | five moments, each with a PROOF line measured live | offline, synthetic corpora, zero-model lexical path | printed per run ([DEMO.md](DEMO.md)) |
 | LoCoMo and LongMemEval-S retrieval | unchanged before vs after (largest delta: LoCoMo MRR +0.0014) | zero-model and hybrid, same commands before and after | section 6 |
-| Full test suite | 92 files, 1,545 tests passed | `npm run check` on the merged tree | — |
+| Full test suite | 93 files, 1,557 tests passed | `npm run check` on the merged tree (`16cd9c0`) | — |
 
 ## 1. PrecisionMemBench (retrieval mode, no LLM judge)
 
@@ -506,7 +506,7 @@ request only. `benchmarks/consolidationbench/BLOCKER.md` records what is needed.
 
 ## 10. Engineering evidence in this release line
 
-- **rc.2 test suite.** The full suite on the merged tree (`64ec27c`) passes: 92 files, 1,545
+- **rc.2 test suite.** The full suite on the merged tree (`16cd9c0`) passes: 93 files, 1,557
   tests (`npm run check`), with docs-link, public-metadata and example type checks green. The
   rc.1 tip (`6cb1342`) had 74 files and 1,434 tests, and the legacy package 8 files and 103
   tests.

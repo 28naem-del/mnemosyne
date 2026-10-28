@@ -13,8 +13,8 @@ Draft entry for the second 3.0.0 release candidate, which builds on rc.1 below. 
 version in this tree is still 2.0.0, and nothing in this section has been published. Every number
 reproduces offline, with no API key, no paid model and no LLM judge, using the command given next
 to it. The protocols and limits are in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
-Measured on the merged tree `64ec27c` (PrecisionMemBench reports re-run at `50a1eee`, no wrapper `kinds` predicate): 92 test files,
-1,545 tests passed.
+Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that commit, no wrapper `kinds` predicate): 93 test files,
+1,557 tests passed.
 
 ### Added
 
