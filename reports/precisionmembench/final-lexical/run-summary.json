@@ -20,14 +20,14 @@
     "?? test-results/retrieval-report-mnemosyne.json",
     "?? test-results/session-retrieval-report-mnemosyne.json"
   ],
-  "kernelCommit": "50a1eeed14ff4fe64d733c4c55d3c3ab007099d4",
+  "kernelCommit": "16cd9c07685d744213b0c41f0a326e408d240a15",
   "node": "v26.12.1",
-  "startedAt": "2026-10-28T13:09:58.949Z",
+  "startedAt": "2026-10-28T13:41:08.897Z",
   "runs": [
     {
       "test": "src/retrieval.external.eval.test.ts",
       "avaExit": 1,
-      "seconds": 0.671,
+      "seconds": 2.654,
       "report": "retrieval-report-mnemosyne.json",
       "scores": {
         "passed": 70,
@@ -41,7 +41,7 @@
           "structural": 19,
           "triviallyEmpty": 9
         },
-        "p50LatencyMs": 1.52
+        "p50LatencyMs": 5.61
       },
       "serverCounters": {
         "add": 35,
@@ -55,7 +55,7 @@
     {
       "test": "src/session-retrieval.external.eval.test.ts",
       "avaExit": 1,
-      "seconds": 0.517,
+      "seconds": 0.843,
       "report": "session-retrieval-report-mnemosyne.json",
       "scores": {
         "passed": 11,
@@ -69,7 +69,7 @@
           "structural": 0,
           "triviallyEmpty": 1
         },
-        "p50LatencyMs": 10.69
+        "p50LatencyMs": 14.1
       },
       "serverCounters": {
         "add": 36,

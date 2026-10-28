@@ -1,9 +1,9 @@
 {
   "provider": "mnemosyne",
   "retrieval": {
-    "meanLatencyMs": 35.55,
-    "p50LatencyMs": 24.62,
-    "p95LatencyMs": 168.68,
+    "meanLatencyMs": 118.39,
+    "p50LatencyMs": 59.47,
+    "p95LatencyMs": 489.23,
     "caseCount": 2,
     "meanPrecision": 0.9697,
     "meanRecall": 1,
@@ -45,7 +45,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 168.68,
+      "retrievalLatencyMs": 489.23,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -65,7 +65,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 33.39,
+      "retrievalLatencyMs": 254.84,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -85,7 +85,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 24.9,
+      "retrievalLatencyMs": 45.71,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -107,7 +107,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 24.62,
+      "retrievalLatencyMs": 41.91,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -127,7 +127,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 26.18,
+      "retrievalLatencyMs": 86.08,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -151,7 +151,7 @@
       "failures": [
         "turn 5: unexpected relevant belief: b-auth-open-q"
       ],
-      "retrievalLatencyMs": 32.16,
+      "retrievalLatencyMs": 147.37,
       "retrievalPrecision": 0.6666666666666666,
       "retrievalRecall": 1
     },
@@ -172,7 +172,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 24.62,
+      "retrievalLatencyMs": 59.47,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -193,7 +193,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 27.38,
+      "retrievalLatencyMs": 119.09,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -213,7 +213,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 24.15,
+      "retrievalLatencyMs": 51.85,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -231,7 +231,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 8.53,
+      "retrievalLatencyMs": 16.89,
       "retrievalPrecision": null,
       "retrievalRecall": null
     },
@@ -251,7 +251,7 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 20.48,
+      "retrievalLatencyMs": 84.75,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     },
@@ -271,161 +271,161 @@
       "driftScore": 0,
       "passed": true,
       "failures": [],
-      "retrievalLatencyMs": 11.51,
+      "retrievalLatencyMs": 23.44,
       "retrievalPrecision": 1,
       "retrievalRecall": 1
     }
   ],
   "ingestion": {
     "beliefCount": 35,
-    "totalMs": 32.24,
-    "meanPerBeliefMs": 0.92,
+    "totalMs": 63.37,
+    "meanPerBeliefMs": 1.81,
     "perBelief": [
       {
         "beliefId": "b-comm-response-length",
-        "latencyMs": 6.3
+        "latencyMs": 10.17
       },
       {
         "beliefId": "b-comm-pushback",
-        "latencyMs": 1.13
+        "latencyMs": 2.53
       },
       {
         "beliefId": "b-comm-recommendation",
-        "latencyMs": 1.03
+        "latencyMs": 1.37
       },
       {
         "beliefId": "b-authorship-mode",
-        "latencyMs": 0.87
+        "latencyMs": 2.19
       },
       {
         "beliefId": "b-ts-pref",
-        "latencyMs": 0.76
+        "latencyMs": 1.49
       },
       {
         "beliefId": "b-fastify-pref",
-        "latencyMs": 0.72
+        "latencyMs": 1.75
       },
       {
         "beliefId": "b-mongo-raw-driver",
-        "latencyMs": 0.86
+        "latencyMs": 1.24
       },
       {
         "beliefId": "b-composition-inheritance",
-        "latencyMs": 0.9
+        "latencyMs": 1.48
       },
       {
         "beliefId": "b-error-handling",
-        "latencyMs": 1.27
+        "latencyMs": 1.35
       },
       {
         "beliefId": "b-db-decision",
-        "latencyMs": 0.97
+        "latencyMs": 1.85
       },
       {
         "beliefId": "b-sqlalchemy-superseded",
-        "latencyMs": 0.81
+        "latencyMs": 1.35
       },
       {
         "beliefId": "b-kubernetes-entity",
-        "latencyMs": 0.68
+        "latencyMs": 1.18
       },
       {
         "beliefId": "b-react-entity",
-        "latencyMs": 0.71
+        "latencyMs": 2.52
       },
       {
         "beliefId": "b-auth-open-q",
-        "latencyMs": 1.25
+        "latencyMs": 1.77
       },
       {
         "beliefId": "b-narrator-voice",
-        "latencyMs": 0.58
+        "latencyMs": 2.31
       },
       {
         "beliefId": "b-narrator-superseded",
-        "latencyMs": 0.68
+        "latencyMs": 1.35
       },
       {
         "beliefId": "b-protagonist-entity",
-        "latencyMs": 0.56
+        "latencyMs": 1.87
       },
       {
         "beliefId": "b-redis-writing",
-        "latencyMs": 0.54
+        "latencyMs": 1.37
       },
       {
         "beliefId": "b-redis-code",
-        "latencyMs": 0.53
+        "latencyMs": 1.45
       },
       {
         "beliefId": "b-chapter-structure-q",
-        "latencyMs": 0.64
+        "latencyMs": 1.1
       },
       {
         "beliefId": "b-other-user-leak-check",
-        "latencyMs": 1.39
+        "latencyMs": 2.65
       },
       {
         "beliefId": "b-ci-gha-entity",
-        "latencyMs": 0.76
+        "latencyMs": 0.7
       },
       {
         "beliefId": "b-pov-shift-entity",
-        "latencyMs": 0.68
+        "latencyMs": 1.38
       },
       {
         "beliefId": "b-hosting-resolved",
-        "latencyMs": 0.64
+        "latencyMs": 0.92
       },
       {
         "beliefId": "b-prose-style-user-edited",
-        "latencyMs": 0.58
+        "latencyMs": 1.21
       },
       {
         "beliefId": "b-functional-pipeline",
-        "latencyMs": 0.59
+        "latencyMs": 1.77
       },
       {
         "beliefId": "b-linting-v0",
-        "latencyMs": 0.53
+        "latencyMs": 0.97
       },
       {
         "beliefId": "b-linting-v1",
-        "latencyMs": 0.6
+        "latencyMs": 1.63
       },
       {
         "beliefId": "b-linting-current",
-        "latencyMs": 0.59
+        "latencyMs": 1.47
       },
       {
         "beliefId": "b-vitest-pref",
-        "latencyMs": 0.68
+        "latencyMs": 0.84
       },
       {
         "beliefId": "b-dead-letter-queue",
-        "latencyMs": 0.72
+        "latencyMs": 1.58
       },
       {
         "beliefId": "b-react-expertise",
-        "latencyMs": 1.14
+        "latencyMs": 3.11
       },
       {
         "beliefId": "b-auth-depends-redis",
-        "latencyMs": 0.54
+        "latencyMs": 1.08
       },
       {
         "beliefId": "b-pinned-resolved-interaction",
-        "latencyMs": 0.51
+        "latencyMs": 0.85
       },
       {
         "beliefId": "b-zero-reinforcement-fresh",
-        "latencyMs": 0.5
+        "latencyMs": 1.52
       }
     ]
   },
   "provenance": {
     "provider": "mnemosyne",
-    "generatedAt": "2026-10-28T13:10:10.526Z",
+    "generatedAt": "2026-10-28T13:41:18.608Z",
     "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
     "workingTreeClean": false,
     "composeFile": null,
