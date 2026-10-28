@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { collectRejectedPasses, receiptProblem, summarizeRejectedPasses, type RejectedPassLine } from '../src/consolidation/rejected-passes.js';
+import { collectRejectedPasses, receiptProblem, rejectedPassLineProblem, summarizeRejectedPasses, verifyRejectedPasses, type RejectedPassLine } from '../src/consolidation/rejected-passes.js';
 
 /**
  * The published rejected-passes artifact: every pass the gate rolled back in
@@ -38,6 +38,19 @@ describe('reports/consolidation/rejected-passes.jsonl', () => {
     const summary = JSON.parse(read('reports/consolidation/rejected-passes.summary.json'));
     expect(summary).toEqual(summarizeRejectedPasses(lines, summary.command));
     expect(summary.command).toBe(`node dist/consolidation/rejected-passes.js --suite ${SUITE} --out reports/consolidation`);
+  });
+
+  it('binds every line field derived from the receipt, so an edit outside the receipt is caught too', () => {
+    const lines = published();
+    expect(verifyRejectedPasses(read('reports/consolidation/rejected-passes.jsonl'))).toEqual({ lines: lines.length, problems: [] });
+    const edited = structuredClone(lines[3]);
+    edited.reason = 'kept: looks fine';
+    edited.delta = 99;
+    expect(rejectedPassLineProblem(edited)).toBe('line field(s) reason, delta do not match the receipt');
+    const extra = { ...structuredClone(lines[3]), verdict: 'kept' } as unknown as RejectedPassLine;
+    expect(rejectedPassLineProblem(extra)).toMatch(/verdict/);
+    const report = verifyRejectedPasses(lines.map((line, index) => JSON.stringify(index === 3 ? edited : line)).join('\n'));
+    expect(report.problems).toEqual([{ line: 4, problem: 'line field(s) reason, delta do not match the receipt' }]);
   });
 
   it('refuses to publish a suite line whose receipt was edited', () => {
