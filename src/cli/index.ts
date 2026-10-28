@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { closeSync, constants, fstatSync, openSync, readSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
@@ -44,6 +44,8 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
                    Belief diff between two cut points, with each change's source
   mnemosy bisect [scope] --file TASKS.json --task ID [--limit K] [--exact]
                    Delta-debug memory to the minimal record set behind a retrieval failure
+  mnemosy consolidate [scope] --propose [--out DIFF] | --apply [--file DIFF] | --rollback PASS_ID | --verify-chain
+                   Outcome-gated, reversible consolidation; --demo [--db NEW_FILE] runs it offline
   mnemosy correct [scope] --id ID --text TEXT --source URI --reason TEXT
   mnemosy forget [scope] --id ID --confirm
   mnemosy export [scope] --out FILE
@@ -178,6 +180,8 @@ const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
   recall: ['read'], context: ['read'], inspect: ['read'], export: ['read'], jobs: ['read'],
   // Replay reconstructs past state and bisect re-runs retrieval against it; both read, neither writes.
   replay: ['read'], bisect: ['read'],
+  // Consolidation reads the store and its outcome ledger, then applies or undoes a pass and writes its receipt.
+  consolidate: ['read', 'write'],
   correct: ['read', 'write'], forget: ['erase'], capture: ['read', 'write'],
   observe: ['read', 'write'], 'run-jobs': ['read', 'write'], index: ['read', 'write'],
   // These routes enforce per-request policies and must accept valid combinations.
@@ -317,6 +321,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     record: { type: 'string' }, 'read-only': { type: 'boolean' },
     'as-of': { type: 'string' }, 'known-at': { type: 'string' }, diff: { type: 'string' },
     hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' },
+    propose: { type: 'boolean' }, apply: { type: 'boolean' }, rollback: { type: 'string' }, 'verify-chain': { type: 'boolean' }, demo: { type: 'boolean' },
     'allow-destructive': { type: 'boolean' }, 'include-untrusted': { type: 'boolean' },
     'provider-config': { type: 'string' }, 'token-file': { type: 'string' }, port: { type: 'string' },
     json: { type: 'string' }, action: { type: 'string' }, key: { type: 'string' },
@@ -392,6 +397,17 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       writeFileSync(resolve(values.record), `${JSON.stringify({ ...report, mode: 'recorded' }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
       print({ file: resolve(values.record), checksPassed: report.checksPassed, checksTotal: report.checksTotal, kind: 'isolated memory-engine demonstration; no external model evaluation' });
     } else print(report);
+    return;
+  }
+  if (command === 'consolidate' && values.demo) {
+    // Isolated like `demo`: it seeds a synthetic store of its own, in memory or in a new file the caller can continue with.
+    if (['propose', 'apply', 'rollback', 'verify-chain', 'workspace', 'agent', 'file', 'out'].some(key => (values as CliValues)[key] !== undefined)) throw new Error('consolidate --demo takes only --db NEW_FILE.');
+    const { runConsolidationDemo } = await import('../consolidation/demo.js');
+    const { createConsolidationSigner } = await import('../consolidation/index.js');
+    const path = values.db === undefined ? undefined : resolve(values.db);
+    if (path !== undefined && existsSync(path)) throw new Error('consolidate --demo seeds a synthetic store; --db must name a new file.');
+    const demo = runConsolidationDemo(path === undefined ? {} : { path, signer: createConsolidationSigner({ keyFile: `${path}.consolidation.key` }) });
+    if (!demo.chain.ok || !demo.rollback.restored) process.exitCode = 1;
     return;
   }
   const health = command === 'health' ? healthCommand(values) : undefined;
@@ -495,6 +511,40 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         });
         try { print(bisect(auditor, task, { exact: values.exact === true })); } finally { auditor.close(); }
         break;
+      }
+      case 'consolidate': {
+        const { consolidate, createConsolidationSigner, gateConsolidation, proposeConsolidation, rollbackConsolidation, verifyConsolidationChain } = await import('../consolidation/index.js');
+        const modes = ['propose', 'apply', 'rollback', 'verify-chain'].filter(mode => (values as CliValues)[mode] !== undefined);
+        if (modes.length !== 1) throw new Error('consolidate requires exactly one of --propose, --apply, --rollback PASS_ID, --verify-chain or --demo.');
+        if (values.out !== undefined && !values.propose) throw new Error('--out applies to consolidate --propose only.');
+        if (values.file !== undefined && !values.apply) throw new Error('--file applies to consolidate --apply only.');
+        if (values['verify-chain']) {
+          // Verification needs no private key, so it never creates one.
+          const chain = verifyConsolidationChain(memory);
+          if (!chain.ok) process.exitCode = 1;
+          print(chain); break;
+        }
+        // This store's Ed25519 key, created 0600 next to the database on first use (docs/CONSOLIDATION-SIGNING.md).
+        const signer = createConsolidationSigner({ keyFile: `${resolve(required(values.db, '--db'))}.consolidation.key` });
+        if (values.rollback !== undefined) {
+          const undone = rollbackConsolidation(memory, values.rollback, { signer });
+          if (undone.verdict !== 'rolled_back' || !undone.restored) process.exitCode = 1;
+          print(undone); break;
+        }
+        if (values.propose) {
+          const diff = proposeConsolidation(memory, { signer });
+          if (diff && values.out) {
+            const path = resolve(values.out);
+            writeFileSync(path, `${JSON.stringify(diff, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+            print({ file: path, digest: diff.digest, stateBefore: diff.stateBefore, proposals: diff.proposals.length, keyId: diff.signature.keyId });
+          } else print(diff ?? { proposals: 0, reason: 'nothing to propose' });
+          break;
+        }
+        // A diff read back from a file must carry this store's own signature; anything else is an invalid run.
+        const result = values.file === undefined
+          ? consolidate(memory, { signer })
+          : gateConsolidation(memory, JSON.parse(readLocalText(resolve(values.file), 16_777_216)), { signer, trustedKeyIds: [signer.keyId] });
+        print(result ?? { verdict: null, proposals: 0, reason: 'nothing to propose; no receipt written' }); break;
       }
       case 'correct': {
         const id = required(values.id, '--id'); const record = memory.get(id);

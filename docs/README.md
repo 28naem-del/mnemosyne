@@ -17,6 +17,7 @@ Start with the [keyless local quickstart](quickstart.md), then choose the integr
 | Build typed preference or project profiles | [Profiles](PROFILES.md) | Explicit known, unknown and conflicting fields with source attribution. |
 | Use native memory tool envelopes | [Provider tools](PROVIDER-TOOLS.md) · [Virtual memory files](ANTHROPIC-MEMORY.md) | Local command handlers connected to a host-owned model loop. |
 | Recover the whole database | [Backup and restore](OPERATIONS.md) | A consistent verified snapshot restored to a new path. |
+| Consolidate memory without trusting the rewrite (3.0) | [Consolidation gate](CONSOLIDATION.md) · [Signing design](CONSOLIDATION-SIGNING.md) | Signed passes kept only when the agent's recorded outcomes do not regress, each undone in one command to the identical state hash. |
 | Assess the evidence behind a claim | [Evaluation](EVALUATION.md) · [Measurements](evaluation/BENCHMARKS.md) · [Benchmarks and trust evidence](BENCHMARKS-TRUST.md) | Reproducible retrieval reports and separate lifecycle diagnostics. |
 
 ## Integration coverage

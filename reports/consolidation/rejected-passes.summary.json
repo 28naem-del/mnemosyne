@@ -1,0 +1,19 @@
+{
+  "schema": "mnemosyne-consolidation-rejected-pass-v1",
+  "command": "node dist/consolidation/rejected-passes.js --suite reports/poisoning/v1-consolidation/rejected-passes.jsonl --out reports/consolidation",
+  "lines": 186,
+  "bySource": {
+    "consolidation-demo": 2,
+    "poisoning-suite-v1-consolidation": 184
+  },
+  "byRejection": {
+    "invariant": 185,
+    "regression": 1
+  },
+  "laundering": 185,
+  "signerKeyIds": [
+    "700792c1c68a5c2d0f0b7be283cdb979e78dbf364b08a08e6649c7ea5b74f390",
+    "790901b82a89fe505b5f98e2b7bf28e3a74f9a40f1a561c9d353f85f61cc36a2"
+  ],
+  "note": "Synthetic data only: the demo store and the poisoning suite v1 cases are synthetic. Both signing keys are fixed public seeds for reproducibility and must never sign a real store. Record ids, pass ids and digests differ between runs; verdicts, reasons and deltas do not."
+}

@@ -14,6 +14,7 @@
  * rather than counted as a pass.
  */
 import type { JsonValue, MemoryKind, MemoryTrust, MemoryVisibility } from '../../local/types.js';
+import type { ConsolidationReceipt } from '../../consolidation/types.js';
 
 export const POISONING_SUITE_VERSION = 'v1';
 export const POISONING_SEED = 'poisoning-v1';
@@ -113,6 +114,8 @@ export interface PoisoningCaseResult {
   probes: string[];
   decisions: { bind: string; decision: string; verdict: string }[];
   error?: string;
+  /** Present only in consolidation mode. */
+  consolidation?: PoisoningCaseConsolidation;
 }
 
 export interface PoisoningClassSummary {
@@ -139,4 +142,84 @@ export interface PoisoningReport {
   falseQuarantines: PoisoningCaseResult[];
   errors: PoisoningCaseResult[];
   results: PoisoningCaseResult[];
+  /** Present only in consolidation mode; the default report is unchanged byte for byte. */
+  consolidation?: PoisoningConsolidationSummary;
+}
+
+/**
+ * Consolidation mode: after a case's steps and before its probes, every
+ * principal records synthetic judged retrievals (the case's own recall and
+ * compile probe queries, judged by a label-free synthetic verifier) and then
+ * runs four signed consolidation passes through the outcome gate: the
+ * deterministic proposer, the same proposer with a loose merge threshold, an
+ * undeclared laundering adversary and a declared laundering adversary. Probes then also count consolidation outputs: on an
+ * attack, an output that depends on a poisoned record or carries all of its
+ * tokens is the poison; on a benign control, an output that depends on the
+ * legitimate record and carries all of its tokens stands in for it.
+ */
+export interface PoisoningRunOptions {
+  consolidation?: boolean;
+  /** Negative control for consolidation mode: every pass the gate did not keep is applied anyway, to show the probes catch what the gate refused. */
+  ungatedControl?: boolean;
+}
+
+export type PoisoningConsolidationLabel = 'deterministic' | 'aggressive-merge' | 'undeclared-laundering' | 'declared-laundering';
+
+/** One gate decision in a case. Stable across runs: no ids, digests or signatures. */
+export interface PoisoningConsolidationPass {
+  principal: string;
+  label: PoisoningConsolidationLabel;
+  verdict: 'kept' | 'rolled_back' | 'no_evidence' | 'invalid_run' | 'conflict';
+  reason: string;
+  /** Replayed tasks, main set plus hold-out. */
+  tasks: number;
+  delta: number | null;
+  holdoutDelta: number | null;
+  perProposal: number[];
+  failedInvariants: string[];
+  created: number;
+}
+
+export interface PoisoningCaseConsolidation {
+  /** Judged retrievals recorded before the passes, over all principals. */
+  replayTasks: number;
+  passes: PoisoningConsolidationPass[];
+  /** Benign probes that surfaced only through a consolidation output standing in for the legitimate record. */
+  standIns: string[];
+  /** Every principal's verdict chain verified after the passes. */
+  chainsVerified: boolean;
+  /** Ungated control only: outputs of passes the gate did not keep, stored anyway, and those the kernel's own store() refused. */
+  ungatedApplied?: number;
+  ungatedRefused?: number;
+}
+
+/** One gate decision with its full receipt, handed to the caller for the rejected-passes artifact. */
+export interface PoisoningConsolidationReceipt {
+  caseId: string;
+  attack: boolean;
+  principal: string;
+  label: PoisoningConsolidationLabel;
+  receipt: ConsolidationReceipt;
+}
+
+export interface PoisoningConsolidationSummary {
+  signerKeyId: string;
+  ledger: 'queries: text';
+  verifier: string;
+  passes: number;
+  verdicts: Record<PoisoningConsolidationPass['verdict'], number>;
+  /** Rolled back because an invariant failed (laundering, trust raise, ...). */
+  rolledBackInvariant: number;
+  /** Rolled back because the recorded outcomes regressed. */
+  rolledBackRegression: number;
+  /** Laundering passes (undeclared and declared adversaries) that were kept: must be 0. */
+  launderingKept: number;
+  casesWithKeptPass: number;
+  replayTasks: number;
+  standIns: number;
+  chainFailures: number;
+  /** True only for the negative control, whose escapes are the point. */
+  ungatedControl: boolean;
+  ungatedApplied: number;
+  ungatedRefused: number;
 }
