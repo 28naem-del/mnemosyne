@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import type { MemoryRecord } from '../local/index.js';
+import type { ContextAbstention, MemoryRecord } from '../local/index.js';
 import { canonical } from '../local/validation.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { MemoryRuntime } from '../runtime/index.js';
@@ -145,8 +145,12 @@ export class AdaptiveContext {
     const data = { version: 1 as const, id, rootId, fingerprint, requireWatched };
     return { ...data, signature: createHmac('sha256', this.#key).update(canonical(data)).digest('hex') };
   }
-  #candidateState(input: ParsedInput): { candidates: Candidate[]; excluded: AdaptiveContextPacket['excluded']; fingerprint: string } {
+  #candidateState(input: ParsedInput): { candidates: Candidate[]; excluded: AdaptiveContextPacket['excluded']; fingerprint: string; abstention?: ContextAbstention; topScore: number | null } {
     const recalled = this.runtime.memory.recall({ query: input.query, limit: input.maxCandidates, maxCandidates: Math.max(100, input.maxCandidates * 10) });
+    // Read straight after the recall: the kernel sets it synchronously and the
+    // next recall on this memory clears it.
+    const abstention = recalled.length ? undefined : this.runtime.memory.lastAbstention;
+    const topScore = recalled.length ? Math.max(...recalled.map(item => item.score)) : null;
     const relevance = new Map(recalled.map(item => [item.memory.id, item.score]));
     const projections = this.#projections();
     const words = input.query.toLocaleLowerCase('en').match(/[\p{L}\p{N}_-]+/gu) ?? [];
@@ -182,7 +186,7 @@ export class AdaptiveContext {
     unique.sort((a, b) => rank(b.tier) - rank(a.tier) || b.score - a.score || a.record.id.localeCompare(b.record.id));
     // Inventory is in the key too: new or invalidated projections cannot silently
     // reuse an old plan. Dependency snapshots include complete records and checks.
-    return { candidates: unique.slice(0, input.maxCandidates), excluded, fingerprint: hash({ candidates: unique.map(item => [item.record.id, item.snapshot.fingerprint, item.score, item.tier]), projections: projections.map(record => [record.id, hash(record)]).sort(([a], [b]) => a.localeCompare(b)) }) };
+    return { abstention, topScore, candidates: unique.slice(0, input.maxCandidates), excluded, fingerprint: hash({ candidates: unique.map(item => [item.record.id, item.snapshot.fingerprint, item.score, item.tier]), projections: projections.map(record => [record.id, hash(record)]).sort(([a], [b]) => a.localeCompare(b)) }) };
   }
   async build(input: AdaptiveContextInput): Promise<AdaptiveContextPacket> {
     const parsed = inputSchema.parse(input); this.#read(parsed.signal);
@@ -241,7 +245,8 @@ export class AdaptiveContext {
         const fingerprint = this.#snapshot([item.id], parsed.requireWatched, parsed.signal).fingerprint;
         return item.sourceIds.map(sourceId => this.#handle(sourceId, item.id, fingerprint, parsed.requireWatched));
       });
-      const packet: AdaptiveContextPacket = { text: rendered, tokens, tokenBudget: parsed.maxTokens, memoryIds: finalRoots, items, citations: items.map(item => ({ id: item.id, uri: item.source.uri, trust: item.trust, sourceIds: item.sourceIds })), handles, accounting: { counter: this.#customCounter ? 'custom' : 'utf8-byte-estimate', tokenizerId: this.#tokenizerId, renderedBytes: Buffer.byteLength(rendered), fullSourceBytes: finalState.leaves.reduce((sum, key) => sum + Buffer.byteLength(finalState.records.get(key)!.text), 0), selectedTextBytes: items.reduce((sum, item) => sum + Buffer.byteLength(item.text), 0), modelCalls: 0 }, cache: { status: this.#cacheLimit ? (hit ? 'hit' : 'miss') : 'disabled', key: hash([requestKey, state.fingerprint]), reusedItems: hit ? selection.length : 0 }, excluded: excluded.slice(0, 1000), abstained: !selection.length };
+      const packet: AdaptiveContextPacket = { text: rendered, tokens, tokenBudget: parsed.maxTokens, memoryIds: finalRoots, items, citations: items.map(item => ({ id: item.id, uri: item.source.uri, trust: item.trust, sourceIds: item.sourceIds })), handles, accounting: { counter: this.#customCounter ? 'custom' : 'utf8-byte-estimate', tokenizerId: this.#tokenizerId, renderedBytes: Buffer.byteLength(rendered), fullSourceBytes: finalState.leaves.reduce((sum, key) => sum + Buffer.byteLength(finalState.records.get(key)!.text), 0), selectedTextBytes: items.reduce((sum, item) => sum + Buffer.byteLength(item.text), 0), modelCalls: 0 }, cache: { status: this.#cacheLimit ? (hit ? 'hit' : 'miss') : 'disabled', key: hash([requestKey, state.fingerprint]), reusedItems: hit ? selection.length : 0 }, excluded: excluded.slice(0, 1000), abstained: !selection.length,
+        ...(selection.length ? {} : { abstention: state.abstention ?? { reason: excluded.some(entry => entry.reason === 'budget') || state.candidates.length ? 'budget' as const : 'withheld' as const, floors: {}, topScore: state.topScore } }) };
       this.#tickets.set(packet, { digest: hash(packet), roots: finalRoots, fingerprint: finalState.fingerprint, requireWatched: parsed.requireWatched });
       if (this.#cacheLimit) { this.#cache.delete(requestKey); this.#cache.set(requestKey, { fingerprint: state.fingerprint, selection }); while (this.#cache.size > this.#cacheLimit) this.#cache.delete(this.#cache.keys().next().value!); }
       return packet;

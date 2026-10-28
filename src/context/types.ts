@@ -1,4 +1,4 @@
-import type { MemoryRecord, MemorySource, MemoryTrust } from '../local/index.js';
+import type { ContextAbstention, MemoryRecord, MemorySource, MemoryTrust } from '../local/index.js';
 import type { MemoryMaintenance } from '../maintenance/index.js';
 
 export type ContextTier = 'overview' | 'detail' | 'observation' | 'source';
@@ -63,6 +63,10 @@ export interface AdaptiveContextPacket {
   cache: { status: 'hit' | 'miss' | 'disabled'; key: string; reusedItems: number };
   excluded: { id: string; reason: 'unavailable' | 'stale-projection' | 'budget' | 'covered' | 'level' }[];
   abstained: boolean;
+  /** Why the packet is empty, present only when `abstained` is true: the
+   * kernel's own recall abstention (with its floors) when recall returned
+   * nothing, otherwise `budget` or `withheld` with the best recall score. */
+  abstention?: ContextAbstention;
 }
 export interface ContextProjectionRequest {
   instructions: string;
