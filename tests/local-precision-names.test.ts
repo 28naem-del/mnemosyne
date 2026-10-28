@@ -79,14 +79,25 @@ describe('requireNamedMatch in recall', () => {
     const first = db.store(fact('Redis is the cache.', ['redis']));
     expect(db.recall({ query: 'allkeys-lru' })).toEqual([]);
     const next = db.correct(first.id, { text: 'Redis is the cache.', source, reason: 'alias added', metadata: { names: ['redis', 'allkeys-lru'] } });
-    expect(db.recall({ query: 'is allkeys-lru on' }).map(r => r.memory.id)).toEqual([next.id]);
+    // The query shares no term with the text, so only the names channel can
+    // reach the record: the ungated recall finds nothing.
+    expect(db.recall({ query: 'allkeys-lru', requireNamedMatch: false })).toEqual([]);
+    expect(db.recall({ query: 'allkeys-lru' }).map(r => r.memory.id)).toEqual([next.id]);
   });
 
   it('gives each entity of a compound query a share of the answer', () => {
     const db = memory({ requireNamedMatch: true });
     const redis = db.store(fact('Redis Redis Redis cache cache cache tuning notes.', ['redis']));
+    const redis2 = db.store(fact('Redis cache tuning checklist for the Redis cache.', ['redis']));
     const kafka = db.store(fact('Kafka carries the event stream.', ['kafka']));
-    expect(new Set(db.recall({ query: 'redis cache tuning and kafka', limit: 2 }).map(r => r.memory.id))).toEqual(new Set([redis.id, kafka.id]));
+    const query = 'redis cache tuning and kafka';
+    // Text ranking alone fills the answer with the two Redis records.
+    expect(new Set(db.recall({ query, limit: 2, requireNamedMatch: false }).map(r => r.memory.id))).toEqual(new Set([redis.id, redis2.id]));
+    // The names channel gives Kafka, the other entity the query names, a place.
+    const gated = db.recall({ query, limit: 2 }).map(r => r.memory.id);
+    expect(gated).toContain(kafka.id);
+    expect(gated).toHaveLength(2);
+    expect(gated.filter(id => id === redis.id || id === redis2.id)).toHaveLength(1);
   });
 
   it('validates the option', () => {
