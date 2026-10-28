@@ -97,6 +97,10 @@
     "./local/reranking": {
       "types": "./dist/local/reranking/index.d.ts",
       "import": "./dist/local/reranking/index.js"
+    },
+    "./dependencies": {
+      "types": "./dist/dependencies/index.d.ts",
+      "import": "./dist/dependencies/index.js"
     }
   },
   "files": [

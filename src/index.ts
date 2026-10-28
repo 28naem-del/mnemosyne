@@ -20,3 +20,4 @@ export type { MemoryRecord, ContextPacket, MemorySnapshot } from "./local/types.
 export { reflect, commitVerifiedLesson } from "./reflection/index.js";
 export { resolveConfig } from "./config.js";
 export type { MnemosyneConfig, MemoryCategory } from "./config.js";
+export { inferDependencies, reviewDependency, createPremiseGuard } from "./dependencies/index.js";
