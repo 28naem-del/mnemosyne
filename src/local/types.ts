@@ -366,6 +366,21 @@ export interface RetrievalStatus {
   /** Why a `granularity: 'multi'` recall could not consult the derived index —
    * no embedder on this path, or nothing built yet. Never silent. */
   granularityDegraded?: string;
+  /** The fusion constant and default dense floor, present on the hybrid path so
+   * a re-execution (memory bisect's Oracle B) can rebuild the same retriever. */
+  rrfK?: number;
+  minSimilarity?: number;
+}
+
+/** One stored dense vector, byte-for-byte as `local_embeddings` holds it: packed
+ * float32 (or legacy JSON text), keyed by the hash of the text it was computed
+ * from. Carried by `exportEmbeddings`/`importEmbeddings`, never by a snapshot. */
+export interface StoredEmbedding {
+  memoryId: string;
+  model: string;
+  dimensions: number;
+  sourceHash: string;
+  data: Uint8Array | string;
 }
 
 export interface RecallInput {

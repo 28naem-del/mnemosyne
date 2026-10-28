@@ -24,9 +24,10 @@ import type { LedgerTemporalRouting } from './types.js';
 import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR, TEMPORAL_WINDOW_BOUNDS, WHEN_INTENT_QUERY_RE, isTimeBearingText, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { buildContextPassage, contextBudget, contextualChannel, type ContextNeighbour } from './reranking/context.js';
-import { createDenseIndex, prepareDenseIndexSchema, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
+import { createDenseIndex, prepareDenseIndexSchema, readIdentity, resolveDenseIndexMode, tryLoadSqliteVec, VECTOR_SCHEMA, type DenseIndex, type DenseIndexEntry, type DenseIndexMode, type DenseIndexStatus } from './vector/index.js';
 import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, noteLiveClock, seedLiveClockFromStore, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
+import type { StoredEmbedding } from './types.js';
 
 export type * from './types.js';
 
@@ -1206,6 +1207,8 @@ export class LocalMemory {
       ...(this.#embedderDegraded ? { degraded: this.#embedderDegraded } : {}),
       ...(reranker ? { rerankerModel: reranker.model, rerankTopN: this.#rerankTopN } : {}),
       ...(this.#rerankerDegraded ? { rerankDegraded: this.#rerankerDegraded } : {}),
+      // What a re-execution needs to rebuild this exact retriever (memory bisect's Oracle B).
+      ...(embedder ? { rrfK: this.#rrfK, minSimilarity: this.#minSimilarity } : {}),
       // Size is read live rather than remembered, so it reports the index as it
       // is now and not as it was when it was opened.
       ...(this.#denseStatus ? { index: { ...this.#denseStatus, ...(this.#denseIndex ? { size: this.#denseIndex.size() } : {}) } } : {}),
@@ -2790,6 +2793,69 @@ export class LocalMemory {
       this.#snapshotLimits(snapshot);
       return snapshot;
     });
+  }
+
+  /**
+   * The stored dense vectors of this owner's records, byte-for-byte, optionally
+   * for one model. A snapshot never carries vectors — they are a derived cache —
+   * so a store rebuilt from one would have to re-embed every record. This lets a
+   * re-execution (memory bisect's Oracle B) carry the exact vectors across
+   * instead. Read-only.
+   */
+  exportEmbeddings(model?: string): StoredEmbedding[] {
+    this.#assertOpen();
+    const filter = model === undefined ? '' : ' AND e.model=?';
+    const rows = this.#db.prepare(`SELECT e.memory_id,e.model,e.dimensions,e.source_hash,e.data FROM local_embeddings e JOIN memories m ON m.id=e.memory_id
+      WHERE m.workspace_id=? AND m.agent_id=?${filter} ORDER BY e.memory_id,e.model`)
+      .all(...[this.#workspaceId, this.#agentId, ...(model === undefined ? [] : [v.string(model, 'model', 512)])]) as { memory_id: string; model: string; dimensions: number | bigint; source_hash: string; data: string | Uint8Array }[];
+    return rows.map((row) => ({ memoryId: row.memory_id, model: row.model, dimensions: Number(row.dimensions), sourceHash: row.source_hash,
+      data: typeof row.data === 'string' ? row.data : Uint8Array.from(row.data) }));
+  }
+
+  /**
+   * Writes vectors produced by `exportEmbeddings` into this store's derived
+   * cache, unchanged. A row is taken only when its record exists in this owner
+   * scope and its `sourceHash` still matches that record's text; anything else
+   * is skipped, and a skipped record is simply embedded on the next hybrid
+   * recall as it would have been anyway. The vectors are trusted as given, so
+   * only import ones exported from a store you trust. Writes no memory, outcome
+   * or ledger entry.
+   */
+  importEmbeddings(rows: readonly StoredEmbedding[]): { imported: number; skipped: number } {
+    this.#assertOpen();
+    if (!Array.isArray(rows)) throw new TypeError('embeddings must be an array');
+    const checked = rows.map((row) => {
+      const value = v.object(row, 'embedding');
+      v.keys(value, ['memoryId', 'model', 'dimensions', 'sourceHash', 'data'], 'embedding');
+      const dimensions = v.limit(value.dimensions, 0, 4096);
+      const data = value.data;
+      if (data instanceof Uint8Array) { if (data.byteLength !== dimensions * 4) throw new TypeError('Embedding data does not match its declared dimensions'); }
+      else if (typeof data === 'string') this.#vector(JSON.parse(data), dimensions);
+      else throw new TypeError('Embedding data must be packed float32 bytes or JSON text');
+      return { memoryId: v.string(value.memoryId, 'memoryId', 160), model: v.string(value.model, 'model', 512), dimensions, sourceHash: v.string(value.sourceHash, 'sourceHash', 128), data };
+    });
+    const result = this.#transaction(() => {
+      const outcome = { imported: 0, skipped: 0 };
+      const current = this.#db.prepare('SELECT s.source_hash FROM memories m JOIN local_search s ON s.memory_id=m.id WHERE m.id=? AND m.workspace_id=? AND m.agent_id=?');
+      const write = this.#db.prepare('INSERT INTO local_embeddings(memory_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data');
+      for (const row of checked) {
+        const live = current.get(row.memoryId, this.#workspaceId, this.#agentId) as { source_hash: string } | undefined;
+        if (!live || live.source_hash !== row.sourceHash) { outcome.skipped++; continue; }
+        const previous = this.#db.prepare('SELECT dimensions FROM local_embedding_models WHERE model=?').get(row.model) as { dimensions: number } | undefined;
+        if (previous && previous.dimensions !== row.dimensions) throw new Error('Embedding model dimension mismatch; use a new model revision identifier');
+        if (!previous) this.#db.prepare('INSERT INTO local_embedding_models(model,dimensions) VALUES(?,?)').run(row.model, row.dimensions);
+        write.run(row.memoryId, row.model, row.dimensions, row.sourceHash, row.data);
+        outcome.imported++;
+      }
+      return outcome;
+    });
+    // Anything already resolved has to see the new rows: the drained-vectors
+    // shortcut is invalidated, and a live dense index is caught up from the
+    // table, which stays its source of truth.
+    this.#writeSeq++;
+    const identity = this.#denseIndex ? readIdentity(this.#db) : null;
+    if (this.#denseIndex && identity) this.#syncDenseIndex(this.#denseIndex, identity.model, identity.dimensions);
+    return result;
   }
 
   #snapshotLimits(input: Record<string, unknown> | MemorySnapshot): void {

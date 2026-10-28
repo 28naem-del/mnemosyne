@@ -23,12 +23,30 @@
  *    will not confirm comes back as `outcome: 'unconfirmed'`, not as a blame
  *    set with a flag on it — never quietly kept.
  *
+ * **Oracle B re-executes the store's own retriever.** By default it rebuilds on
+ * whatever path the source reports through `retrieval.mode` — the zero-model
+ * lexical path, or the default `hybrid` path. For hybrid it reproduces the
+ * source's configuration as the source reports it (embedding model, `rrfK`,
+ * `minSimilarity`, reranker on/off and `rerankTopN`, dense index kind) and does
+ * not re-embed anything: a snapshot never carries vectors, so the stored
+ * vectors are copied across byte-for-byte with `exportEmbeddings` /
+ * `importEmbeddings`, keyed by memory id and text hash, and only the query is
+ * embedded — by the same pinned model. After every re-execution the rebuilt
+ * store's reported configuration is compared with the source's, and any
+ * difference (a custom embedder or reranker the default rebuild cannot load, a
+ * different model cache) throws instead of comparing two different retrievers;
+ * pass `storeOptions` to supply them. Two cases refuse outright: asking for a
+ * different path than the store retrieves with (e.g. `storeOptions.retrieval:
+ * 'lexical'` on a hybrid store), and an `hnsw` dense index, whose approximate
+ * graph depends on insertion order and so cannot be rebuilt identically.
+ * `exactConfig` in the result is the configuration Oracle B actually ran.
+ *
  * Nothing here knows which records were injected. A caller that seeds faults
  * keeps that knowledge to itself and scores the answer afterwards.
  */
 import { createLocalMemory, type LocalMemory } from './index.js';
 import { replayState, type ReplaySource } from './replay.js';
-import type { LocalMemoryOptions, MemoryRecord, MemorySnapshot, RecallInput, RecallResult } from './types.js';
+import type { LocalMemoryOptions, MemoryRecord, MemorySnapshot, RecallInput, RecallResult, StoredEmbedding } from './types.js';
 
 /** A retrieval task with a checkable outcome. `gold` is the evidence that should be found. */
 export interface BisectTask {
@@ -55,17 +73,53 @@ export interface BisectTask {
   includeUntrusted?: boolean;
 }
 
+/** What a store reports about its retrieval path — the subset of `RetrievalStatus` bisect reads. */
+export interface BisectRetrievalStatus {
+  requested: string;
+  mode: string;
+  embeddingModel?: string;
+  dimensions?: number;
+  rerankerModel?: string;
+  rerankTopN?: number;
+  rrfK?: number;
+  minSimilarity?: number;
+  index?: { requested: string; mode: string };
+}
+
+/** The retrieval configuration Oracle B has to reproduce. `null` where it does not apply (every field but `mode` on the lexical path). */
+export interface BisectRetrievalConfig {
+  mode: string;
+  embeddingModel: string | null;
+  dimensions: number | null;
+  rerankerModel: string | null;
+  rerankTopN: number | null;
+  rrfK: number | null;
+  minSimilarity: number | null;
+  /** Dense index that served recall (`exact`, `sqlite-vec`, `hnsw`); null on the lexical path or before a dense recall ran. */
+  index: string | null;
+}
+
 /** The subset of `LocalMemory` bisect reads. Structural, so a test can hand in a fake. */
 export interface BisectSource extends ReplaySource {
   recall(input: RecallInput): RecallResult[];
   export(): MemorySnapshot;
-  /** Read to refuse a source whose retrieval path bisect cannot reproduce exactly. */
-  retrieval?: { requested: string; mode: string };
+  /** Read so Oracle B rebuilds the same retriever, and refuses when it cannot. */
+  retrieval?: BisectRetrievalStatus;
+  /** Stored dense vectors, copied into Oracle B's store so the hybrid path is reproduced without re-embedding. */
+  exportEmbeddings?(model?: string): StoredEmbedding[];
 }
 
 export interface BisectStore {
   recall(input: RecallInput): RecallResult[];
   close(): void;
+  /** When present, compared with the source's after every re-execution; a difference throws. */
+  readonly retrieval?: BisectRetrievalStatus;
+}
+
+/** What Oracle B carries into a rebuilt store besides the snapshot. */
+export interface BisectCarry {
+  /** The source's stored vectors for the records that survived the ablation. Empty on the lexical path. */
+  embeddings: StoredEmbedding[];
 }
 
 export interface BisectOptions {
@@ -88,10 +142,15 @@ export interface BisectOptions {
   maxWidenings?: number;
   /** Hash the belief state at the cut point and report it beside the blame set. Defaults to true. */
   stateHash?: boolean;
-  /** Options for the store Oracle B rebuilds. Defaults to the zero-model lexical path. */
+  /**
+   * Options for the store Oracle B rebuilds, applied over the configuration
+   * read from the source (its `retrieval.mode`, and on hybrid its model, fusion
+   * and reranker settings). Without a source report it is the zero-model
+   * lexical path. Naming a different `retrieval` than the source uses refuses.
+   */
   storeOptions?: Partial<LocalMemoryOptions>;
   /** Replaces the default in-memory store Oracle B builds. */
-  createStore?: (snapshot: MemorySnapshot, options: Partial<LocalMemoryOptions>) => BisectStore;
+  createStore?: (snapshot: MemorySnapshot, options: Partial<LocalMemoryOptions>, carry: BisectCarry) => BisectStore;
   /** Monotonic clock, in milliseconds. Defaults to `performance.now`. */
   now?: () => number;
   /** Hard cap on Oracle-A tests, a runaway guard. Defaults to 200000. */
@@ -154,6 +213,12 @@ export interface BisectResult {
   exactMinimal: boolean | null;
   /** Retrieval mode Oracle B re-executed under; `null` when it did not run. */
   exactRetrieval: string | null;
+  /**
+   * The configuration Oracle B's rebuilt store reported, already checked equal
+   * to the source's (a mismatch throws rather than returning). `null` when
+   * Oracle B did not run or a custom `createStore` reports no `retrieval`.
+   */
+  exactConfig: BisectRetrievalConfig | null;
   /** State hash of the belief state at the cut point, when it was computed. */
   stateSha256: string | null;
   elapsedMs: number;
@@ -260,14 +325,74 @@ export function ablateSnapshot(snapshot: MemorySnapshot, removed: Iterable<strin
   };
 }
 
-function defaultStore(snapshot: MemorySnapshot, options: Partial<LocalMemoryOptions>): BisectStore {
+function defaultStore(snapshot: MemorySnapshot, options: Partial<LocalMemoryOptions>, carry?: BisectCarry): BisectStore {
   const memory: LocalMemory = createLocalMemory({
     retrieval: 'lexical', rerank: false, ledger: false,
     ...options,
     path: ':memory:', workspaceId: snapshot.workspaceId, agentId: snapshot.agentId,
   });
-  memory.import(snapshot);
-  return { recall: (input) => memory.recall(input), close: () => memory.close() };
+  try {
+    memory.import(snapshot);
+    // Byte-identical vectors, so the dense channel scores exactly what the source scored.
+    if (carry?.embeddings.length) memory.importEmbeddings(carry.embeddings);
+  } catch (error) { memory.close(); throw error; }
+  return { recall: (input) => memory.recall(input), close: () => memory.close(), get retrieval() { return memory.retrieval; } };
+}
+
+export function retrievalConfig(status: BisectRetrievalStatus): BisectRetrievalConfig {
+  return {
+    mode: status.mode,
+    embeddingModel: status.embeddingModel ?? null, dimensions: status.dimensions ?? null,
+    rerankerModel: status.rerankerModel ?? null, rerankTopN: status.rerankTopN ?? null,
+    rrfK: status.rrfK ?? null, minSimilarity: status.minSimilarity ?? null,
+    index: status.index?.mode ?? null,
+  };
+}
+
+/** The path Oracle B re-executes on: what the caller named, else what the source retrieves with. */
+function wantedRetrieval(source: BisectSource, options: BisectOptions): string {
+  return String(options.storeOptions?.retrieval ?? source.retrieval?.mode ?? 'lexical');
+}
+
+interface ReexecutionPlan { mode: string; storeOptions: Partial<LocalMemoryOptions>; expected: BisectRetrievalConfig | null }
+
+/**
+ * How Oracle B rebuilds the source's retriever. Read lazily — after bisect's
+ * own recall — so the source has already resolved its models and dense index.
+ */
+function reexecutionPlan(source: BisectSource, options: BisectOptions): ReexecutionPlan {
+  const status = source.retrieval;
+  const mode = wantedRetrieval(source, options);
+  if (status && status.mode !== mode) {
+    throw new Error(`bisect re-executes on the ${mode} path but the store retrieves with ${status.mode}: Oracle B must run the store's own retriever, so drop storeOptions.retrieval or open the store with retrieval: '${mode}'`);
+  }
+  const expected = status ? retrievalConfig(status) : null;
+  if (mode !== 'hybrid' || !status) return { mode, storeOptions: { ...options.storeOptions }, expected };
+  if (status.index?.mode === 'hnsw' || status.index?.requested === 'hnsw') {
+    throw new Error('bisect cannot reproduce an hnsw dense index: its approximate graph depends on insertion order, so a rebuilt store would not retrieve identically; open the store with indexMode: \'exact\' or \'sqlite-vec\'');
+  }
+  return {
+    mode, expected,
+    storeOptions: {
+      retrieval: 'hybrid', requireEmbedder: true, ledger: false,
+      rerank: status.rerankerModel !== undefined,
+      ...(status.rerankTopN === undefined ? {} : { rerankTopN: status.rerankTopN }),
+      ...(status.rrfK === undefined ? {} : { rrfK: status.rrfK }),
+      ...(status.minSimilarity === undefined ? {} : { minSimilarity: status.minSimilarity }),
+      ...(status.index === undefined ? {} : { indexMode: status.index.requested as LocalMemoryOptions['indexMode'] }),
+      ...options.storeOptions,
+    },
+  };
+}
+
+/** Throws unless the rebuilt store runs the retriever the source runs. The index kind is compared once the source has reported one. */
+function assertSameRetrieval(expected: BisectRetrievalConfig, actual: BisectRetrievalConfig): void {
+  for (const key of Object.keys(expected) as (keyof BisectRetrievalConfig)[]) {
+    if (key === 'index' && expected.index === null) continue;
+    if (expected[key] !== actual[key]) {
+      throw new Error(`bisect cannot reproduce the store's retrieval: Oracle B's rebuilt store has ${key} ${JSON.stringify(actual[key])} where the source has ${JSON.stringify(expected[key])}; pass storeOptions (the same embedder, reranker or modelCacheDir) so both run the same retriever`);
+    }
+  }
 }
 
 function recallInput(task: BisectTask, limit: number): RecallInput {
@@ -292,18 +417,44 @@ function satisfied(found: readonly string[], task: BisectTask): boolean {
  * index build, which is why this confirms rather than searches.
  */
 export function exactRunner(source: BisectSource, task: BisectTask, options: BisectOptions = {}): (removed: ReadonlySet<string>, limit: number) => { ids: string[]; goldRemoved: boolean } {
-  let snapshot: MemorySnapshot | undefined;
+  return reexecutor(source, task, options).run;
+}
+
+function reexecutor(source: BisectSource, task: BisectTask, options: BisectOptions): {
+  run: (removed: ReadonlySet<string>, limit: number) => { ids: string[]; goldRemoved: boolean };
+  plan: () => ReexecutionPlan;
+  observed: () => BisectRetrievalConfig | null;
+} {
+  let prepared: { plan: ReexecutionPlan; snapshot: MemorySnapshot; embeddings: StoredEmbedding[] } | undefined;
+  let observed: BisectRetrievalConfig | null = null;
   const create = options.createStore ?? defaultStore;
-  const storeOptions = options.storeOptions ?? {};
-  return (removed, limit) => {
-    snapshot ??= source.export();
+  const prepare = (): NonNullable<typeof prepared> => {
+    if (prepared) return prepared;
+    const plan = reexecutionPlan(source, options);
+    const model = plan.mode === 'hybrid' ? plan.expected?.embeddingModel ?? null : null;
+    // A source that cannot hand over its vectors still gets a correct rebuild —
+    // the store re-embeds with the same model, which the config check pins.
+    const embeddings = model !== null && source.exportEmbeddings ? source.exportEmbeddings(model) : [];
+    return (prepared = { plan, snapshot: source.export(), embeddings });
+  };
+  const run = (removed: ReadonlySet<string>, limit: number): { ids: string[]; goldRemoved: boolean } => {
+    const { plan, snapshot, embeddings } = prepare();
     const ablated = ablateSnapshot(snapshot, removed);
     // Ablating the gold itself, or a record the gold depends on, answers a different question.
     if (task.gold.some(id => ablated.removed.has(id))) return { ids: [], goldRemoved: true };
-    const store = create(ablated.snapshot, storeOptions);
-    try { return { ids: store.recall(recallInput(task, limit)).map(hit => hit.memory.id), goldRemoved: false }; }
-    finally { store.close(); }
+    const kept = embeddings.filter(row => !ablated.removed.has(row.memoryId));
+    const store = create(ablated.snapshot, plan.storeOptions, { embeddings: kept });
+    try {
+      const ids = store.recall(recallInput(task, limit)).map(hit => hit.memory.id);
+      const reported = store.retrieval;
+      if (reported) {
+        observed = retrievalConfig(reported);
+        if (plan.expected) assertSameRetrieval(plan.expected, observed);
+      }
+      return { ids, goldRemoved: false };
+    } finally { store.close(); }
   };
+  return { run, plan: () => prepare().plan, observed: () => observed };
 }
 
 /** Oracle B as a predicate: does the task pass with `removed` really gone? */
@@ -387,16 +538,17 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
   const confirm = options.confirm ?? 'outcome';
   const goldSet = new Set(task.gold);
   // Oracle B rebuilds the store and re-runs recall. That is only the same
-  // question when the rebuilt store retrieves the same way, and the dense path
-  // cannot be reproduced from a snapshot without re-embedding every record — so
-  // bisect runs on the deterministic lexical path and refuses rather than
-  // quietly comparing two different retrievers.
+  // question when the rebuilt store retrieves the same way, so it re-executes
+  // on the path the source reports — lexical, or hybrid with the vectors
+  // carried across — and refuses up front, before any work, when the caller
+  // names a different one rather than quietly comparing two retrievers.
   const mode = source.retrieval?.mode;
-  const wanted = String(options.storeOptions?.retrieval ?? 'lexical');
+  const wanted = wantedRetrieval(source, options);
   if (mode !== undefined && mode !== wanted) {
-    throw new Error(`bisect re-executes on the ${wanted} path but the store retrieves with ${mode}: open it with retrieval: '${wanted}'`);
+    throw new Error(`bisect re-executes on the ${wanted} path but the store retrieves with ${mode}: Oracle B must run the store's own retriever, so drop storeOptions.retrieval or open the store with retrieval: '${wanted}'`);
   }
-  const run = exactRunner(source, task, options);
+  const reexecution = reexecutor(source, task, options);
+  const run = reexecution.run;
 
   const stateSha256 = options.stateHash === false || (task.asOf === undefined && task.knownAt === undefined)
     ? null
@@ -425,6 +577,7 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
     taskId: task.id, blame: [] as string[], candidates: ranked.length, universe: universe.length,
     tests: 0, widenings, depth, ranking, goldRank: goldRank(ranked, goldSet), stateSha256,
     minimalUnique: null, alternatives: null, exactConfirmed: null, exactMinimal: null, exactRetrieval: null,
+    exactConfig: reexecution.observed(),
   };
 
   if (passes(new Set())) return { ...shared, outcome: 'passing', reason: 'already-passing', elapsedMs: clock() - started };
@@ -450,7 +603,7 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
   let exactRetrieval: string | null = null;
   let refused: BisectResult['reason'] | null = null;
   if (confirm !== 'off') {
-    exactRetrieval = String(options.storeOptions?.retrieval ?? 'lexical');
+    exactRetrieval = reexecution.plan().mode;
     const oracle = (removed: ReadonlySet<string>): boolean => {
       const result = run(removed, task.k);
       return result.goldRemoved ? false : satisfied(result.ids, task);
@@ -473,7 +626,7 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
     ...(refused === null ? { outcome: 'blamed' as const, reason: 'displaced' as const } : { outcome: 'unconfirmed' as const, reason: refused }),
     blame: minimal, tests,
     minimalUnique: alternatives === null ? null : alternatives === 0, alternatives,
-    exactConfirmed, exactMinimal, exactRetrieval,
+    exactConfirmed, exactMinimal, exactRetrieval, exactConfig: reexecution.observed(),
     elapsedMs: clock() - started,
   };
 }
