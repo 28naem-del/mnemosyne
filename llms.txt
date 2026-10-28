@@ -43,7 +43,7 @@ Measured results (methods and caveats in the linked pages): LongMemEval-S answer
 - [Comparison with Mem0](https://github.com/28naem-del/mnemosyne/blob/main/COMPARISON.md): matched competitor run, losses included.
 - [Changelog](https://github.com/28naem-del/mnemosyne/blob/main/CHANGELOG.md): every change with its commit and every unmet gate.
 - [Architecture](https://github.com/28naem-del/mnemosyne/blob/main/ARCHITECTURE.md): engines, storage, retrieval path.
-- [Examples](https://github.com/28naem-del/mnemosyne/blob/main/examples/README.md): 15 runnable examples, offline fixtures marked.
+- [Examples](https://github.com/28naem-del/mnemosyne/blob/main/examples/README.md): 12 runnable examples in `examples/` plus 3 for the legacy Vector Engine package, offline fixtures marked.
 
 ## Optional
 

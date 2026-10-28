@@ -46,8 +46,8 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
     SQL of every channel before ranking. It is capped at 32 keys and 64 values per key, and it is a
     scope selector, not an authentication boundary.
   - **Lifecycle prefilter (always on).** Every recall without an explicit `asOf`/`knownAt` drops
-    superseded and expired records in SQL before ranking on the overlap scorer and the dense
-    channel. This is a strict subset of what the as-of filter already withheld, so no recall
+    superseded and expired records in SQL before ranking, on every channel (names, BM25, overlap,
+    dense). This is a strict subset of what the as-of filter already withheld, so no recall
     returns a record it would have withheld before; see "Changed (behaviour)" below.
   - **Score floors.** `minScores: { keyword, semantic, reranker, final, finalRelative }`
     (`RecallScoreFloors`). Floors exclude results and never reorder them.
