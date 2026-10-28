@@ -7,24 +7,33 @@
   <meta name="description" content="Memory that evolves with evidence: measured recall, world and knowledge time, optional on-device intelligence, tested skills and gradual adoption.">
   <meta name="theme-color" content="#070b12">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <link rel="stylesheet" href="../styles.css?v=393e7f5af4af">
 <link rel="stylesheet" href="../launch.css?v=738ae631e707">
-<link rel="stylesheet" href="../cinematic.css?v=2f181b8028fc">
-<script src="../launch.js?v=372430739e42" defer></script>
+<link rel="stylesheet" href="../cinematic.css?v=58c9b39b7966">
+<script src="../launch.js?v=b570c852156c" defer></script>
 
 <link rel="canonical" href="https://mnemosy.ai/compare/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="The Mnemosyne approach — Mnemosyne">
 <meta property="og:description" content="Memory that evolves with evidence: measured recall, world and knowledge time, optional on-device intelligence, tested skills and gradual adoption.">
 <meta property="og:url" content="https://mnemosy.ai/compare/">
-<meta property="og:image" content="https://mnemosy.ai/assets/memory-architecture.png">
+<meta property="og:site_name" content="Mnemosyne">
+<meta property="og:image" content="https://mnemosy.ai/assets/share-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Mnemosyne: the next agent starts wiser. Persistent, local-first memory for AI agents.">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Mnemosyne approach — Mnemosyne">
+<meta name="twitter:description" content="Memory that evolves with evidence: measured recall, world and knowledge time, optional on-device intelligence, tested skills and gradual adoption.">
+<meta name="twitter:image" content="https://mnemosy.ai/assets/share-card.png">
+<meta name="twitter:image:alt" content="Mnemosyne: the next agent starts wiser. Persistent, local-first memory for AI agents.">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="site-header wrap">
     <a class="brand" href="../" aria-label="Mnemosyne home"><svg class="brand-symbol" viewBox="0 0 34 38" aria-hidden="true"><path d="M4 30V16a6.5 6.5 0 0 1 13 0v14m0-14a6.5 6.5 0 0 1 13 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>mnemosyne</a>
-    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="../features/">Features</a><a href="../docs/">Docs</a><a href="./" aria-current="page">Approach</a><a href="../#company">Company</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
+    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="../features/">Features</a><a href="../docs/">Docs</a><a href="../trust/">Trust</a><a href="./" aria-current="page">Approach</a><a href="../#company">Company</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
   </header>
   <main id="main">
     <section class="page-hero wrap" aria-labelledby="page-title">
@@ -72,22 +81,22 @@
         </div>
       </section>
       <section class="section feature-section" id="evidence" aria-labelledby="evidence-title">
-        <div class="feature-lead"><p class="feature-kicker">Evidence before claims</p><h2 id="evidence-title">Progress you can<br>put a number on.</h2><p>A frozen, matched 500-question corpus measures our recall upgrade against our earlier scorer. It does not establish a ranking against other products.</p></div>
+        <div class="feature-lead"><p class="feature-kicker">Evidence before claims</p><h2 id="evidence-title">Progress you can<br>put a number on.</h2><p>Each number names its release and its protocol. None of them establishes a ranking against other products.</p></div>
         <div class="feature-grid">
-          <article class="feature-item"><h3>90.43% complete retrieval coverage</h3><p>All annotated source sessions were retrieved for 425 of 470 answerable questions, up from 386 (82.13%) with the earlier scorer. Both conditions use the same corpus and top-20 chunk limit; all 500 questions were processed.</p></article>
-          <article class="feature-item"><h3>81.28% complete packed coverage</h3><p>Under the same 8,192-byte context budget, complete source-session coverage rises from 367 to 382 of 470 answerable questions. Stronger scoring adds CPU work; the protocol reports retrieval timing alongside coverage.</p></article>
-          <article class="feature-item"><h3>What those numbers establish</h3><p>These are session-level evidence scores, not generated-answer accuracy. A returned chunk can earn source-session credit without containing the answer sentence. Same-day-compatible timing permits later sources on the question’s calendar day, so this is not a strict no-future-evidence experiment.</p><a class="text-link" href="../docs/#evaluation">Inspect the protocol and limits</a></article>
+          <article class="feature-item"><h3>409 of 500 answered correctly (2.0.0)</h3><p>LongMemEval-S, all 500 questions: 81.8%, Wilson 95% CI 78.2–84.9, with reranked retrieval read by claude-sonnet-4.6 and judged by claude-haiku-4.5. Prompt and budget were chosen on 100 of the questions; the other 400 score 82.3%. The reader is nondeterministic, and this is not a paired gain over earlier runs.</p><a class="text-link" href="../docs/#evaluation">Read the method and the unmet gates</a></article>
+          <article class="feature-item"><h3>Five offline results (3.0.0-rc.2)</h3><p>PrecisionMemBench 70/77 single-turn and 11/12 session turns; poisoning suite v1 with 0/167 escapes and 0/60 false quarantines; dependency suite v1 recall 96.05% and precision 98.06%; replay 1000/1000 identical; bisect precision 1.00. Synthetic suites or a public fixture the controls were designed against, with no LLM judge.</p><a class="text-link" href="../trust/">Read each protocol and its limits</a></article>
+          <article class="feature-item"><h3>History: the rc.8 coverage study</h3><p>The earlier matched 500-question study measured session-level coverage, not answers: all annotated source sessions were retrieved for 425 of 470 answerable questions (90.43%, up from 82.13% with the earlier scorer), and 382 of 470 survived an 8,192-byte context budget. Same-day-compatible timing permits later sources on the question’s calendar day.</p><a class="text-link" href="../docs/#evaluation">Inspect the historical protocol</a></article>
           <article class="feature-item"><h3>Benefit and failure stay visible</h3><p>The separate agent harness compares no memory, recent history, lexical memory and adaptive context using a matched reader and budgets. It can track answer quality, grounding, stale actions and negative transfer. Scripted examples check the mechanics; generated-answer quality still needs measurement with your reader and tasks.</p><a class="text-link" href="../docs/#evaluation">Explore the evaluation protocol</a></article>
         </div>
       </section>
       <aside class="comparison-note" aria-labelledby="fit-title">
         <h2 id="fit-title">A memory lifecycle you can own.</h2>
-        <p>These capabilities are available in the 2.0.0 npm release, which includes both the Vector Engine and Local Engine. <a href="../docs/#engines">Choose your engine</a> and <a href="../docs/#install">install the package</a>; <code>latest</code> is 2.0.0 and the 1.x line stays installable as <code>mnemosy-ai@1</code>. The measurements above remain the frozen rc.8 study, not a new benchmark run. Mnemosyne gives your application source recovery, correction history, explicit learning controls and gradual adoption. You choose sources, sharing, providers and permitted actions.</p>
+        <p>These capabilities are available in the 2.0.0 npm release, which includes both the Vector Engine and Local Engine. <a href="../docs/#engines">Choose your engine</a> and <a href="../docs/#install">install the package</a>; <code>latest</code> is 2.0.0 and the 1.x line stays installable as <code>mnemosy-ai@1</code>. 3.0.0-rc.2 is the newest pre-release on npm <code>next</code>; it moves the Vector Engine to <code>mnemosy-ai-legacy</code>, which is not on npm (<a href="../docs/#upgrade-3">upgrading to 3.0</a>). Mnemosyne gives your application source recovery, correction history, explicit learning controls and gradual adoption. You choose sources, sharing, providers and permitted actions.</p>
         <p>Inspect the <a href="../features/">complete capability guide</a> and <a href="../docs/#boundaries">operating boundaries</a> to choose a configuration for your application. Source citations and controller trials make evidence visible; your own evaluation establishes whether that evidence improves the work.</p>
       </aside>
-      <section class="final-cta"><div><h2>See continuity<br>in action.</h2><p>Follow a source through capture, reuse, correction and the next agent handoff.</p></div><a class="button" href="../#demo">Explore the memory demo</a></section>
+      <section class="final-cta"><div><h2>See continuity<br>in action.</h2><p>Replay a past belief, follow a correction to dependents nobody linked and watch a consolidation get undone, in a recorded run.</p></div><a class="button" href="../#moments">Explore the five-moment demo</a></section>
     </div>
   </main>
-  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../features/">Features</a></div><div class="company-footer"><a href="../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer>
+  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="../trust/">Trust</a><a href="../features/">Features</a><a href="https://github.com/28naem-del/mnemosyne">GitHub</a><a href="https://github.com/28naem-del/mnemosyne/releases">Releases</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/28naem-del/mnemosyne/issues">Support: GitHub issues</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md">Security</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/CONTRIBUTING.md">Contributing</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/LICENSE">MIT license</a></div><div class="company-footer"><a href="../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer>
 </body>
 </html>

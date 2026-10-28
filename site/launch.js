@@ -56,6 +56,16 @@
     renderNavigation();
   }
 
+  // On narrow screens the page index starts folded so the first section is on screen.
+  const pageIndex = document.querySelector('details.doc-index');
+  if (pageIndex) {
+    const narrowIndex = window.matchMedia('(max-width: 900px)');
+    if (narrowIndex.matches) pageIndex.open = false;
+    pageIndex.addEventListener('click', event => {
+      if (narrowIndex.matches && event.target instanceof Element && event.target.closest('a')) pageIndex.open = false;
+    });
+  }
+
   // This explains the bridge policy; it never connects to a memory store.
   const explainer = document.querySelector('[data-bridge-explainer]');
   if (!explainer) return;

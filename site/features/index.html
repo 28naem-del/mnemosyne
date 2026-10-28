@@ -7,24 +7,33 @@
   <meta name="description" content="Explore Mnemosyne Recall, Timeline, On-Device Intelligence, Evidence Gate and Migration. Evidence-aware memory, from original sources to tested agent skills.">
   <meta name="theme-color" content="#070b12">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <link rel="stylesheet" href="../styles.css?v=393e7f5af4af">
 <link rel="stylesheet" href="../launch.css?v=738ae631e707">
-<link rel="stylesheet" href="../cinematic.css?v=2f181b8028fc">
-<script src="../launch.js?v=372430739e42" defer></script>
+<link rel="stylesheet" href="../cinematic.css?v=58c9b39b7966">
+<script src="../launch.js?v=b570c852156c" defer></script>
 
 <link rel="canonical" href="https://mnemosy.ai/features/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Capabilities — Mnemosyne">
 <meta property="og:description" content="Explore Mnemosyne Recall, Timeline, On-Device Intelligence, Evidence Gate and Migration. Evidence-aware memory, from original sources to tested agent skills.">
 <meta property="og:url" content="https://mnemosy.ai/features/">
-<meta property="og:image" content="https://mnemosy.ai/assets/memory-architecture.png">
+<meta property="og:site_name" content="Mnemosyne">
+<meta property="og:image" content="https://mnemosy.ai/assets/share-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Mnemosyne: the next agent starts wiser. Persistent, local-first memory for AI agents.">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Capabilities — Mnemosyne">
+<meta name="twitter:description" content="Explore Mnemosyne Recall, Timeline, On-Device Intelligence, Evidence Gate and Migration. Evidence-aware memory, from original sources to tested agent skills.">
+<meta name="twitter:image" content="https://mnemosy.ai/assets/share-card.png">
+<meta name="twitter:image:alt" content="Mnemosyne: the next agent starts wiser. Persistent, local-first memory for AI agents.">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="site-header wrap">
     <a class="brand" href="../" aria-label="Mnemosyne home"><svg class="brand-symbol" viewBox="0 0 34 38" aria-hidden="true"><path d="M4 30V16a6.5 6.5 0 0 1 13 0v14m0-14a6.5 6.5 0 0 1 13 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>mnemosyne</a>
-    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="./" aria-current="page">Features</a><a href="../docs/">Docs</a><a href="../compare/">Approach</a><a href="../#company">Company</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
+    <nav class="nav" id="main-nav" aria-label="Main navigation"><a href="./" aria-current="page">Features</a><a href="../docs/">Docs</a><a href="../trust/">Trust</a><a href="../compare/">Approach</a><a href="../#company">Company</a><a class="source-link" href="https://github.com/28naem-del/mnemosyne">GitHub</a></nav>
   </header>
   <main id="main">
     <section class="page-hero wrap" aria-labelledby="page-title">
@@ -32,7 +41,7 @@
       <h1 id="page-title">Every memory.<br>A living history.</h1>
       <p>Build experience that stays useful. Find stronger evidence, revisit what was known, run optional intelligence on your device and make every reusable skill earn its place.</p>
       <div class="actions"><a class="button" href="../docs/">Explore the docs</a><a class="button secondary" href="../docs/#gradual-migration">Keep your current memory system</a></div>
-      <nav class="feature-index" aria-label="Explore capabilities"><a href="#remember">Remember &amp; resume</a><a href="#find">Find evidence</a><a href="#current">Keep current</a><a href="#learn">Learn from experience</a><a href="#connect">Bring across tools</a><a href="#control">Inspect &amp; control</a></nav>
+      <nav class="feature-index" aria-label="Explore capabilities"><a href="#remember">Remember &amp; resume</a><a href="#find">Find evidence</a><a href="#current">Keep current</a><a href="#learn">Keep evidence of what worked</a><a href="#connect">Bring across tools</a><a href="#control">Inspect &amp; control</a></nav>
     </section>
     <div class="wrap">
       <section class="section feature-section" id="remember" aria-labelledby="remember-title">
@@ -122,18 +131,18 @@
           <article class="feature-item"><h3>Backup and recovery</h3><p>Take a consistent whole-database snapshot, verify its digest and database integrity, then restore to a new path. Preserve workspaces, pending jobs and erasure tombstones. Scoped exports remain a separate transfer option.</p><a class="text-link" href="../docs/#recovery">Rehearse recovery</a></article>
           <article class="feature-item"><h3>Forgetting across the lifecycle</h3><p>Erase source generations and dependent live content. Hashed tombstones block replay after restart, including across full and gradual migration when the source identity matches. Legacy stores and existing external copies remain under your own retention controls.</p></article>
           <article class="feature-item"><h3>Measured evidence, inspectable outcomes</h3><p>The 500-question matched corpus run reports complete source-session coverage on 425/470 answerable questions at retrieval and 382/470 after 8,192-byte packing. This is evidence coverage, not answer accuracy, with same-day-compatible source timing. The separate agent harness can measure answer quality, stale actions and negative transfer with your own reader.</p><a class="text-link" href="../docs/#evaluation">Inspect the evaluation protocol</a></article>
-          <article class="feature-item"><h3>Mnemosyne Vector Engine</h3><p>Keep vector and hybrid recall with improved relevance scoring, broader startup indexing and scoped cache revalidation. The Mnemosyne Vector Engine remains separate from the local engine, with explicit migration when you choose to move records.</p><a class="text-link" href="/docs/reference/MIGRATION-v2.html">Read the existing-user guide</a></article>
+          <article class="feature-item"><h3>Mnemosyne Vector Engine</h3><p>Keep vector and hybrid recall with improved relevance scoring, broader startup indexing and scoped cache revalidation. The Mnemosyne Vector Engine remains separate from the local engine, with explicit migration when you choose to move records. It ships in 2.0.0; from 3.0.0-rc.2 it lives in the separate <code>mnemosy-ai-legacy</code> package, which is not on npm.</p><a class="text-link" href="/docs/reference/MIGRATION-v2.html">Read the existing-user guide</a></article>
         </div>
       </section>
-      <aside class="comparison-note legacy-architecture" aria-labelledby="legacy-architecture-title"><span id="l1" class="anchor-alias" aria-hidden="true"></span><span id="l2" class="anchor-alias" aria-hidden="true"></span><span id="l3" class="anchor-alias" aria-hidden="true"></span><span id="l4" class="anchor-alias" aria-hidden="true"></span><span id="l5" class="anchor-alias" aria-hidden="true"></span><h2 id="legacy-architecture-title">Already using the Mnemosyne Vector Engine?</h2><p>Older feature links point to the Mnemosyne Vector Engine. It remains available alongside the local engine, with upgraded retrieval and explicit controls for maintenance and erasure. The two backends are separate and their data is not automatically synchronized.</p><p><a href="../docs/#existing-qdrant">Read the existing-user guidance</a> or <a href="../#architecture">explore the current memory loop</a>.</p></aside>
+      <aside class="comparison-note legacy-architecture" aria-labelledby="legacy-architecture-title"><span id="l1" class="anchor-alias" aria-hidden="true"></span><span id="l2" class="anchor-alias" aria-hidden="true"></span><span id="l3" class="anchor-alias" aria-hidden="true"></span><span id="l4" class="anchor-alias" aria-hidden="true"></span><span id="l5" class="anchor-alias" aria-hidden="true"></span><h2 id="legacy-architecture-title">Already using the Mnemosyne Vector Engine?</h2><p>Older feature links point to the Mnemosyne Vector Engine. It remains available alongside the local engine in 2.0.0, with upgraded retrieval and explicit controls for maintenance and erasure. From 3.0.0-rc.2 it moves to <code>mnemosy-ai-legacy</code>, which is not on npm; pin <code>mnemosy-ai@2.0.0</code> to keep it. The two backends are separate and their data is not automatically synchronized.</p><p><a href="../docs/#existing-qdrant">Read the existing-user guidance</a> or <a href="../#architecture">explore the current memory loop</a>.</p></aside>
       <aside class="comparison-note" aria-labelledby="scope-title">
         <h2 id="scope-title">Know what you are building on.</h2>
-        <p>These capabilities are implemented in the <strong>2.0.0-rc.8 source candidate</strong>. Your application supplies trusted scope, selected source checks and model callbacks. Provider tools do not transfer consumer account memories; export profiles do not recreate every upstream feature.</p>
+        <p>These capabilities are implemented in <strong>2.0.0</strong> (npm <code>latest</code>). <strong>3.0.0-rc.2</strong> (npm <code>next</code>, pre-release) adds outcome-gated, reversible consolidation, dependency inference from successful co-use, exact replay of past beliefs and <code>bisect</code>, each measured with its protocol and limits on the <a href="../trust/">trust page</a>. Your application supplies trusted scope, selected source checks and model callbacks. Provider tools do not transfer consumer account memories; export profiles do not recreate every upstream feature.</p>
         <p>Gradual adoption measures the queries seen so far and continues to check the old backend. Recovery files are plaintext, erasure cannot reach existing backups, and production identity, remote TLS and managed synchronization remain application work. The <a href="../docs/#boundaries">documentation</a> makes those boundaries explicit.</p>
       </aside>
-      <section class="final-cta"><div><h2>Start with one agent.<br>Keep the evidence.</h2><p>Build from the tagged source, follow the integration guides and run the included examples.</p></div><a class="button" href="../docs/">Start building</a></section>
+      <section class="final-cta"><div><h2>Start with one agent.<br>Keep the evidence.</h2><p>Install from npm, follow the integration guides and run the offline demonstration.</p></div><a class="button" href="../docs/">Start building</a></section>
     </div>
   </main>
-  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="https://github.com/28naem-del/mnemosyne/issues">Report an issue</a><a href="../compare/">The Mnemosyne approach</a></div><div class="company-footer"><a href="../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer>
+  <footer class="site-footer wrap"><span>Mnemosyne / Open-source agent memory</span><div class="footer-links"><a href="../docs/">Documentation</a><a href="../trust/">Trust</a><a href="../compare/">Approach</a><a href="https://github.com/28naem-del/mnemosyne">GitHub</a><a href="https://github.com/28naem-del/mnemosyne/releases">Releases</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/28naem-del/mnemosyne/issues">Support: GitHub issues</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md">Security</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/CONTRIBUTING.md">Contributing</a><a href="https://github.com/28naem-del/mnemosyne/blob/main/LICENSE">MIT license</a></div><div class="company-footer"><a href="../#company">Built by Aristotle Intelligence Inc. · Delaware</a><span>Fully self-funded to date</span><a href="mailto:28naem@gmail.com">Contact</a></div></footer>
 </body>
 </html>
