@@ -144,7 +144,10 @@ export interface PremiseHold {
 export interface PremiseGuardOptions extends InferDependenciesOptions {
   /** A co-used premise is treated as independent, and never holds, only when the
    * Wilson upper bound (at `z`) on the dependent's reliance on it is below this:
-   * the dependent ran successfully often enough without it. Default 0.34. */
+   * the dependent ran successfully often enough without it. Default 0: every
+   * successful co-use holds. A release on statistics can let a true premise that
+   * the controller rarely reported through (the first v1 gate run did, at 0.34;
+   * see docs/DEPENDENCIES.md), so raising it trades that risk for reviewer load. */
   holdReliance?: number;
 }
 

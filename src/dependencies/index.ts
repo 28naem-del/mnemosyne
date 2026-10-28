@@ -31,7 +31,8 @@ export const DEPENDENCY_RULE: DependencyRule = 'co-use-success-v1';
 /** Defaults chosen on development seeds of the synthetic corpus, never on the gate
  * seed; see docs/DEPENDENCIES.md. */
 export const DEFAULT_INFERENCE_THRESHOLDS: Readonly<InferenceThresholds> = Object.freeze({ minSupport: 2, minReliance: 0.4, minLift: 1.5, minConfidence: 0.25, z: 1 });
-const DEFAULT_HOLD_RELIANCE = 0.34;
+// Never release on statistics by default: see PremiseGuardOptions.holdReliance.
+const DEFAULT_HOLD_RELIANCE = 0;
 const DEFAULT_DEPENDENT_KINDS: readonly MemoryKind[] = ['procedure'];
 const DEFAULT_PREMISE_KINDS: readonly MemoryKind[] = ['decision', 'fact', 'preference'];
 const EVIDENCE_IDS = 16;
@@ -410,6 +411,9 @@ export function inferDependencies(memory: LocalMemory, options: InferDependencie
   const { thresholds } = settings;
   const rejected = Object.fromEntries(REJECTIONS.map(reason => [reason, 0])) as Record<InferenceRejection, number>;
   const proposals: InferredDependency[] = [];
+  // Ties are broken by record age before ids: ids are random, ages replay, so a
+  // replayed store reviews proposals in the same order.
+  const age = new Map<InferredDependency, string>();
   const premiseOk = new Map<string, boolean>();
   let considered = 0;
   for (const key of [...index.pairs.keys()].sort()) {
@@ -439,9 +443,11 @@ export function inferDependencies(memory: LocalMemory, options: InferDependencie
       ignored: pair.ignored, returnedSupport: pair.returnedSupport, candidateOnly: pair.candidateOnly, failedCoUse: pair.failedCoUse,
       taskIds: sorted(pair.taskIds).slice(0, EVIDENCE_IDS), ledgerIds: sorted(pair.ledgerIds).slice(0, EVIDENCE_IDS), traceIds: sorted(pair.traceIds).slice(0, EVIDENCE_IDS),
     };
-    proposals.push({ ...body, digest: proposalDigest(body) });
+    const proposal = { ...body, digest: proposalDigest(body) };
+    proposals.push(proposal);
+    age.set(proposal, `${dependent.createdAt}\u0000${premise.createdAt}`);
   }
-  proposals.sort((a, b) => b.confidence - a.confidence || b.support - a.support || b.lift - a.lift || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  proposals.sort((a, b) => b.confidence - a.confidence || b.support - a.support || b.lift - a.lift || age.get(a)!.localeCompare(age.get(b)!) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
   const kept = proposals.slice(0, settings.maxProposals);
   return { proposals: kept, evidence: { ...index.evidence, pairs: { considered, proposed: kept.length, rejected } } };
 }
@@ -566,10 +572,11 @@ export function reviewDependency(memory: LocalMemory, proposal: InferredDependen
  * `PremiseGuard`). Premise state is read live on every check, so one guard built
  * before a correction reflects it; rebuild after new tasks to see their co-use.
  * A held pair is released by a review receipt, by a declared edge (the kernel
- * then handles it), by evidence of independence (the Wilson upper bound on
- * reliance, at `z`, below `holdReliance`: the dependent ran successfully often
- * enough without the premise), or by a dependent version created after the
- * premise changed. One co-use in a few runs is not evidence of independence.
+ * then handles it), by a dependent version created after the premise changed,
+ * or, only when the caller opts in with `holdReliance` above 0, by evidence of
+ * independence (the Wilson upper bound on reliance, at `z`, below it: the
+ * dependent ran successfully often enough without the premise). One co-use in a
+ * few runs is never evidence of independence.
  */
 export function createPremiseGuard(memory: LocalMemory, options: PremiseGuardOptions = {}): PremiseGuard {
   const settings = parseSettings(options, true);
