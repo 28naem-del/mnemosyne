@@ -13,9 +13,9 @@
  * compared with the seeded plan's ground truth.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createLocalMemory, type LocalMemory } from '../../local/index.js';
 import { replayDiff, replayState } from '../../local/replay.js';
@@ -74,10 +74,14 @@ function compiledModules(): { local: string; replay: string } | null {
   return existsSync(index) && existsSync(replay) ? { local: pathToFileURL(index).href, replay: pathToFileURL(replay).href } : null;
 }
 
-/** Read-only replay in a fresh node process: no ledger, the lexical path, so the replay cannot write to what it replays. */
+/**
+ * Read-only replay in a fresh node process: no ledger, the lexical path, so the replay cannot write to what it replays.
+ * The input (~70 KB at 1000 cut points) arrives as a file, not on stdin: `readFileSync(0)` on a spawnSync stdin
+ * larger than the 8 KB macOS socket buffer intermittently blocked forever (Node 26), timing out moment 1.
+ */
 const CHILD_MODULE = `
 import { readFileSync } from 'node:fs';
-const input = JSON.parse(readFileSync(0, 'utf8'));
+const input = JSON.parse(readFileSync(process.argv[1], 'utf8'));
 const { createLocalMemory } = await import(input.local);
 const { replayState } = await import(input.replay);
 const memory = createLocalMemory({ path: input.path, workspaceId: input.workspace, agentId: input.agent, retrieval: 'lexical', ledger: false });
@@ -87,9 +91,10 @@ try { process.stdout.write(input.cuts.map((cut) => replayState(memory, cut).stat
 function hashesElsewhere(path: string, cuts: readonly { asOf: string; knownAt: string }[]): { hashes: string[]; mode: 'separate process' | 'fresh connection' } {
   const modules = compiledModules();
   if (modules) {
-    const run = spawnSync(process.execPath, ['--input-type=module', '-e', CHILD_MODULE], {
-      input: JSON.stringify({ ...modules, path, workspace: WORKSPACE, agent: AGENT, cuts }),
-      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120_000,
+    const inputFile = join(dirname(path), 'replay-input.json');
+    writeFileSync(inputFile, JSON.stringify({ ...modules, path, workspace: WORKSPACE, agent: AGENT, cuts }));
+    const run = spawnSync(process.execPath, ['--input-type=module', '-e', CHILD_MODULE, inputFile], {
+      stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120_000,
     });
     if (run.status !== 0) throw new Error(`replay child process failed: ${(run.stderr || run.error?.message || 'no output').trim().split('\n')[0]}`);
     return { hashes: run.stdout.trimEnd().split('\n'), mode: 'separate process' };
