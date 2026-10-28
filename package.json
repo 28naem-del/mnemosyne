@@ -97,6 +97,10 @@
     "./local/reranking": {
       "types": "./dist/local/reranking/index.d.ts",
       "import": "./dist/local/reranking/index.js"
+    },
+    "./consolidation": {
+      "types": "./dist/consolidation/index.d.ts",
+      "import": "./dist/consolidation/index.js"
     }
   },
   "files": [
