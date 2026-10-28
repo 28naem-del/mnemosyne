@@ -185,6 +185,8 @@ body::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-i
 .doc-nav a:hover { color: var(--mint); }
 .article p, .article li { color: #acbcd0; }
 .article p a:not(.button), .article li a:not(.button) { color: #b1e7d3; }
+.article p a.button, .article li a.button { color: #081a20; }
+.article p a.button:hover, .article li a.button:hover { color: #061e1a; }
 .article section { border-color: #2b4054; }
 .article p code, .article li code { background: #172b3b; color: #d9e9f4; }
 .version { color: #9dd3c4; }
