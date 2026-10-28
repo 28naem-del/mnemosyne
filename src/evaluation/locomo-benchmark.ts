@@ -107,8 +107,8 @@ export async function locomoBenchmark(args = process.argv.slice(2)): Promise<voi
   const temporalCategory = values['temporal-category'] ?? 'locomo:2';
   const minTemporalGain = Number(values['min-temporal-gain'] ?? 3);
   if (!Number.isFinite(minTemporalGain) || minTemporalGain < -100 || minTemporalGain > 100) throw new Error('--min-temporal-gain must be between -100 and 100');
-  // The build brief's own number (t1.4-temporal-routing/BRIEF.md:17): "overall
-  // recall@10 does not drop more than 0.5 pts". Never checked until now.
+  // Temporal-routing acceptance bar: overall recall@10 may not drop by more
+  // than 0.5 points (override with --max-overall-drop).
   const maxOverallDrop = Number(values['max-overall-drop'] ?? 0.5);
   if (!Number.isFinite(maxOverallDrop) || maxOverallDrop < -100 || maxOverallDrop > 100) throw new Error('--max-overall-drop must be between -100 and 100');
   const started = Date.now();

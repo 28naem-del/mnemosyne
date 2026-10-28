@@ -70,7 +70,7 @@ export function createMemoryServer(memory: LocalMemory, options: MemoryServerOpt
   });
 
   server.registerTool('memory_recall', {
-    description: options.hybrid ? 'Find scoped memories with controller-configured semantic and lexical retrieval. Corrections and provenance restrictions apply to every result.' : 'Find scoped memories with local lexical retrieval. Semantic retrieval requires a controller-configured embedding adapter.',
+    description: options.hybrid ? 'Find scoped memories with controller-configured semantic and lexical retrieval. Corrections and provenance restrictions apply to every result.' : 'Find scoped memories with this memory\'s configured retrieval (by default hybrid when the local embedding model is available, otherwise lexical). Corrections and provenance restrictions apply to every result.',
     inputSchema: z.object({ query: queryText, limit: z.number().int().min(1).max(50).default(10), kinds: z.array(kinds).max(6).optional(), includeUntrusted: z.boolean().default(false), asOf: z.iso.datetime().optional(), knownAt: z.iso.datetime().optional(), lexicalScoring: z.enum(['bm25', 'overlap']).optional() }).strict(),
     annotations: readAnnotations,
   }, (input) => asyncResult(async () => { requireRecall(); return options.hybrid ? memory.recallHybrid(input, options.hybrid) : memory.recall(input); }));

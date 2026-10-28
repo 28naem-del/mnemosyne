@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
 [![npm: 2.0.0](https://img.shields.io/badge/npm-2.0.0-b8f6dd?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0)
+[![npm next: 3.0.0-rc.2](https://img.shields.io/badge/next-3.0.0--rc.2-9abfff?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/3.0.0-rc.2)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
 
 **The next agent starts wiser.**
@@ -14,13 +15,23 @@
 
 Mnemosyne connects memory to its consequences: a corrected requirement can retire a dependent procedure, a failed trial can withhold a skill, and a new agent can resume from an explicit handoff. Run the local engine in one SQLite file; connect your host through TypeScript, MCP, CLI, or authenticated HTTP with a Python client and live inspector.
 
-**2.0.0 · Stable release · MIT · Node.js ≥22.16**
+**Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.2 (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0) · [Contributing](CONTRIBUTING.md)
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [npm](https://www.npmjs.com/package/mnemosy-ai) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/28naem-del/mnemosyne/issues)
 
-## New in 3.0.0 (release candidate in this source tree, not yet on npm)
+## New in 3.0.0-rc.2 (pre-release on npm `next`)
 
-The 3.0.0 line is built and measured in this repository, but it is not published: `npm install mnemosy-ai` still installs 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
+3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
+
+| Measurement | Result | Protocol |
+|---|---|---|
+| PrecisionMemBench | **70/77** single-turn, **11/12** session turns (rc.1: 22/77 unfiltered, 48/77 with tuned wrapper filters, session 6/12) | Public 35-belief fixture the controls were designed against, protocol-exact, retrieval mode, no wrapper-side filter, no LLM judge · [protocol](docs/BENCHMARKS-TRUST.md#11-rc2-protocol-exact-no-wrapper-side-filter) |
+| Poisoning suite v1, consolidation on | **0/167** escapes, **0/60** false quarantines (85/167 escape without the gate) | 227 synthetic cases, lexical path, 294 gate decisions · [protocol](docs/BENCHMARKS-TRUST.md#22-consolidation-on-rc2) |
+| Dependency suite v1 | recall **96.05 %**, precision **98.06 %**, **0** stale procedures with the premise guard (inference alone: 7/248 stale; guard false-hold rate 92.78 %) | Synthetic corpus, seed 20261028, 120 corrections, accept-all eval reviewer · [protocol](docs/BENCHMARKS-TRUST.md#4-undeclared-dependency-inference-dependency-suite-v1-synthetic-rc2) |
+| Replay determinism | **1000/1000** identical states, **24,000/24,000** as-of answers | Two readers of one store at 1000 seeded cut points; answers against ground truth from the plan · [protocol](docs/BENCHMARKS-TRUST.md#5-the-five-moment-demo-mnemosy-demo-rc2) |
+| Bisect | precision **1.00** in 1.53 s on 2,000 records (re-runs 0.6–1.2 s; bar 60 s) | One seeded false record in a synthetic store, confirmed by re-running recall without it · [protocol](docs/BENCHMARKS-TRUST.md#5-the-five-moment-demo-mnemosy-demo-rc2) |
+
+The default retrieval path did not move: LoCoMo and LongMemEval-S recall are identical before and after ([regression check](docs/BENCHMARKS-TRUST.md#6-retrieval-regression-check-locomo-and-longmemeval-s-before-and-after)). Recall latency was measured only on a loaded machine; the known limits, including a slowdown of the non-default `overlap` scorer, are in the [changelog](CHANGELOG.md).
 
 - **Precision you can switch on.** The new opt-in controls are a names gate and guarded single-edit fuzzy matching. Empty answers are native abstentions, and the ledger records why. With the controls on, the kernel scores **70/77 single-turn cases and 11/12 session turns on PrecisionMemBench** (session was 6/12 with the rc.1 filtered configuration). That run was protocol-exact, in retrieval mode, with no LLM judge, no wrapper-side filter and no wrapper `kinds` predicate, and the lexical and hybrid paths score the same. The 12th session turn needs an open-question kind policy that the kernel is not told about.
   - For comparison, the kernel scored 22/77 unfiltered and 48/77 with the fixture-tuned wrapper filters of rc.1.
@@ -44,21 +55,23 @@ The 3.0.0 line is built and measured in this repository, but it is not published
   Each moment prints a PROOF line measured in that run. [What each moment proves](docs/DEMO.md)
 
 ```sh
-npm run build
-node dist/cli/index.js demo             # five moments, offline, each PROOF line measured live
-node dist/cli/index.js demo --classic   # the previous single-scenario demo
+npx -y -p mnemosy-ai@next mnemosy demo             # five moments, offline, each PROOF line measured live
+npx -y -p mnemosy-ai@next mnemosy demo --classic   # the previous single-scenario demo
 ```
 
-3.0 is a breaking release: the legacy vector engine moves to `mnemosy-ai-legacy` ([3.0 migration](docs/MIGRATION-v3.md)). The draft release notes are in the [changelog](CHANGELOG.md).
+From a source checkout, run `npm run build` and then `node dist/cli/index.js demo`.
+
+3.0 is a breaking release: the legacy vector engine moves to `mnemosy-ai-legacy`, which is not on npm yet; build it from a checkout or stay on `mnemosy-ai@2` ([3.0 migration](docs/MIGRATION-v3.md)). The release notes are in the [changelog](CHANGELOG.md).
 
 ## Install and connect an agent
 
 ```sh
-npm install mnemosy-ai                   # latest = 2.0.0; pin mnemosy-ai@2.0.0 to reproduce
+npm install mnemosy-ai                   # stable: latest = 2.0.0; pin mnemosy-ai@2.0.0 to reproduce
+npm install mnemosy-ai@next              # pre-release: next = 3.0.0-rc.2; pin mnemosy-ai@3.0.0-rc.2 to reproduce
 npx --no-install mnemosy demo            # offline: no API key, no server, no Docker
 ```
 
-Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
+Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The entries below run the 3.0.0-rc.2 pre-release through `mnemosy-ai@next`; for the stable release write `mnemosy-ai@2.0.0` in its place, and to pin the pre-release write `mnemosy-ai@3.0.0-rc.2`. Both versions expose the same MCP tools. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
 
 ```json
 {
@@ -66,7 +79,7 @@ Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the proje
     "mnemosyne": {
       "command": "npx",
       "args": [
-        "-y", "-p", "mnemosy-ai@2.0.0", "mnemosy", "mcp",
+        "-y", "-p", "mnemosy-ai@next", "mnemosy", "mcp",
         "--db", "./.mnemosyne/memory.sqlite",
         "--workspace", "my-project", "--agent", "assistant"
       ]
@@ -78,8 +91,24 @@ Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the proje
 Claude Code can register the same server from the shell:
 
 ```sh
-claude mcp add mnemosyne -- npx -y -p mnemosy-ai@2.0.0 mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
+claude mcp add mnemosyne -- npx -y -p mnemosy-ai@next mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
 ```
+
+**Codex** keeps MCP servers in `~/.codex/config.toml`. Register the server with an absolute database path:
+
+```sh
+codex mcp add mnemosyne -- npx -y -p mnemosy-ai@next mnemosy mcp --db /absolute/path/project/.mnemosyne/memory.sqlite --workspace my-project --agent assistant
+```
+
+The command writes this table, which you can also add by hand:
+
+```toml
+[mcp_servers.mnemosyne]
+command = "npx"
+args = ["-y", "-p", "mnemosy-ai@next", "mnemosy", "mcp", "--db", "/absolute/path/project/.mnemosyne/memory.sqlite", "--workspace", "my-project", "--agent", "assistant"]
+```
+
+The first `npx` launch downloads the package; if a client gives up during that first start, install the package in the project first.
 
 The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory_context`, `memory_correct`, `memory_checkpoint`, `memory_resume`, `memory_observe`, `memory_skill`, …); `memory_forget` is added only when the server is launched with `--allow-destructive`. Add `--read-only` to omit every mutation tool. A model cannot switch workspace, raise its own trust or report its own skill trials through MCP. Agent-readable summaries of this repository are in [`llms.txt`](llms.txt) and [`AGENTS.md`](AGENTS.md); the full MCP contract is in [Connect through MCP](#connect-through-mcp).
 
@@ -91,11 +120,11 @@ The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory
 | **Reranker gain**, LoCoMo, 1,531 annotated questions | MRR@10 0.461 → 0.624, **+0.163** (paired bootstrap 95% CI 0.146–0.181; 599 wins, 133 losses) | The same hybrid candidate set with and without the bundled cross-encoder, on the shipped build. |
 | **Against Mem0 OSS**, same corpus, chunks, K, packing budget, scorer, one process | LoCoMo recall@10 **73.57 vs 63.72** with reranking; our *unreranked* path **loses to Mem0 at every K**; on LongMemEval-S the two tie on recall@20 and Mem0 takes MRR | [COMPARISON.md](COMPARISON.md), every loss in the same tables |
 
-**What these numbers do not say.** The 81.8% is not a paired gain over the earlier 71.2%: that baseline used a different 250-question sample, prompt and budget, so the improvement belongs to the whole bundle of changes. The reader is nondeterministic; rerunning one configuration moved its score by about a point. Retrieval numbers measure coverage, not answers. Two Tier 1 targets of this release are **not met** and ship disclosed: recall latency at one million records is p95 139–223 ms against a 50 ms goal (opt-in `indexMode: 'hnsw'`, see [Tune the dense index](#tune-the-dense-index)), and contextual reranking ships at 71.98% all-evidence hit against a 72.80% gate, 0.82 points (13 of 1,531 questions) short; the best variant tried was still four short and was not merged. Commands and raw outputs are in [`reports/t1-targets/evidence/`](reports/t1-targets/evidence/) the answer-accuracy and gate results are restated with their commits in the [changelog](CHANGELOG.md), and the Mem0 and reranker retrieval tables are in [COMPARISON.md](COMPARISON.md).
+**What these numbers do not say.** The 81.8% is not a paired gain over the earlier 71.2%: that baseline used a different 250-question sample, prompt and budget, so the improvement belongs to the whole bundle of changes. The reader is nondeterministic; rerunning one configuration moved its score by about a point. Retrieval numbers measure coverage, not answers. Two Tier 1 targets of 2.0.0 are **not met** and ship disclosed: recall latency at one million records is p95 139–223 ms against a 50 ms goal (opt-in `indexMode: 'hnsw'`, see [Tune the dense index](#tune-the-dense-index)), and contextual reranking ships at 71.98% all-evidence hit against a 72.80% gate, 0.82 points (13 of 1,531 questions) short; the best variant tried was still four short and was not merged. Commands and raw outputs are in [`reports/t1-targets/evidence/`](reports/t1-targets/evidence/); the answer-accuracy and gate results are restated with their commits in the [changelog](CHANGELOG.md), and the Mem0 and reranker retrieval tables are in [COMPARISON.md](COMPARISON.md).
 
 ## Choose your engine
 
-**Both engines ship in 2.0.0.** Choose the storage and runtime that fit your application:
+**Both engines ship in 2.0.0; from 3.0.0-rc.2, `mnemosy-ai` ships the Local Engine and the Vector Engine moves to `mnemosy-ai-legacy`.** Choose the storage and runtime that fit your application:
 
 | Engine | Best starting point | SDK entry point | Guide |
 |---|---|---|---|
@@ -104,21 +133,21 @@ The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory
 
 The `MemoryAgent` adapter uses the Local Engine's runtime. These engines have separate schemas and do not automatically migrate or synchronize data. To transition gradually, explicitly connect your existing store through the [read-only migration bridge](docs/BRIDGE.md); it leaves that store unchanged.
 
-Engine choice is separate from version: `mnemosy-ai@latest` is 2.0.0 and contains **both** engines; the 1.x line stays installable as `mnemosy-ai@1`. **Upgrading from 1.x is a breaking change**: read the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application. In this source tree, prepared for 3.0.0, the Vector Engine has moved out of `mnemosy-ai` into the unpublished [`mnemosy-ai-legacy`](packages/legacy/README.md) package; see the [3.0 migration notes](docs/MIGRATION-v3.md).
+Engine choice is separate from version: `mnemosy-ai@latest` is 2.0.0 and contains **both** engines; the 1.x line stays installable as `mnemosy-ai@1`. **Upgrading from 1.x is a breaking change**: read the [migration notes](docs/MIGRATION-v2.md) before upgrading an existing Vector Engine application. From 3.0.0-rc.2 (npm `next`), the Vector Engine has moved out of `mnemosy-ai` into the [`mnemosy-ai-legacy`](packages/legacy/README.md) package, which is not on npm yet; see the [3.0 migration notes](docs/MIGRATION-v3.md).
 
 ## Start with a working demonstration
 
 Install the package in your project. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
 
 ```sh
-npm install mnemosy-ai
+npm install mnemosy-ai                   # stable 2.0.0; or mnemosy-ai@next for the 3.0.0-rc.2 pre-release
 npx --no-install mnemosy demo
 npx --no-install mnemosy learning-demo
 ```
 
-Unqualified `npm install mnemosy-ai` follows the `latest` channel, which is 2.0.0 from 27 October 2026; pin `mnemosy-ai@2.0.0` for reproducible deployments. If you are upgrading from the 1.x line, read the [migration notes](docs/MIGRATION-v2.md) first: version 2 changes vector retrieval scoring, startup indexing and erasure, and does not migrate an existing database. Evaluate on your own workload before production. Python registry publication is separate; the bundled Python client can be installed from the checkout.
+Unqualified `npm install mnemosy-ai` follows the `latest` channel, which is 2.0.0 from 27 October 2026; pin `mnemosy-ai@2.0.0` for reproducible deployments. `npm install mnemosy-ai@next` installs the 3.0.0-rc.2 pre-release; pin `mnemosy-ai@3.0.0-rc.2` to reproduce it. If you are upgrading from the 1.x line, read the [migration notes](docs/MIGRATION-v2.md) first: version 2 changes vector retrieval scoring, startup indexing and erasure, and does not migrate an existing database. Evaluate on your own workload before production. Python registry publication is separate; the bundled Python client can be installed from the checkout.
 
-To build and run the same release from source:
+To build and run the same release from source (use `--branch v3.0.0-rc.2` for the pre-release):
 
 ```sh
 git clone --branch v2.0.0 --depth 1 https://github.com/28naem-del/mnemosyne.git
@@ -129,7 +158,7 @@ npm run demo
 npm run demo:learning
 ```
 
-In 2.0.0, the first demo uses a temporary database to show a handoff, correction, private scope and forgetting. In this source tree (3.0.0 draft), `mnemosy demo` is the [five-moment demo](docs/DEMO.md) and the 2.0.0 demo is `mnemosy demo --classic`. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
+In 2.0.0, the first demo uses a temporary database to show a handoff, correction, private scope and forgetting. From 3.0.0-rc.2, `mnemosy demo` is the [five-moment demo](docs/DEMO.md) and the 2.0.0 demo is `mnemosy demo --classic`. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
 
 For full contributor validation, run `npm run check`, `npm run check:docs` and `npm run check:public`. 2.0.0 is the 2.0.0-rc.10 candidate promoted to stable with no source change (one dependency security patch, `zod` 4.6.2 → 4.6.7, is noted in the changelog); it carries the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging. The recorded evaluation reports remain historical measurements of the versions and conditions they name.
 

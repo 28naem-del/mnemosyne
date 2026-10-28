@@ -30,6 +30,6 @@ The evidence and learning demonstrations present recorded, synthetic runs. Do no
 
 ## Product language
 
-Lead with observable behavior: an agent can recover a source, reuse a tested procedure, discover changed evidence and carry work into another session. Link measured claims to their protocol and limits. Retrieval coverage is distinct from generated-answer quality. The source release remains a release candidate; package-registry availability has its own publication step.
+Lead with observable behavior: an agent can recover a source, reuse a tested procedure, discover changed evidence and carry work into another session. Link measured claims to their protocol and limits. Retrieval coverage is distinct from generated-answer quality. State the release channel with every install instruction: the stable release is npm `latest`, pre-releases are npm `next`, and package-registry availability has its own publication step.
 
 Use Mnemosyne names for our interfaces and workflows. Preserve actual dependency identifiers, interoperability names and required credits in technical documentation and notices. Brand ownership must never imply ownership of a third party's code or research.
