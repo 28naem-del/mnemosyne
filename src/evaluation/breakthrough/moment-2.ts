@@ -42,13 +42,17 @@ const CORRECTED = 'The Orion billing API base URL is https://billing.orion.examp
 interface Dependent { label: string; text: string; ids: string[]; declared: boolean; skillId?: string }
 
 /** The published suite-v1 gate, read from the committed report; null when the report is not in this checkout. */
-export function publishedDependencyNumbers(path = PUBLISHED): { recall: string; precision: string; stale: string } | null {
+export function publishedDependencyNumbers(path = PUBLISHED): { recall: string; precision: string; stale: string; staleInferenceOnly: string; staleChecks: string } | null {
   if (!existsSync(path)) return null;
   const text = readFileSync(path, 'utf8');
   const recall = /Invalidation recall[^|]*\|\s*([\d.]+%)/.exec(text)?.[1];
   const precision = /Precision of accepted edges[^|]*\|\s*([\d.]+%)/.exec(text)?.[1];
   const stale = /Stale-procedure executions[^|]*\|\s*(\d+)\s*\|/.exec(text)?.[1];
-  return recall && precision && stale ? { recall, precision, stale } : null;
+  // The suite's stale 0 is the premise guard's; the report states what inference alone leaves.
+  const inferenceOnly = /Inference alone leaves (\d+) stale of (\d+)/.exec(text);
+  return recall && precision && stale && inferenceOnly
+    ? { recall, precision, stale, staleInferenceOnly: inferenceOnly[1]!, staleChecks: inferenceOnly[2]! }
+    : null;
 }
 
 export async function momentDownstream(context: MomentContext): Promise<MomentOutcome> {
@@ -122,9 +126,9 @@ export async function momentDownstream(context: MomentContext): Promise<MomentOu
     say('> inferDependencies(memory)   (rule co-use-success-v1: read-only, no model)');
     const inference = inferDependencies(memory);
     const { tasks, pairs } = inference.evidence;
-    say(`  ${tasks.successful} successful and ${tasks.failed} failed tasks read; ${pairs.considered} co-used pairs considered, ${pairs.proposed} proposed (declared ${pairs.rejected.declared}, support ${pairs.rejected.support}, lift ${pairs.rejected.lift} rejected)`);
+    say(`  ${tasks.successful} successful and ${tasks.failed} failed tasks read; ${pairs.considered} co-used pairs considered, ${pairs.proposed} proposed (declared ${pairs.rejected.declared}, support ${pairs.rejected.support}, association lift ${pairs.rejected.lift} rejected)`);
     for (const proposal of inference.proposals) {
-      say(`  proposal: ${labelOf(proposal.from)} relies on the premise   support ${proposal.support}/${proposal.runs} runs, reliance ${proposal.reliance.toFixed(2)}, lift ${proposal.lift.toFixed(2)}, confidence ${proposal.confidence.toFixed(2)}`);
+      say(`  proposal: ${labelOf(proposal.from)} relies on the premise   support ${proposal.support}/${proposal.runs} runs, reliance ${proposal.reliance.toFixed(2)}, association lift ${proposal.lift.toFixed(2)}, confidence ${proposal.confidence.toFixed(2)}`);
     }
     const decoyProposed = inference.proposals.some((proposal) => proposal.from === decoy.id);
     say(`  key rotation (decoy): ${decoyFailedCoUse} co-uses in failed tasks, ${decoySuccessCoUse} in successful ones; a failure is never support -> ${decoyProposed ? 'PROPOSED' : 'not proposed'}`);
@@ -177,7 +181,7 @@ export async function momentDownstream(context: MomentContext): Promise<MomentOu
     say('');
     say(`  undeclared dependents invalidated ${undeclaredInvalidated}/${undeclared}, declared ${declaredInvalidated}/${declared}; ${receipts} dependency receipt(s) in the ledger; premise guard not used`);
     const published = publishedDependencyNumbers();
-    if (published) say(`  published, synthetic dependency suite v1 (reports/dependencies/v1/report.md): recall ${published.recall}, precision ${published.precision}, stale ${published.stale}`);
+    if (published) say(`  published, synthetic dependency suite v1 (reports/dependencies/v1/report.md): recall ${published.recall}, precision ${published.precision}, stale ${published.stale} with the premise guard (inference alone leaves ${published.staleInferenceOnly} of ${published.staleChecks} stale)`);
 
     const passed = live === dependents.length && undeclared > 0 && undeclaredInvalidated === undeclared && declaredInvalidated === declared
       && accepted.length > 0 && truePositives === accepted.length && accepted.length === undeclared && stale === 0 && decoySurvived && !decoyProposed;

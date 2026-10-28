@@ -1,5 +1,5 @@
 /**
- * Moment 5 — "It got better on its own, and handed me the receipt."
+ * Moment 5 — "One consolidation kept, two rolled back, the kept one undone."
  *
  * Consolidation ("dreaming") on the SYNTHETIC ops store the consolidation module
  * ships (`seedDemoStore`: eleven records and ten recorded tasks with a verifier

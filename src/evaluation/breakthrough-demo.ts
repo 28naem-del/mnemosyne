@@ -58,7 +58,7 @@ export const BREAKTHROUGH_MOMENTS: readonly MomentDefinition[] = [
     run: momentPoisoning,
   },
   {
-    id: 5, title: 'It got better on its own, and handed me the receipt',
+    id: 5, title: 'One consolidation kept, two rolled back, the kept one undone',
     proofLabel: 'consolidation receipts', threshold: 'kept >= 1 with delta >= 0 and hold-out >= 0, rolled back >= 1, rollback restores the identical stateSha256, chain verifies',
     run: momentConsolidation,
   },

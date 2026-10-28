@@ -33,6 +33,9 @@ describe('breakthrough demo', () => {
     expect(report.pending).toEqual([]);
     expect(report.durationMs).toBeLessThan(BUDGET);
     expect(report.limitations.join(' ')).toMatch(/synthetic/);
+    // Titles describe what the run shows; none claims the system improved itself.
+    expect(BREAKTHROUGH_MOMENTS.find(entry => entry.id === 5)!.title).toBe('One consolidation kept, two rolled back, the kept one undone');
+    for (const entry of BREAKTHROUGH_MOMENTS) expect(entry.title).not.toMatch(/on its own|got better|improve/i);
   });
 
   it('streams every moment line and ends each moment with a PROOF line carrying the measured value', () => {
@@ -83,19 +86,19 @@ describe('breakthrough demo', () => {
   });
 
   it('moment 2 repaired everything downstream, inferred edges included, and left the decoy alone', () => {
-    const details = moment(2).details as { undeclared: number; undeclaredInvalidated: number; declared: number; declaredInvalidated: number; accepted: number; truePositives: number; stale: number; probes: number; liveBefore: number; decoySurvived: boolean; decoyProposed: boolean; receipts: number; published: { recall: string; precision: string; stale: string } | null };
+    const details = moment(2).details as { undeclared: number; undeclaredInvalidated: number; declared: number; declaredInvalidated: number; accepted: number; truePositives: number; stale: number; probes: number; liveBefore: number; decoySurvived: boolean; decoyProposed: boolean; receipts: number; published: { recall: string; precision: string; stale: string; staleInferenceOnly: string; staleChecks: string } | null };
     expect(details).toMatchObject({ undeclared: 3, undeclaredInvalidated: 3, declared: 2, declaredInvalidated: 2, accepted: 3, truePositives: 3, stale: 0, decoySurvived: true, decoyProposed: false, receipts: 3 });
     // The stale probes found every dependent before the correction, so the zero after it is not vacuous.
     expect(details.liveBefore).toBe(5);
     expect(details.probes).toBe(11);
-    expect(details.published).toEqual({ recall: '96.05%', precision: '98.06%', stale: '0' });
+    expect(details.published).toEqual({ recall: '96.05%', precision: '98.06%', stale: '0', staleInferenceOnly: '7', staleChecks: '248' });
     expect(moment(2).proof.measured).toBe('undeclared invalidated 3/3, accepted edges true 3/3, stale after correction 0 (11 probes)');
     const text = moment(2).lines.join('\n');
     expect(text).toMatch(/proposal: refunds \(never linked\) relies on the premise {3}support 3\/3 runs/);
     expect(text.match(/accepted: receipt [0-9a-f-]{36} /g)).toHaveLength(3);
     expect(text).toContain('skill retired: Linked premise was corrected or is no longer eligible.');
     expect(text).toMatch(/survived {5}key rotation \(decoy\)/);
-    expect(text).toContain('recall 96.05%, precision 98.06%, stale 0');
+    expect(text).toContain('recall 96.05%, precision 98.06%, stale 0 with the premise guard (inference alone leaves 7 of 248 stale)');
   });
 
   it('moment 5 kept a dream that helped, rolled back the ones that did not, and undid the kept one exactly', () => {

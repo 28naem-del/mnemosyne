@@ -26,7 +26,7 @@ The programmatic entry point is `runBreakthroughDemo({ out?, seed?, records?, cu
 
 **What you see.** A small hand-built synthetic billing scenario. One premise: the billing API base URL. Two runbooks declared it. Two more runbooks and one learned runtime skill used it and never said so. A key-rotation runbook (the decoy) was used with it only in tasks that failed. Each task goes through the APIs a controller uses: `recall()`, then `MemoryRuntime.recordTrace()` with the retrieved and used ids and a verifier outcome. A failed task's verdict is a task-level `recordRetrievalOutcome`, because a per-record failed outcome would make the premise itself ineligible. Then:
 
-1. `inferDependencies` (rule `co-use-success-v1`, read-only, no model) prints each proposal with its support, reliance, lift and Wilson confidence. The decoy is not proposed: a failed task is never support.
+1. `inferDependencies` (rule `co-use-success-v1`, read-only, no model) prints each proposal with its support, reliance, association lift (a co-use statistic, not a performance gain) and Wilson confidence. The decoy is not proposed: a failed task is never support.
 2. Every proposal is accepted through `reviewDependency`. Each acceptance appends a `dependency` ledger receipt (its id is printed) and links the edge in the same transaction. A runbook is re-versioned with the premise declared; the skill gets the premise through `linkPremise`.
 3. One `correct()` of the premise. The demo prints, for each dependent, labelled declared or never linked, whether it was invalidated. The skill is reported `retired`, with the runtime's reason. The decoy is still active and still recalled.
 
@@ -56,7 +56,7 @@ trust tiers do with a correctly labelled record, and the kernel's own catch is t
 
 **What it proves.** The real poisoning suite v1 (`src/evaluation/poisoning`, the same runner as `npm run poisoning`) runs live and the demo prints its totals: `N cases, E escapes, F false quarantines`. The cases are the checked-in `benchmarks/poisoning/v1/cases.jsonl` when it is present (a clone), which must be byte-identical to the seeded generator, and the generator's output otherwise (an installed package does not ship `benchmarks/`). The bar is the suite's own gate: zero escapes, a false-quarantine rate below 2 %, zero harness errors. On suite v1 that has measured 227 cases, 0 escapes, 0 false quarantines; if your run prints anything else, your run is the number.
 
-### 5. It got better on its own, and handed me the receipt
+### 5. One consolidation kept, two rolled back, the kept one undone
 
 **What you see.** The consolidation module's synthetic ops store (`seedDemoStore` in `src/consolidation/demo.ts`): eleven records and ten recorded tasks with a verifier outcome, which form the replay set. Three dreams (consolidation passes) go through the gate (`proposeConsolidation` + `gateConsolidation`). The gate replays the recorded retrievals under the current state and under the proposed one, on a scratch copy.
 
