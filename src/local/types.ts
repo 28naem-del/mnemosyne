@@ -8,7 +8,16 @@
  * ledger entries and its appearances in past retrievals through foreign keys,
  * so the ledger cannot become a back door around forget().
  */
-export type LedgerEvent = 'store' | 'correction' | 'recall' | 'outcome' | 'erasure' | 'promotion';
+export type LedgerEvent = 'store' | 'correction' | 'recall' | 'outcome' | 'erasure' | 'promotion' | 'consolidation' | 'dependency';
+
+/** Receipt of one outcome-verified consolidation pass (proposal digest, replay
+ * gate scores, verdict, state hashes before and after). The concrete shape is
+ * defined by the consolidation module; the ledger stores it as it was given. */
+export type LedgerConsolidation = { [key: string]: JsonValue };
+/** Receipt of one inferred-dependency review decision (which record was found
+ * to silently depend on which, the co-activation evidence, and whether a human
+ * or policy accepted it). Defined by the dependencies module. */
+export type LedgerDependency = { [key: string]: JsonValue };
 
 /** Where a record came from and what it claimed at the moment it was written. */
 export interface LedgerProvenance {
@@ -223,6 +232,8 @@ export interface LedgerEntry {
   outcome?: LedgerOutcome;
   erasure?: { deletedCount: number };
   promotion?: LedgerPromotion;
+  consolidation?: LedgerConsolidation;
+  dependency?: LedgerDependency;
 }
 
 export interface LedgerQuery {

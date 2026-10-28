@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import * as v from './validation.js';
 import type {
   CheckpointInput, CompileInput, ContextPacket, EmbeddingIndexOptions, EmbeddingIndexResult, HybridRecallOptions, ImportResult, ListMemoryInput, LocalMemoryOptions, MemoryEmbedder, MemoryPage, MemoryRecord,
-  LedgerCandidate, LedgerEntry, LedgerEvent, LedgerOptions, LedgerPage, LedgerProvenance, LedgerQuery, LedgerRetrieval, LedgerRetrievalConfig,
+  LedgerCandidate, LedgerConsolidation, LedgerDependency, LedgerEntry, LedgerEvent, LedgerOptions, LedgerPage, LedgerProvenance, LedgerQuery, LedgerRetrieval, LedgerRetrievalConfig,
   GranularityIndexOptions, GranularityIndexResult, GranularityLevel, GranularityMode,
   MemorySnapshot, OutcomeInput, OutcomeRecord, RecallInput, RecallResult, RetrievalMode, RetrievalOutcomeInput, RetrievalStage, RetrievalStatus, RollbackUnchangedRecordsInput, SnapshotIdempotencyEntry, StoreMemoryInput, SyncMemoryEmbedder, SyncMemoryReranker,
 } from './types.js';
@@ -608,7 +608,7 @@ export class LocalMemory {
    * Appends one ledger entry. Writes are part of the caller's transaction, so a
    * rolled-back belief change leaves no ledger entry claiming it happened.
    */
-  #appendLedger(event: LedgerEvent, memoryId: string | null, payload: Partial<Pick<LedgerEntry, 'provenance' | 'retrieval' | 'correction' | 'outcome' | 'erasure' | 'promotion'>>, results?: { memoryId: string; rank: number; score: number }[], candidates?: LedgerCandidate[]): string {
+  #appendLedger(event: LedgerEvent, memoryId: string | null, payload: Partial<Pick<LedgerEntry, 'provenance' | 'retrieval' | 'correction' | 'outcome' | 'erasure' | 'promotion' | 'consolidation' | 'dependency'>>, results?: { memoryId: string; rank: number; score: number }[], candidates?: LedgerCandidate[]): string {
     if (!this.#ledgerEnabled) return '';
     const id = randomUUID();
     // Retrieval results and candidates live in their own tables so erasure removes
@@ -3145,6 +3145,28 @@ export class LocalMemory {
       }
       return result;
     });
+  }
+
+  /**
+   * Appends a receipt from one of the modules built on top of the kernel: an
+   * outcome-verified consolidation pass or an inferred-dependency review.
+   *
+   * The payload is stored as given, inside the caller's transaction when one is
+   * open, so a receipt can never outlive the change it describes. `memoryId` is
+   * optional: a receipt about a whole pass carries none, and so survives the
+   * erasure of any single record it mentions. Returns the ledger id, or an empty
+   * string when the ledger is disabled.
+   */
+  appendLedgerReceipt(entry: { event: 'consolidation'; consolidation: LedgerConsolidation; memoryId?: string } | { event: 'dependency'; dependency: LedgerDependency; memoryId?: string }): string {
+    this.#assertOpen();
+    const value = v.object(entry, 'ledger receipt');
+    v.keys(value, ['event', 'consolidation', 'dependency', 'memoryId'], 'ledger receipt');
+    const event = v.enumeration(entry.event, ['consolidation', 'dependency'] as const, 'event');
+    const memoryId = entry.memoryId === undefined ? null : v.string(entry.memoryId, 'memoryId', 160);
+    const body = event === 'consolidation' ? (entry as { consolidation: LedgerConsolidation }).consolidation : (entry as { dependency: LedgerDependency }).dependency;
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new TypeError(`${event} must be an object`);
+    if (Buffer.byteLength(JSON.stringify(body), 'utf8') > 262_144) throw new RangeError(`${event} receipt must not exceed 256 KiB`);
+    return this.#transaction(() => this.#appendLedger(event, memoryId, { [event]: body }));
   }
 
   close(): void {
