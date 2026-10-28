@@ -330,7 +330,7 @@ The same flow works on a file store through `mnemosy consolidate --propose | --a
 --verify-chain`. On that path:
 
 - a re-applied diff is a `conflict`;
-- a tampered diff is `invalid_run`;
+- a tampered diff, or one signed by any key but the store's, is `invalid_run`;
 - a second rollback is refused.
 
 `tests/consolidation-{gate,signing,poisoning,cli,rejected-passes}.test.ts` assert these behaviours
@@ -349,6 +349,10 @@ Limits:
 - The demo and suite keys are fixed public seeds.
 - A signature binds the gate's inputs to its output. It says nothing about the truth of a merged
   text.
+- Paraphrase laundering is not caught. The gate catches an untrusted record when a proposal cites
+  it, or when the output carries a token found only in untrusted records. An untrusted
+  instruction restated, uncited, in tokens from trusted records is kept as a live `procedure`. The
+  suite's "0 laundering passes kept" covers its two verbatim adversaries only.
 - **No improvement claim is made.** This is the mechanism for keeping only changes that do not
   regress recorded outcomes. Lift on held-out task families from the agent's own experience has
   not been measured.

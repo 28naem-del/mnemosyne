@@ -256,6 +256,77 @@ describe('consolidation gate', () => {
     expect(chain).toMatchObject({ ok: true, receipts: 5 });
   });
 
+  it('pins the gate to its own signer by default: a validly self-signed foreign-key diff is invalid_run unless the caller opts out with "any"', () => {
+    const { db } = deployFixture();
+    const foreign = createConsolidationSigner({ seed: new Uint8Array(32).fill(4) });
+    const diff = proposeConsolidation(db, { signer: foreign })!;
+    expect(gateConsolidation(db, diff, { signer })).toMatchObject({ verdict: 'invalid_run', created: [], receipt: { reason: 'diff is signed by a key that is not trusted' } });
+    expect(consolidate(db, { signer: foreign, trustedKeyIds: [signer.keyId] })!.verdict).toBe('invalid_run');
+    expect(db.list({ limit: 100 }).items).toHaveLength(3);
+    expect(gateConsolidation(db, diff, { signer, trustedKeyIds: [signer.keyId, foreign.keyId] }).verdict).toBe('kept');
+    expect(() => gateConsolidation(db, diff, { signer, trustedKeyIds: 'all' as never })).toThrow(/trustedKeyIds/);
+  });
+
+  it('judges a foreign-key diff only with the explicit, unsafe trustedKeyIds: "any"', () => {
+    const { db } = deployFixture();
+    const foreign = createConsolidationSigner({ ephemeral: true });
+    const diff = proposeConsolidation(db, { signer: foreign })!;
+    expect(gateConsolidation(db, diff, { signer, trustedKeyIds: 'any' }).verdict).toBe('kept');
+  });
+
+  it('marks a pass a conflict when anything is written between scoring and apply, an insert included', () => {
+    for (const write of [
+      (db: LocalMemory) => { put(db, 'Grafana dashboards folder.', { kind: 'fact' }); },
+      (db: LocalMemory) => { db.recordOutcome({ memoryId: db.list({ limit: 1 }).items[0].id, taskId: 'late', success: false, verifier: 'test-ci (synthetic)', evidence: 'late' }); },
+    ]) {
+      const { db } = deployFixture();
+      const diff = proposeConsolidation(db, { signer })!;
+      // The write lands after scoring, right before the apply transaction opens.
+      const racing = new Proxy(db, { get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (prop === 'atomic') return <T>(work: () => T): T => { write(target); return target.atomic(work); };
+        return typeof value === 'function' ? value.bind(target) : value;
+      } });
+      const result = gateConsolidation(racing, diff, { signer });
+      expect(result).toMatchObject({ verdict: 'conflict', created: [] });
+      expect(result.receipt.reason).toMatch(/changed while this pass was scored/);
+      expect(passRecords(db, result.receipt.passId)).toEqual([]);
+      expect(verifyConsolidationChain(db, { pinnedKeyIds: [signer.keyId] }).ok).toBe(true);
+    }
+  });
+
+  it('never reports restored=false silently: a rollback after later writes says why the state is not the pre-pass state', () => {
+    const { db } = deployFixture();
+    const kept = consolidate(db, { signer })!;
+    expect(kept.verdict).toBe('kept');
+    put(db, 'Unrelated note written after the pass.', { kind: 'fact' });
+    const undone = rollbackConsolidation(db, kept.receipt.passId, { signer });
+    expect(undone).toMatchObject({ verdict: 'rolled_back', restored: false, deletedIds: [kept.created[0].id] });
+    expect(undone.receipt.reason).toMatch(/not back at the pass's stateBefore because 1 later write\(s\)/);
+    expect(undone.receipt.restored).toBe(false);
+  });
+
+  it('reports restored=false on a refused rollback, even when the created record was already forgotten', () => {
+    const { db } = deployFixture();
+    const kept = consolidate(db, { signer })!;
+    db.forget(kept.created[0].id);
+    const refused = rollbackConsolidation(db, kept.receipt.passId, { signer });
+    expect(refused).toMatchObject({ verdict: 'conflict', restored: false, deletedIds: [] });
+    expect(refused.stateAfter).toBe(kept.receipt.stateBefore);
+    expect(refused.receipt.reason).toMatch(/already matches the pass's stateBefore/);
+  });
+
+  it('treats a signed diff as single-use: re-gating it after its own rollback is a conflict', () => {
+    const { db } = deployFixture();
+    const kept = consolidate(db, { signer })!;
+    const undone = rollbackConsolidation(db, kept.receipt.passId, { signer });
+    expect(undone.restored).toBe(true);
+    const again = gateConsolidation(db, kept.diff, { signer });
+    expect(again).toMatchObject({ verdict: 'conflict', created: [] });
+    expect(again.receipt.reason).toBe(`this signed diff was already kept as ${kept.receipt.passId}; a diff is single-use, propose a fresh one`);
+    expect(consolidate(db, { signer })!.verdict).toBe('kept');
+  });
+
   it('marks a stale diff a conflict when the state or a candidate changed after signing', () => {
     const { db, a } = deployFixture();
     const stale = proposeConsolidation(db, { signer })!;

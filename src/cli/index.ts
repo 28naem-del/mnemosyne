@@ -566,15 +566,19 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         if (modes.length !== 1) throw new Error('consolidate requires exactly one of --propose, --apply, --rollback PASS_ID, --verify-chain or --demo.');
         if (values.out !== undefined && !values.propose) throw new Error('--out applies to consolidate --propose only.');
         if (values.file !== undefined && !values.apply) throw new Error('--file applies to consolidate --apply only.');
+        const keyFile = `${resolve(required(values.db, '--db'))}.consolidation.key`;
         if (values['verify-chain']) {
-          // Verification needs no private key, so it never creates one.
-          const chain = verifyConsolidationChain(memory);
+          // Verification never creates a key; when this store has one, every receipt must be signed by it,
+          // so a chain re-signed with a fresh key by someone holding only database write access fails.
+          const pinnedKeyIds = existsSync(keyFile) ? [createConsolidationSigner({ keyFile }).keyId] : [];
+          const chain = verifyConsolidationChain(memory, pinnedKeyIds.length ? { pinnedKeyIds } : {});
           if (!chain.ok) process.exitCode = 1;
-          print(chain); break;
+          print({ ...chain, pinnedKeyIds, pinning: pinnedKeyIds.length ? `receipts must be signed by ${keyFile}` : 'none: this store has no consolidation key file, so foreign-key receipts are reported only as keyChanges' }); break;
         }
         // This store's Ed25519 key, created 0600 next to the database on first use (docs/CONSOLIDATION-SIGNING.md).
-        const signer = createConsolidationSigner({ keyFile: `${resolve(required(values.db, '--db'))}.consolidation.key` });
+        const signer = createConsolidationSigner({ keyFile });
         if (values.rollback !== undefined) {
+          // Verifies the kept receipt (digest, signatures, this store's key) before it touches a record.
           const undone = rollbackConsolidation(memory, values.rollback, { signer });
           if (undone.verdict !== 'rolled_back' || !undone.restored) process.exitCode = 1;
           print(undone); break;
@@ -588,7 +592,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
           } else print(diff ?? { proposals: 0, reason: 'nothing to propose' });
           break;
         }
-        // A diff read back from a file must carry this store's own signature; anything else is an invalid run.
+        // A diff must carry this store's own signature (the gate's default pin); anything else is an invalid run.
         const result = values.file === undefined
           ? consolidate(memory, { signer })
           : gateConsolidation(memory, JSON.parse(readLocalText(resolve(values.file), 16_777_216)), { signer, trustedKeyIds: [signer.keyId] });

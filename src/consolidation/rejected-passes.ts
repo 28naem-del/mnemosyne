@@ -5,15 +5,22 @@
  * digest, and carries the full signed receipt so it can be checked offline.
  * Every line is re-verified (receipt digest, receipt signature, diff
  * signature) before it is written; an unverifiable line fails the run.
+ * `--verify FILE` re-checks a published file: each line's receipt, and every
+ * line field derived from it (rejection, reason, deltas, invariants, digests),
+ * so an edit to a line outside its receipt is caught too. The context fields
+ * (source, label, caseId, attack, principal) are not in the receipt and are
+ * not bound by it; a deleted line is not detected (lines are not chained).
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { runConsolidationDemo } from './demo.js';
-import { receiptDigest } from './gate.js';
-import { diffSignatureMessage, receiptSignatureMessage, verifyConsolidationSignature } from './signing.js';
+import { canonicalize } from '../local/replay.js';
+import { receiptProblem } from './gate.js';
 import type { ConsolidationReceipt } from './types.js';
+
+export { receiptProblem };
 
 export const REJECTED_PASSES_SCHEMA = 'mnemosyne-consolidation-rejected-pass-v1';
 
@@ -40,15 +47,6 @@ export interface RejectedPassLine {
   receipt: ConsolidationReceipt;
 }
 
-/** Null when the receipt and both its signatures check out; otherwise what failed. */
-export function receiptProblem(receipt: ConsolidationReceipt): string | null {
-  if (receipt?.schema !== 'mnemosyne-consolidation-receipt-v1') return 'unknown receipt schema';
-  if (receiptDigest(receipt) !== receipt.digest) return 'digest does not match the receipt';
-  if (!verifyConsolidationSignature(receiptSignatureMessage(receipt.digest), receipt.receiptSignature)) return 'receipt signature does not verify';
-  if (receipt.signature !== null && (receipt.candidateDiffSha256 === null || !verifyConsolidationSignature(diffSignatureMessage(receipt.candidateDiffSha256), receipt.signature))) return 'diff signature does not verify';
-  return null;
-}
-
 export function rejectedPass(source: string, label: string, receipt: ConsolidationReceipt, context: { caseId?: string; attack?: boolean; principal?: string } = {}): RejectedPassLine {
   if (receipt.action !== 'gate' || receipt.verdict !== 'rolled_back') throw new Error(`${receipt.passId} is not a pass the gate rolled back`);
   const problem = receiptProblem(receipt);
@@ -63,6 +61,39 @@ export function rejectedPass(source: string, label: string, receipt: Consolidati
     delta: receipt.scores?.delta ?? null, holdoutDelta: receipt.scores?.holdout?.delta ?? null, perProposal: receipt.scores?.perProposal ?? [],
     failedInvariants, digest: receipt.digest, prevDigest: receipt.prevDigest, receipt,
   };
+}
+
+const CONTEXT_FIELDS = ['source', 'label', 'caseId', 'attack', 'principal'] as const;
+
+/**
+ * Null when a published line checks out: its receipt verifies and every field
+ * derived from the receipt equals what the receipt says. The context fields
+ * are taken as given.
+ */
+export function rejectedPassLineProblem(line: RejectedPassLine): string | null {
+  try {
+    if (line?.schema !== REJECTED_PASSES_SCHEMA) return 'unknown line schema';
+    const expected = rejectedPass(line.source, line.label, line.receipt, {
+      ...(line.caseId === null ? {} : { caseId: line.caseId }), ...(line.attack === null ? {} : { attack: line.attack }), ...(line.principal === null ? {} : { principal: line.principal }),
+    });
+    const fields = Object.keys({ ...expected, ...line }).filter((key) => !(CONTEXT_FIELDS as readonly string[]).includes(key));
+    const differs = fields.filter((key) => canonicalize((line as unknown as Record<string, unknown>)[key]) !== canonicalize((expected as unknown as Record<string, unknown>)[key]));
+    return differs.length ? `line field(s) ${differs.join(', ')} do not match the receipt` : null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/** Every problem in a published rejected-passes JSONL file, by 1-based line number. */
+export function verifyRejectedPasses(jsonl: string): { lines: number; problems: { line: number; problem: string }[] } {
+  const problems: { line: number; problem: string }[] = [];
+  const texts = jsonl.split('\n').filter(Boolean);
+  texts.forEach((text, index) => {
+    let problem: string | null;
+    try { problem = rejectedPassLineProblem(JSON.parse(text) as RejectedPassLine); } catch (error) { problem = `not JSON: ${error instanceof Error ? error.message : String(error)}`; }
+    if (problem) problems.push({ line: index + 1, problem });
+  });
+  return { lines: texts.length, problems };
 }
 
 export interface RejectedPassesSummary {
@@ -102,11 +133,17 @@ export function summarizeRejectedPasses(lines: RejectedPassLine[], command: stri
   };
 }
 
-const USAGE = 'Usage: node dist/consolidation/rejected-passes.js --suite reports/poisoning/v1-consolidation/rejected-passes.jsonl --out reports/consolidation';
+const USAGE = 'Usage: node dist/consolidation/rejected-passes.js --suite reports/poisoning/v1-consolidation/rejected-passes.jsonl --out reports/consolidation\n       node dist/consolidation/rejected-passes.js --verify reports/consolidation/rejected-passes.jsonl';
 
 export function rejectedPassesCli(args = process.argv.slice(2)): number {
-  const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: { suite: { type: 'string' }, out: { type: 'string' }, help: { type: 'boolean' } } });
+  const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: { suite: { type: 'string' }, out: { type: 'string' }, verify: { type: 'string' }, help: { type: 'boolean' } } });
   if (values.help) { console.log(USAGE); return 0; }
+  if (values.verify !== undefined) {
+    if (values.suite !== undefined || values.out !== undefined) { console.error(USAGE); return 2; }
+    const report = verifyRejectedPasses(readFileSync(resolve(values.verify), 'utf8'));
+    console.log(JSON.stringify({ file: resolve(values.verify), ok: report.problems.length === 0, ...report }));
+    return report.problems.length ? 1 : 0;
+  }
   if (!values.suite || !values.out) { console.error(USAGE); return 2; }
   const lines = collectRejectedPasses(readFileSync(resolve(values.suite), 'utf8'));
   const out = resolve(values.out);

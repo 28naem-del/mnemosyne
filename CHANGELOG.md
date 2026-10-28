@@ -55,7 +55,11 @@ Measured on the merged tree `64ec27c` (PrecisionMemBench reports re-run at `50a1
   - **Verdicts.** A pass is `kept` only when nothing regresses. The other verdicts are
     `rolled_back`, `no_evidence`, `invalid_run` and `conflict`, and every verdict writes a signed
     receipt that is hash-chained to the previous one.
-  - **Rollback.** One call restores the identical `replayState().stateSha256`.
+  - **Rollback.** One call restores the identical `replayState().stateSha256`. It verifies the kept
+    receipt first and reports `restored: true` only for an identical hash.
+  - **Keys.** The gate trusts only its own signer's key by default; `trustedKeyIds: 'any'` is an
+    explicit, unsafe opt-out. Any write between scoring and apply, and any reuse of an already kept
+    diff, is a `conflict`. `--verify-chain` pins the store's key file when it exists.
   - **Backoff.** A faulted proposal is not proposed again until the replay set has doubled.
   - **CLI.** `mnemosy consolidate [scope] --propose [--out DIFF] | --apply [--file DIFF] |
     --rollback PASS_ID | --verify-chain`, plus `mnemosy consolidate --demo`. The signature format
@@ -147,6 +151,9 @@ Measured on the merged tree `64ec27c` (PrecisionMemBench reports re-run at `50a1
   - The signing key lives in `<db>.consolidation.key` (mode 0600), and key-rotation receipts are
     not written yet.
   - In the suite the synthetic verifier never exercises a regression rollback.
+  - Paraphrase laundering is not caught. `declared-content` is a token-subset test, so an
+    untrusted instruction restated, without citing it, only in words from trusted records is kept
+    as a live `procedure`.
   - No improvement-from-experience lift has been measured.
 - **Dependencies.**
   - Stale = 0 holds only when the executor uses the premise guard. The kernel alone runs 7 stale

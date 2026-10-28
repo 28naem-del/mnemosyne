@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createLocalMemory } from '../src/local/index.js';
-import { createConsolidationSigner, proposeConsolidation } from '../src/consolidation/index.js';
+import { DatabaseSync } from 'node:sqlite';
+import { createConsolidationSigner, proposeConsolidation, receiptDigest, receiptSignatureMessage, type ConsolidationReceipt } from '../src/consolidation/index.js';
 import { DEMO_AGENT, DEMO_WORKSPACE } from '../src/consolidation/demo.js';
 
 /**
@@ -106,6 +107,35 @@ describe('mnemosy consolidate', { timeout: 120_000 }, () => {
     writeFileSync(file, JSON.stringify(foreign));
     const before = hash(scope);
     expect(json(['consolidate', ...scope, '--apply', '--file', file])).toMatchObject({ verdict: 'invalid_run', receipt: { reason: 'diff is signed by a key that is not trusted' } });
+    expect(hash(scope)).toBe(before);
+  });
+
+  it('pins --verify-chain and --rollback to the store key file, so a chain re-signed with database write access alone fails', () => {
+    const { db, scope } = demoStore();
+    const key = createConsolidationSigner({ keyFile: `${db}.consolidation.key` });
+    expect(json(['consolidate', ...scope, '--verify-chain'])).toMatchObject({ ok: true, receipts: 4, pinnedKeyIds: [key.keyId] });
+    const kept = json(['consolidate', ...scope, '--apply']);
+    expect(kept.verdict).toBe('kept');
+    const attacker = createConsolidationSigner({ ephemeral: true });
+    const raw = new DatabaseSync(db);
+    try {
+      let previous: string | null = null;
+      for (const row of raw.prepare("SELECT sequence,data FROM local_ledger WHERE event='consolidation' ORDER BY sequence").all() as { sequence: number; data: string }[]) {
+        const payload = JSON.parse(row.data) as { consolidation: ConsolidationReceipt };
+        const { digest: _digest, receiptSignature: _signature, ...body } = { ...payload.consolidation, prevDigest: previous };
+        const digest = receiptDigest(body);
+        payload.consolidation = { ...body, digest, receiptSignature: attacker.sign(receiptSignatureMessage(digest)) };
+        previous = digest;
+        raw.prepare('UPDATE local_ledger SET data=? WHERE sequence=?').run(JSON.stringify(payload), row.sequence);
+      }
+    } finally { raw.close(); }
+    const verify = run(['consolidate', ...scope, '--verify-chain']);
+    expect(verify.status).toBe(1);
+    expect(JSON.parse(verify.stdout).errors.map((error: { error: string }) => error.error)).toContain('receipt is signed by a key that is not pinned');
+    const before = hash(scope);
+    const rollback = run(['consolidate', ...scope, '--rollback', kept.receipt.passId]);
+    expect(rollback.status).toBe(1);
+    expect(rollback.stderr).toContain('signed by a key that is not trusted');
     expect(hash(scope)).toBe(before);
   });
 

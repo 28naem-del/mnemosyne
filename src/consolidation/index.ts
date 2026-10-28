@@ -13,7 +13,7 @@ export { DEFAULT_CONSOLIDATION_CAPS, POLICY_KINDS, deterministicProposer, propos
 export { INVARIANT_NAMES, checkInvariants } from './invariants.js';
 export {
   CONSOLIDATION_GATE_VERSION, CONSOLIDATION_VERIFIER_SHA256, MIN_REPLAY_TASKS,
-  consolidate, consolidationReceipts, diffDigest, gateConsolidation, passRecords, proposeConsolidation, receiptDigest,
+  consolidate, consolidationReceipts, diffDigest, gateConsolidation, passRecords, proposeConsolidation, receiptDigest, receiptProblem,
   rollbackConsolidation, verifyConsolidationChain,
   type ConsolidateOptions, type ConsolidationChainReport, type ConsolidationResult, type GateConsolidationOptions,
   type ProposeConsolidationOptions, type RollbackConsolidationResult, type StoredReceipt,

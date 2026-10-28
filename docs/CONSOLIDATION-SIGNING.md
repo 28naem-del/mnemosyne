@@ -36,13 +36,17 @@ It does **not** mean that the proposals are true, that a merged text is a faithf
 
 | Threat | Defense | Verdict |
 |---|---|---|
-| Forged or edited diff file (tampered export, edited JSON between `--propose` and `--apply`) | Recompute `candidateDiffSha256`; verify the Ed25519 signature; optional pinned `keyId` list | `invalid_run` |
+| Forged or edited diff file (tampered export, edited JSON between `--propose` and `--apply`) | Recompute `candidateDiffSha256`; verify the Ed25519 signature | `invalid_run` |
+| Diff validly self-signed by a foreign key | `trustedKeyIds` defaults to the gate signer's own `keyId`, and the CLI pins the store key | `invalid_run` by default. With the explicit, unsafe opt-out `trustedKeyIds: 'any'`, such a diff is judged like the store's own. |
 | Replay of an old, validly signed diff on a newer state | Recompute `stateBefore` at apply time; it must equal the diff's | `conflict` |
+| Replay of a diff that was already kept, after its rollback restored the identical state | A kept `candidateDiffSha256` is single-use | `conflict` |
+| A write between scoring and apply (insert, correction, forget, outcome) | Record the scope's ledger high-water mark before the snapshot. At apply, require no later ledger entry and an unchanged current state | `conflict` |
 | Diff claiming a different `stateBefore` than the records it lists | Every candidate fingerprint is recomputed; any missing or changed record fails | `conflict` |
 | Proposal reading outside its candidate set or declaring sources it did not use | P9 invariants: dependencies inside the candidate set; derived tokens covered by declared sources | `rolled_back` |
-| Laundering an untrusted record into a policy-tier record | Invariant: no `procedure`/`decision` at trust ≥ `observed` may draw content from an untrusted record | `rolled_back` |
-| Edited, deleted or reordered receipt | `verifyConsolidationChain` recomputes each `digest`, checks `prevDigest` links and each signature | chain error |
-| Attacker with write access rewrites the whole chain and the key file | Not defended locally; pin `keyId` out of band (for example in a release or a second machine) | out of scope |
+| Laundering an untrusted record into a policy-tier record | Invariant: no `procedure`/`decision` at trust ≥ `observed` may cite an untrusted record or carry a token found only in untrusted records | `rolled_back` when the record is cited or such a token appears. An uncited paraphrase built only from trusted tokens is **kept** (not defended; see [Honest limits](CONSOLIDATION.md#honest-limits)). |
+| Edited, deleted or reordered receipt | `verifyConsolidationChain` recomputes each `digest`, checks `prevDigest` links and each signature; `rollbackConsolidation` verifies its kept receipt before acting | chain error; rollback refused |
+| Database write access only (no key file): the whole chain re-signed with a fresh key | `mnemosy consolidate --verify-chain` pins the key in `<db>.consolidation.key`, and `--rollback` and the library default pin the signer's key | Chain error ("not pinned") and rollback refused. Not detected by `verifyConsolidationChain` without `pinnedKeyIds`, nor by the CLI on a store with no key file. |
+| Database write access **and** the key file | Not defended locally: holding both is enough to rewrite the chain undetectably. Pin `keyId` out of band (for example in a release or on a second machine) | out of scope |
 
 Snapshots: `export()`/`import()` carry records and outcomes, not ledger receipts, so an imported store starts a fresh chain; the importing store must re-run the gate rather than trusting a foreign receipt. The public key travels inside every diff and receipt; distributing or pinning it is the host's decision.
 
@@ -57,4 +61,4 @@ receipt_n.prevDigest = receipt_{n-1}.digest
 receipt_n.digest     = sha256("mnemosyne-consolidation-receipt-v1\n" + canonical(receipt_n without digest))
 ```
 
-`verifyConsolidationChain(memory)` pages through `ledger({ events: ['consolidation'] })` in sequence order and checks, for each receipt: the schema, the recomputed digest, the receipt signature (against `pinnedKeyIds` when given), the link to the previous digest, the signature over `candidateDiffSha256` (when the receipt has one), and that every `rollback` receipt names a kept pass that was not already rolled back. It returns `{ ok, receipts, head, keyChanges, errors }`. Erasure of a record does not remove consolidation receipts (they are appended without `memoryId`) and receipts hold record ids and fingerprints but never record text.
+`verifyConsolidationChain(memory)` pages through `ledger({ events: ['consolidation'] })` in sequence order and checks, for each receipt: the schema, the recomputed digest, the receipt signature (against `pinnedKeyIds` when given), the link to the previous digest, the signature over `candidateDiffSha256` (when the receipt has one), and that every `rollback` receipt names a kept pass that was not already rolled back. It returns `{ ok, receipts, head, keyChanges, errors }`. Without `pinnedKeyIds`, a chain consistently re-signed end to end with a different key verifies, so pin the key whenever it is known; `mnemosy consolidate --verify-chain` pins the store's key file when it exists. Erasure of a record does not remove consolidation receipts (they are appended without `memoryId`) and receipts hold record ids and fingerprints but never record text.

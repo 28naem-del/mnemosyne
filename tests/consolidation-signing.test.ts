@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createLocalMemory, type LocalMemory } from '../src/local/index.js';
 import {
-  consolidate, consolidationReceipts, createConsolidationSigner, receiptDigest, rollbackConsolidation, verifyConsolidationChain,
+  consolidate, consolidationReceipts, createConsolidationSigner, receiptDigest, receiptSignatureMessage, rollbackConsolidation, verifyConsolidationChain,
   verifyConsolidationSignature, type ConsolidationReceipt,
 } from '../src/consolidation/index.js';
 
@@ -28,7 +28,7 @@ function open(path: string): LocalMemory {
 }
 
 /** A kept merge, then its rollback: two chained receipts. */
-function history(path: string, signer = seeded(1)): LocalMemory {
+function history(path: string, signer = seeded(1), undo = true): LocalMemory {
   const db = open(path);
   const a = db.store({ text: 'Deploys run from the release branch after the smoke suite passes.', kind: 'procedure', trust: 'observed', source: { uri: 'note://a' } });
   const b = db.store({ text: 'Deploys run from the release branch once the smoke suite passes.', kind: 'procedure', trust: 'observed', source: { uri: 'note://b' } });
@@ -39,7 +39,7 @@ function history(path: string, signer = seeded(1)): LocalMemory {
   }
   const kept = consolidate(db, { signer })!;
   expect(kept.verdict).toBe('kept');
-  rollbackConsolidation(db, kept.receipt.passId, { signer });
+  if (undo) rollbackConsolidation(db, kept.receipt.passId, { signer });
   return db;
 }
 
@@ -120,6 +120,28 @@ describe('verdict digest chain', () => {
     history(deleted).close();
     rewrite(deleted, 0, () => null);
     expect(verifyConsolidationChain(open(deleted)).errors.map((error) => error.error)).toEqual(expect.arrayContaining(['prevDigest does not link to the previous receipt', 'rollback names no earlier kept pass']));
+  });
+
+  it('verifies the kept receipt before a rollback acts on it: an edited or foreign-key receipt is refused and nothing changes', () => {
+    const root = dir();
+    const edited = join(root, 'edited.sqlite');
+    history(edited, seeded(1), false).close();
+    rewrite(edited, 0, (receipt) => ({ ...receipt, scores: receipt.scores && { ...receipt.scores, delta: receipt.scores.delta + 1 } }));
+    const db = open(edited);
+    const passId = consolidationReceipts(db)[0].receipt.passId;
+    const count = db.list({ limit: 100 }).items.length;
+    expect(() => rollbackConsolidation(db, passId, { signer: seeded(1) })).toThrow(/does not verify \(digest does not match the receipt\); nothing was rolled back/);
+    expect(db.list({ limit: 100 }).items).toHaveLength(count);
+    expect(consolidationReceipts(db)).toHaveLength(1);
+
+    const resigned = join(root, 'resigned.sqlite');
+    history(resigned, seeded(1), false).close();
+    const attacker = seeded(5);
+    rewrite(resigned, 0, (receipt) => { const { digest: _d, receiptSignature: _s, ...body } = receipt; const digest = receiptDigest(body); return { ...body, digest, receiptSignature: attacker.sign(receiptSignatureMessage(digest)) }; });
+    const other = open(resigned);
+    const id = consolidationReceipts(other)[0].receipt.passId;
+    expect(() => rollbackConsolidation(other, id, { signer: seeded(1) })).toThrow(/signed by a key that is not trusted/);
+    expect(rollbackConsolidation(other, id, { signer: seeded(1), trustedKeyIds: [attacker.keyId] }).verdict).toBe('rolled_back');
   });
 
   it('reports a change of signing key without failing, unless keys are pinned', () => {

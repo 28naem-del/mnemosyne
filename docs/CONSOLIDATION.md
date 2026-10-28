@@ -23,9 +23,19 @@ mnemosy consolidate $S --rollback PASS_ID          # one command; prints stateBe
 mnemosy consolidate $S --verify-chain              # digests, links and signatures of every receipt
 ```
 
-The route needs `read` and `write`, so `--read-only`, `--no-capture` and `--no-recall` refuse it. It signs with the store's own Ed25519 key in `<db>.consolidation.key`, which is created `0600` on first use. `--apply --file` accepts only a diff signed by that key. `--verify-chain` never creates a key.
+The route needs `read` and `write`, so `--read-only`, `--no-capture` and `--no-recall` refuse it. It signs with the store's own Ed25519 key in `<db>.consolidation.key`, which is created `0600` on first use.
+
+- `--apply` and `--apply --file` accept only a diff signed by that key.
+- `--verify-chain` never creates a key. When the key file exists, every receipt must be signed by it, so a chain that someone with database write access re-signed with another key fails ("receipt is signed by a key that is not pinned"). When there is no key file, nothing is pinned: the output says so, and a whole-chain re-signing cannot be told apart from the real one.
+- `--rollback` verifies the kept receipt first (digest, receipt signature, diff signature, and the store's key). An edited or foreign-key receipt is refused and no record changes.
 
 From code, the same API is available from `mnemosy-ai` or `mnemosy-ai/consolidation`: `proposeConsolidation`, `gateConsolidation`, `consolidate`, `rollbackConsolidation`, `verifyConsolidationChain` and `createConsolidationSigner`. A host may also pass its own `proposer` function. Nothing in the module calls a model or the network.
+
+Key pinning in the library:
+
+- `gateConsolidation`, `consolidate` and `rollbackConsolidation` trust only the passed `signer`'s own key by default. `trustedKeyIds: [...]` lists the trusted keys explicitly.
+- `trustedKeyIds: 'any'` turns pinning off. **It is unsafe**: anyone can mint a key, so an unpinned signature proves only that the diff was not changed after signing, never who wrote it. A diff signed by a foreign key is then judged like the store's own.
+- `verifyConsolidationChain` pins only when it is given `pinnedKeyIds`; without them it checks digests, links and signatures and lists key changes.
 
 ## A pass
 
@@ -58,10 +68,13 @@ From code, the same API is available from `mnemosy-ai` or `mnemosy-ai/consolidat
    | `kept` | Invariants hold, there are at least 2 replayable tasks, `delta >= 0`, the hold-out delta is `>= 0`, and every proposal alone is `>= 0`. The pass is applied in the same transaction as its receipt. |
    | `rolled_back` | An invariant failed, or there was a regression, a hold-out regression or a single-proposal regression. Nothing is applied. |
    | `no_evidence` | Fewer than 2 replayable tasks. This is **not** a keep. |
-   | `invalid_run` | The digest or signature does not verify, the key is not trusted, the diff is malformed, or the scorer failed. |
-   | `conflict` | The diff was signed over a different state, a candidate record changed, or another receipt was written while the pass was scored. |
+   | `invalid_run` | The digest or signature does not verify, the key is not trusted (by default: any key other than the gate's own signer), the diff is malformed, or the scorer failed. |
+   | `conflict` | The diff was signed over a different state, or a candidate record changed. Also when anything was written between scoring and apply: another receipt, any other ledger entry after the scoring mark (inserts included), or a current state that differs from the scored one. Also when the same signed diff was already kept once. A diff is single-use, even after its rollback restored the state it was signed over. |
 
-5. **Apply and rollback.** A kept pass only adds records. Each output is a new private record that declares its sources as dependencies, has the source URI `consolidation:<passId>`, and is valid no longer than its sources. Because outputs declare their sources, a later `forget()` or `correct()` of a source reaches them through the kernel's own cascade. The receipt lists every created id with its fingerprint. `rollbackConsolidation` calls `rollbackUnchangedRecords` on exactly that set, so `replayState(...).stateSha256` after the rollback equals the pass's `stateBefore`. If any created record changed or gained dependent work, the rollback is a `conflict` and changes nothing.
+5. **Apply and rollback.** A kept pass only adds records. Each output is a new private record that declares its sources as dependencies, has the source URI `consolidation:<passId>`, and is valid no longer than its sources. Because outputs declare their sources, a later `forget()` or `correct()` of a source reaches them through the kernel's own cascade. The receipt lists every created id with its fingerprint. `rollbackConsolidation` first verifies the kept receipt and refuses one that does not verify. It then calls `rollbackUnchangedRecords` on exactly that set, so `replayState(...).stateSha256` after the rollback equals the pass's `stateBefore` when nothing else was written since the pass.
+   - `restored: true` means the records were removed **and** the hash is identical.
+   - When later writes make an identical hash impossible, the rollback still removes the records, reports `restored: false`, and its reason counts the later writes.
+   - If any created record changed, was removed, or gained dependent work, the rollback is a `conflict`, changes nothing, and reports `restored: false`.
 6. **Backoff.** A rolled-back receipt marks which proposals were at fault. `proposeConsolidation` drops a faulted proposal, from any proposer, until the replay set has doubled; `backoff: false` turns this off. A kept proposal still in force is not proposed again. Pass 2 of the demo is pass 1 without its faulted merge.
 
 Receipts form a hash chain: each `prevDigest` is the previous receipt's `digest` in the same workspace and agent. `verifyConsolidationChain` recomputes the chain and lists every key change.
@@ -90,8 +103,10 @@ Four proposers run per principal:
 Result on suite v1 (227 cases, synthetic, reproducible, report in [`reports/poisoning/v1-consolidation/`](../reports/poisoning/v1-consolidation/report.md)):
 
 - **0 / 167 escapes, 0 / 60 false quarantines, 0 errors.**
-- 294 passes: 11 kept, 184 rolled back by invariants (every laundering pass), 99 `no_evidence`, 0 laundering passes kept.
+- 294 passes: 11 kept, 184 rolled back by invariants (every laundering pass), 99 `no_evidence`. 0 laundering passes kept, from the suite's two laundering adversaries, which copy the untrusted text verbatim. Paraphrase is not covered; see the limits below.
 - Every receipt chain verifies against the pinned suite key.
+
+**The suite exercises the invariant arm only.** Its synthetic verifier counts any non-empty recall as a success, so no suite pass can regress. The report's "outcome regression 0" holds by construction and is not a measurement of the replay gate. The regression arm (a pass rolled back because replayed outcomes got worse) is exercised only by the demo (pass 1 here, and moment 5 of `mnemosy demo`) and by `tests/consolidation-gate.test.ts`.
 
 The default mode is unchanged: it still blocks 167 of 167 attacks with 0 of 60 false quarantines, byte-identical to `reports/poisoning/v1`.
 
@@ -110,10 +125,20 @@ node dist/consolidation/rejected-passes.js --suite reports/poisoning/v1-consolid
 
 Each line has the rejection class, the reason, the outcome deltas, the failed invariants, the verdict digest and `prevDigest`, and the full signed receipt. The publisher re-verifies every receipt before writing it. A summary is in `rejected-passes.summary.json`.
 
+`node dist/consolidation/rejected-passes.js --verify reports/consolidation/rejected-passes.jsonl` re-checks a published file and exits 1 on any problem. It checks each receipt, and also every line field derived from the receipt (rejection, reason, deltas, invariants, digests), so an edit outside the receipt is caught. Two things are not checked:
+
+- The context fields (`source`, `label`, `caseId`, `attack`, `principal`) are not in the receipt, so they are not bound.
+- A deleted line is not detected, because the lines are not chained.
+
 ## Honest limits
 
 - The replay set is the agent's own recorded outcomes, and nothing else. A pass can only be judged on the tasks the agent actually did and a verifier judged. A store with default ledger settings (`queries: 'digest'`) records no query text, so every pass on it is `no_evidence`. Recording query text (`ledger: { queries: 'text' }`) is an explicit host choice.
 - `no_evidence` is not a keep. In the suite, 99 of 294 passes had too few judged tasks.
+- **Paraphrase laundering is not caught.** An untrusted record is caught in two cases: a proposal cites it as a source or dependency, or the output text carries a token found only in untrusted records.
+  - `declared-content` is a token-subset test. It allows any recombination of tokens from the cited trusted sources, including one that inverts their meaning.
+  - So an untrusted instruction can be restated without citing it, entirely in words that also appear in trusted records. That paraphrase is **kept**, and it becomes a live, active `procedure` at trust `observed`, ranked by default recall like any other record. Its outcome delta can be 0, and 0 counts as a keep.
+  - Example (reproduced by the verifier): an untrusted forum post said "skip the page and restart the primary database". It was restated as "Before restarting the primary database, pass on the page to the on-call engineer.", using only tokens from two trusted runbooks. The pass was kept with no invariant failing.
+  - The gate is no defense against a proposer that writes such text. Hosts that run untrusted or model-backed proposers must review policy-tier outputs themselves.
 - Scoring is lexical replay of recorded queries. It cannot see dense or hybrid ranking. The ledger records neither `kinds` filters nor `includeUntrusted`, so they are not replayed.
 - The scratch copy is built from `export()`. Records shared from other agents are absent from it, and the export size cap bounds the store size the gate can judge.
 - `supersede` and `delete` are scored on the scratch copy but never kept: the kernel has no exact inverse for them yet. Live passes only add records.

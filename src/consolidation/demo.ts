@@ -164,7 +164,7 @@ export function runConsolidationDemo(options: ConsolidationDemoOptions = {}): Co
       passes.push(describe(log, 'pass 4: merge with no evidence', result.diff, result, 0));
     } finally { empty.close(); }
 
-    const chain = verifyConsolidationChain(memory);
+    const chain = verifyConsolidationChain(memory, { pinnedKeyIds: [signer.keyId] });
     log(`\n== verdict chain: ${chain.ok ? 'verifies' : 'BROKEN'}; ${chain.receipts} receipt(s); head ${chain.head}`);
     log(`verify again from the CLI: mnemosy consolidate ${scope} --verify-chain`);
     return {
