@@ -547,5 +547,24 @@ if (root) {
     resize();
   };
 
-  start().catch(fallback);
+  // Save-Data and low-core devices keep the native contour until the visitor asks for 3D.
+  const constrained = navigator.connection?.saveData === true || (navigator.hardwareConcurrency || 8) <= 4;
+  const tools = root.querySelector('.scene-tools');
+  if (constrained && tools) {
+    const loadButton = document.createElement('button');
+    loadButton.type = 'button';
+    loadButton.className = 'scene-load';
+    loadButton.textContent = 'Load 3D';
+    loadButton.setAttribute('aria-describedby', 'scene-status');
+    if (status) status.textContent = 'Memory contour · 3D loads on request';
+    tools.prepend(loadButton);
+    loadButton.addEventListener('click', () => {
+      // Keep keyboard focus on the scene's status while the button leaves.
+      if (status) { status.tabIndex = -1; status.focus({ preventScroll: true }); }
+      loadButton.remove();
+      start().catch(fallback);
+    }, { once: true });
+  } else {
+    start().catch(fallback);
+  }
 }

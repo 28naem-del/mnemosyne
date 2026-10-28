@@ -126,7 +126,7 @@
       // Correct that initial position once, unless the visitor has started moving.
       if (!initialAlignmentStarted) {
         initialAlignmentStarted = true;
-        const demos = ['memory-demo', 'learning-demo'].map(id => document.getElementById(id)).filter(Boolean);
+        const demos = ['moments-demo', 'memory-demo', 'learning-demo'].map(id => document.getElementById(id)).filter(Boolean);
         const alignmentCleanups = [];
         let requestedHash = window.location.hash;
         let loaded = document.readyState === 'complete';
@@ -280,6 +280,22 @@
         }, { rootMargin: '-12% 0px -64% 0px', threshold: 0 });
         cleanups.push(() => chapterObserver.disconnect());
         chapters.forEach(chapter => chapterObserver.observe(chapter.section));
+      }
+      // The fixed chapter bar steps aside while the scene controls sit beneath it.
+      const chapterNav = document.getElementById('chapter-nav');
+      const sceneControls = Array.from(document.querySelectorAll('.scene-tools, .scene-mode-buttons, .scene-description'));
+      if (chapterNav && sceneControls.length && 'IntersectionObserver' in window) {
+        const coveredControls = new Set();
+        const tuckObserver = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) coveredControls.add(entry.target);
+            else coveredControls.delete(entry.target);
+          });
+          chapterNav.classList.toggle('is-tucked', coveredControls.size > 0 && !chapterNav.contains(document.activeElement));
+        }, { rootMargin: '-86% 0px 0px 0px', threshold: 0 });
+        cleanups.push(() => tuckObserver.disconnect());
+        cleanups.push(() => chapterNav.classList.remove('is-tucked'));
+        sceneControls.forEach(control => tuckObserver.observe(control));
       }
     } catch {
       // Enhancement failures must leave the complete document and native links usable.
