@@ -1,0 +1,67 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ✘ [fail]: [mnemosyne-session] session-drift-noise-10-turns-implicit-redis turn 5: unexpected relevant belief: b-auth-open-q
+  ✔ [mnemosyne-session] cross-session-formative-turn-surfaces-via-belief-join
+  ─
+
+  [mnemosyne-session] session-drift-noise-10-turns-implicit-redis
+
+  src/session-retrieval.external.eval.test.ts:390
+
+   389:         .flatMap((r) => r.failures);                       
+   390:       t.is(0, allFailures.length, allFailures.join(" | "));
+   391:     } else {                                               
+
+  turn 5: unexpected relevant belief: b-auth-open-q
+
+  Difference (- actual, + expected):
+
+  - 0
+  + 1
+
+  › <anonymous> (src/session-retrieval.external.eval.test.ts:390:9)
+
+  ─
+
+  1 test failed
+
+⏳ Seeding 35 beliefs to mnemosyne...
+
+  [1/35] 3% — b-comm-response-length (6.17ms)  [2/35] 6% — b-comm-pushback (0.98ms)  [3/35] 9% — b-comm-recommendation (0.82ms)  [4/35] 11% — b-authorship-mode (0.8ms)  [5/35] 14% — b-ts-pref (0.73ms)  [6/35] 17% — b-fastify-pref (0.75ms)  [7/35] 20% — b-mongo-raw-driver (0.92ms)  [8/35] 23% — b-composition-inheritance (0.98ms)  [9/35] 26% — b-error-handling (0.82ms)  [10/35] 29% — b-db-decision (0.82ms)  [11/35] 31% — b-sqlalchemy-superseded (0.83ms)  [12/35] 34% — b-kubernetes-entity (0.69ms)  [13/35] 37% — b-react-entity (0.8ms)  [14/35] 40% — b-auth-open-q (0.62ms)  [15/35] 43% — b-narrator-voice (0.56ms)  [16/35] 46% — b-narrator-superseded (0.7ms)  [17/35] 49% — b-protagonist-entity (0.6ms)  [18/35] 51% — b-redis-writing (0.57ms)  [19/35] 54% — b-redis-code (1.02ms)  [20/35] 57% — b-chapter-structure-q (0.68ms)  [21/35] 60% — b-other-user-leak-check (1.61ms)  [22/35] 63% — b-ci-gha-entity (0.71ms)  [23/35] 66% — b-pov-shift-entity (0.72ms)  [24/35] 69% — b-hosting-resolved (0.71ms)  [25/35] 71% — b-prose-style-user-edited (0.73ms)  [26/35] 74% — b-functional-pipeline (0.72ms)  [27/35] 77% — b-linting-v0 (0.64ms)  [28/35] 80% — b-linting-v1 (0.72ms)  [29/35] 83% — b-linting-current (0.71ms)  [30/35] 86% — b-vitest-pref (0.65ms)  [31/35] 89% — b-dead-letter-queue (0.8ms)  [32/35] 91% — b-react-expertise (1.49ms)  [33/35] 94% — b-auth-depends-redis (0.67ms)  [34/35] 97% — b-pinned-resolved-interaction (0.56ms)  [35/35] 100% — b-zero-reinforcement-fresh (0.61ms)
+
+✅ Seeded 35 beliefs in 0.0s
+

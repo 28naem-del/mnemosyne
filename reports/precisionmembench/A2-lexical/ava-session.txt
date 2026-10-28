@@ -1,48 +1,0 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  ✔ [mnemosyne-session] session-drift-noise-10-turns-implicit-redis (349ms)
-  ✔ [mnemosyne-session] cross-session-formative-turn-surfaces-via-belief-join
-  ─
-
-  2 tests passed
-
-⏳ Seeding 35 beliefs to mnemosyne...
-
-  [1/35] 3% — b-comm-response-length (15.76ms)  [2/35] 6% — b-comm-pushback (3.28ms)  [3/35] 9% — b-comm-recommendation (3.09ms)  [4/35] 11% — b-authorship-mode (2.53ms)  [5/35] 14% — b-ts-pref (2ms)  [6/35] 17% — b-fastify-pref (2.14ms)  [7/35] 20% — b-mongo-raw-driver (1.82ms)  [8/35] 23% — b-composition-inheritance (1.96ms)  [9/35] 26% — b-error-handling (2.02ms)  [10/35] 29% — b-db-decision (1.76ms)  [11/35] 31% — b-sqlalchemy-superseded (1.85ms)  [12/35] 34% — b-kubernetes-entity (1.68ms)  [13/35] 37% — b-react-entity (1.41ms)  [14/35] 40% — b-auth-open-q (1.67ms)  [15/35] 43% — b-narrator-voice (4.51ms)  [16/35] 46% — b-narrator-superseded (2.06ms)  [17/35] 49% — b-protagonist-entity (1.99ms)  [18/35] 51% — b-redis-writing (1.61ms)  [19/35] 54% — b-redis-code (1.81ms)  [20/35] 57% — b-chapter-structure-q (11.55ms)  [21/35] 60% — b-other-user-leak-check (13.37ms)  [22/35] 63% — b-ci-gha-entity (13.95ms)  [23/35] 66% — b-pov-shift-entity (18.67ms)  [24/35] 69% — b-hosting-resolved (11.2ms)  [25/35] 71% — b-prose-style-user-edited (15.28ms)  [26/35] 74% — b-functional-pipeline (12.69ms)  [27/35] 77% — b-linting-v0 (3ms)  [28/35] 80% — b-linting-v1 (9.26ms)  [29/35] 83% — b-linting-current (2.47ms)  [30/35] 86% — b-vitest-pref (2ms)  [31/35] 89% — b-dead-letter-queue (2.26ms)  [32/35] 91% — b-react-expertise (1.99ms)  [33/35] 94% — b-auth-depends-redis (3.57ms)  [34/35] 97% — b-pinned-resolved-interaction (1.49ms)  [35/35] 100% — b-zero-reinforcement-fresh (1.64ms)
-
-✅ Seeded 35 beliefs in 0.2s
-

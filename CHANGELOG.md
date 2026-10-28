@@ -13,7 +13,7 @@ Draft entry for the second 3.0.0 release candidate, which builds on rc.1 below. 
 version in this tree is still 2.0.0, and nothing in this section has been published. Every number
 reproduces offline, with no API key, no paid model and no LLM judge, using the command given next
 to it. The protocols and limits are in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
-Measured on the merged tree `64ec27c` (PrecisionMemBench reports in `c87b17c`): 92 test files,
+Measured on the merged tree `64ec27c` (PrecisionMemBench reports re-run at `50a1eee`, no wrapper `kinds` predicate): 92 test files,
 1,545 tests passed.
 
 ### Added
@@ -90,8 +90,9 @@ Measured on the merged tree `64ec27c` (PrecisionMemBench reports in `c87b17c`): 
 
 - **PrecisionMemBench, protocol-exact, no wrapper-side filter, retrieval mode, no LLM judge.**
   - Single-turn: **70/77** on both the lexical and the hybrid path, with mean precision 0.871 and
-    recall 1.000. Session: **12/12** turns.
-  - Commands: `node benchmarks/precisionmembench/run.mjs --label merged-lexical --retrieval lexical
+    recall 1.000. Session: **11/12** turns (rc.1: 6/12), with no wrapper `kinds` predicate. The
+    12th turn needs an open-question kind policy that the kernel is not told about.
+  - Commands: `node benchmarks/precisionmembench/run.mjs --label final-lexical --retrieval lexical
     --metadata protocol --both`, and the same with `--retrieval hybrid`.
   - rc.1 was 48/77 with sweep-chosen wrapper filters, and 22/77 unfiltered.
   - Ablations: names gate off 20/77, fuzzy off 64/77.

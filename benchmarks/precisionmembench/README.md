@@ -30,13 +30,13 @@ git -C benchmarks/data/precisionmembench apply "$PWD/benchmarks/precisionmembenc
 npm --prefix benchmarks/data/precisionmembench install --ignore-scripts --no-audit --no-fund
 
 # Configuration A (protocol-exact; the comparable number). No wrapper filter.
-node benchmarks/precisionmembench/run.mjs --label A2-lexical --retrieval lexical --metadata protocol --both
-node benchmarks/precisionmembench/run.mjs --label A2-hybrid  --retrieval hybrid  --metadata protocol --both
-node benchmarks/precisionmembench/run.mjs --label A2-hybrid-rerank --retrieval hybrid --metadata protocol --both --rerank
+node benchmarks/precisionmembench/run.mjs --label final-lexical --retrieval lexical --metadata protocol --both
+node benchmarks/precisionmembench/run.mjs --label final-hybrid  --retrieval hybrid  --metadata protocol --both
+node benchmarks/precisionmembench/run.mjs --label final-hybrid-rerank --retrieval hybrid --metadata protocol --both --rerank
 
 # Ablations (kernel options, still no wrapper filter)
-node benchmarks/precisionmembench/run.mjs --label A2-ablate-nonames-lexical --retrieval lexical --metadata protocol --both --named false
-node benchmarks/precisionmembench/run.mjs --label A2-ablate-nofuzzy-lexical --retrieval lexical --metadata protocol --both --no-fuzzy
+node benchmarks/precisionmembench/run.mjs --label final-ablate-nonames-lexical --retrieval lexical --metadata protocol --both --named false
+node benchmarks/precisionmembench/run.mjs --label final-ablate-nofuzzy-lexical --retrieval lexical --metadata protocol --both --no-fuzzy
 
 # Configuration B (extended metadata; disclosed harness patch, not comparable)
 node benchmarks/precisionmembench/run.mjs --label B-lexical --retrieval lexical --metadata extended --both --extended-harness
@@ -47,8 +47,8 @@ above set none. The removed `--cutoff`, `--min-score` and `--min-sim` flags are 
 
 Each label directory holds `retrieval-report-mnemosyne.json` (per-case precision, recall,
 pass flag and failure reasons), `session-retrieval-report-mnemosyne.json`, the full ava
-output, the server log and `run-summary.json` (configuration, `wrapperFilter: "none"`, the
-kernel options in force, benchmark commit, clone dirty-state, kernel commit, node version,
+output, the server log and `run-summary.json` (configuration, `wrapperFilter: "none"`,
+`recallKinds: null`, the kernel options in force, benchmark commit, clone dirty-state, kernel commit, node version,
 per-eval scores and server counters).
 
 The hybrid runs need the bundled local models (`bge-small-en-v1.5`; the cross-encoder only
@@ -63,11 +63,19 @@ harness's own aggregates.
 | --- | --- | --- | --- | --- |
 | `A2-base-lexical` | 84cb6c3, before this work | 22/77 | 0.262 / 0.954 | 0/12 |
 | `A2-base-hybrid` | 84cb6c3, before this work | 11/77 | 0.066 / 1.000 | 0/12 |
-| `A2-lexical` | names gate (`auto`) + fuzzy, zero-model | **70/77** | 0.871 / 1.000 | 12/12 |
-| `A2-hybrid` | same + bge-small dense channel | **70/77** | 0.871 / 1.000 | 12/12 |
-| `A2-hybrid-rerank` | same + cross-encoder | 70/77 | 0.871 / 1.000 | 12/12 |
-| `A2-ablate-nonames-lexical` | `requireNamedMatch: false` | 20/77 | 0.249 / 1.000 | 0/12 |
-| `A2-ablate-nofuzzy-lexical` | `fuzzy: false` | 64/77 | 0.748 / 0.861 | 12/12 |
+| `final-lexical` | 50a1eee, names gate (`auto`) + fuzzy, zero-model | **70/77** | 0.871 / 1.000 | 11/12 |
+| `final-hybrid` | same + bge-small dense channel | **70/77** | 0.871 / 1.000 | 11/12 |
+| `final-hybrid-rerank` | same + cross-encoder | 70/77 | 0.871 / 1.000 | 11/12 |
+| `final-ablate-nonames-lexical` | `requireNamedMatch: false` | 20/77 | 0.249 / 1.000 | 0/12 |
+| `final-ablate-nofuzzy-lexical` | `fuzzy: false` | 64/77 | 0.748 / 0.861 | 11/12 |
+
+The `final-*` reports are canonical. The two `A2-base-*` runs used the earlier wrapper, which
+passed `kinds: ['fact', 'preference', 'decision']` on every search; that predicate can only have
+helped them. The same wrapper scored 12/12 session turns on the current kernel. That 12th turn
+(session turn 5, `b-auth-open-q`) needs an open-question kind policy: the harness expects open
+questions left out, but its `/search` never asks for it, so the kernel is not told about it and
+the wrapper no longer supplies it. The reports of that wrapper (`merged-*`, `A2-lexical` and the
+other non-base `A2-*` labels) were deleted; they remain in git history.
 
 For comparison, the earlier wrapper-filtered runs (`A-lexical`, `A-hybrid`, kernel e0bbb47)
 scored 44/77 and 48/77, with 5/12 and 6/12 session turns.
@@ -83,10 +91,11 @@ its name gate on this fixture", not as a held-out precision estimate.
   canonical name (the first word of the text). The session adapter's `/add` sends no
   aliases; the canonical name alone is declared then. Kind is mapped from the belief type
   when the protocol sends one, otherwise `fact`.
-* `POST /search` calls `recall({ query, limit, kinds: ['fact', 'preference', 'decision'],
-  metadata: { scope: [...] } })` and maps each result to its belief id. The `kinds` list
-  leaves out `observation`, the kind an open question gets when the protocol sends its type
-  (the session adapter does; single-turn seeding does not). `scope` becomes the
+* `POST /search` calls `recall({ query, limit, metadata: { scope: [...] } })` and maps each
+  result to its belief id. It passes no `kinds` predicate: the harness never asks to drop a
+  kind, so a kind policy would be a wrapper-side filter. An open question still maps to the
+  kernel kind `observation` when the protocol sends its type (the session adapter does;
+  single-turn seeding does not), which is a translation only. `scope` becomes the
   kernel's metadata predicate, evaluated in the SQL of every channel before ranking.
   `providers.config.json` sets `supportsMultiScope: true`, so a multi-scope case is one
   `/search` with a scope array (protocol-exact either way).
@@ -94,7 +103,7 @@ its name gate on this fixture", not as a held-out precision estimate.
   text; alias words inserted into the name prefix become extra names, one per word.
 * No result is dropped, re-ranked, thresholded or deduplicated after `recall()` returns.
   Every exclusion is a kernel decision recorded in the ledger (`retrieval.config` carries
-  `requireNamedMatch`, `fuzzy`, `kinds`, `metadataFilter`, and `minScores` when set;
+  `requireNamedMatch`, `fuzzy`, `metadataFilter`, and `minScores` when set;
   `retrieval.abstained` carries the reason for an empty answer).
 * Configuration B maps `superseded_by` onto kernel supersession and resolved open questions
   onto validity windows; it needs the disclosed harness patch and is reported separately.
@@ -118,9 +127,10 @@ its name gate on this fixture", not as a held-out precision estimate.
 Every remaining failure is one belief returned that the case expects excluded because of
 lifecycle metadata the single-turn protocol does not send (`type`, `superseded_by`,
 `resolved_at`). In each case the query contains one of that belief's own aliases, so a name
-gate must admit it, and nothing else on the wire distinguishes it from a current belief.
-Matching content words such as "Previously" or "Was evaluating" would be fixture-specific,
-so the kernel does not.
+gate must admit it. The wire does carry lifecycle hints in natural language and identifiers
+(text such as "Previously used ..." or "Was evaluating ...", names such as
+`database_sqlalchemy_old`, belief ids such as `b-sqlalchemy-superseded`), but mining them would
+be fixture-specific, so the kernel does not.
 
 | Case | Belief returned | Query names it by | Excluded in the fixture because |
 | --- | --- | --- | --- |
@@ -132,7 +142,8 @@ so the kernel does not.
 | `pinned-plus-resolved-excluded-from-questions` | `b-pinned-resolved-interaction` | `API versioning`, `v2 migration` | `type: open_question`, `resolved_at` set |
 | `superseded-chain-query-terminal-only` | `b-linting-v0` | `TSLint` | `superseded_by: b-linting-v1` |
 
-So 70/77 is the ceiling for a provider that honours names in configuration A. The kernel
+So 70/77 is the ceiling in configuration A for a provider that honours names and does not
+mine lifecycle language from names, ids or text. The kernel
 does exclude superseded and expired records natively (a non-historical recall never
 surfaces them; `tests/local-precision-lifecycle.test.ts`), which configuration B exercises
 once the harness sends the lifecycle fields.

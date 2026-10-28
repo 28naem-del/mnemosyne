@@ -10,7 +10,8 @@
 //
 // No wrapper-side filter exists any more: --min-scores, --named and --no-fuzzy are
 // KERNEL options (recall() evaluates them and the ledger records them), and
-// run-summary.json states `wrapperFilter: "none"`. The old --cutoff, --min-score
+// run-summary.json states `wrapperFilter: "none"` and `recallKinds: null` (the
+// server passes no kind predicate to recall()). The old --cutoff, --min-score
 // and --min-sim post-filters are rejected.
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
@@ -75,7 +76,7 @@ if (!health) { console.error('server never became healthy'); stop(); process.exi
 console.log(`[run] server healthy: ${JSON.stringify(health)}`);
 
 const tests = flag('session') ? ['src/session-retrieval.external.eval.test.ts'] : flag('both') ? ['src/retrieval.external.eval.test.ts', 'src/session-retrieval.external.eval.test.ts'] : ['src/retrieval.external.eval.test.ts'];
-const summary = { label, retrieval, metadata, extendedHarness, harnessPatch: extendedHarness ? 'benchmarks/precisionmembench/patches/pmb-extended-metadata.patch' : null, wrapperFilter: 'none', noWrapperFilter: true, kernel: { requireNamedMatch: named === 'auto' ? 'auto' : named === 'true', fuzzy, minScores: minScores ? JSON.parse(minScores) : null }, rerank: flag('rerank'), lexicalScoring: lexical ?? null, benchmarkCommit: spawnSync('git', ['-C', clone, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), benchmarkDirty: spawnSync('git', ['-C', clone, 'status', '--porcelain'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean), kernelCommit: spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), node: process.version, startedAt: new Date().toISOString(), runs: [] };
+const summary = { label, retrieval, metadata, extendedHarness, harnessPatch: extendedHarness ? 'benchmarks/precisionmembench/patches/pmb-extended-metadata.patch' : null, wrapperFilter: 'none', noWrapperFilter: true, recallKinds: null, kernel: { requireNamedMatch: named === 'auto' ? 'auto' : named === 'true', fuzzy, minScores: minScores ? JSON.parse(minScores) : null }, rerank: flag('rerank'), lexicalScoring: lexical ?? null, benchmarkCommit: spawnSync('git', ['-C', clone, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), benchmarkDirty: spawnSync('git', ['-C', clone, 'status', '--porcelain'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean), kernelCommit: spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), node: process.version, startedAt: new Date().toISOString(), runs: [] };
 
 for (const test of tests) {
   const isSession = test.includes('session');

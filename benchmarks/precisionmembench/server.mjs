@@ -214,11 +214,11 @@ function search(userId, query, limit, scope) {
   if (!m) return [];
   const scopes = scope === undefined ? null : (Array.isArray(scope) ? scope : [scope]).map(String);
   // Every exclusion below is made inside recall(): scope is a kernel metadata
-  // predicate, open questions are a different kernel kind, names/floors/fuzzy are
-  // kernel options. The list is returned as recall() produced it.
+  // predicate, names/floors/fuzzy are kernel options. No `kinds` predicate is
+  // passed, because the harness /search never asks to drop a kind; a kind policy
+  // would be a wrapper-side filter. The list is returned as recall() produced it.
   const hits = m.recall({
     query: query.slice(0, 4096), limit,
-    kinds: ['fact', 'preference', 'decision'],
     ...(scopes?.length ? { metadata: { scope: scopes } } : {}),
     ...(LEX ? { lexicalScoring: LEX } : {}),
   });

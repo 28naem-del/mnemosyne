@@ -1,0 +1,84 @@
+{
+  "label": "final-hybrid-rerank",
+  "retrieval": "hybrid",
+  "metadata": "protocol",
+  "extendedHarness": false,
+  "harnessPatch": null,
+  "wrapperFilter": "none",
+  "noWrapperFilter": true,
+  "recallKinds": null,
+  "kernel": {
+    "requireNamedMatch": "auto",
+    "fuzzy": true,
+    "minScores": null
+  },
+  "rerank": true,
+  "lexicalScoring": null,
+  "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
+  "benchmarkDirty": [
+    "M providers.config.json",
+    "?? test-results/retrieval-report-mnemosyne.json",
+    "?? test-results/session-retrieval-report-mnemosyne.json"
+  ],
+  "kernelCommit": "50a1eeed14ff4fe64d733c4c55d3c3ab007099d4",
+  "node": "v26.12.1",
+  "startedAt": "2026-10-28T13:10:15.601Z",
+  "runs": [
+    {
+      "test": "src/retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 6.123,
+      "report": "retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 70,
+        "cases": 77,
+        "passRate": 0.9091,
+        "meanPrecision": 0.8707,
+        "meanRecall": 1,
+        "activeRetrievalPasses": 42,
+        "passTypes": {
+          "activeRetrieval": 42,
+          "structural": 19,
+          "triviallyEmpty": 9
+        },
+        "p50LatencyMs": 76.84
+      },
+      "serverCounters": {
+        "add": 35,
+        "update": 0,
+        "search": 72,
+        "corrections": 0,
+        "windows": 0,
+        "abstained": 18
+      }
+    },
+    {
+      "test": "src/session-retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 3.173,
+      "report": "session-retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 11,
+        "cases": 12,
+        "passRate": 0.9167,
+        "meanPrecision": 0.9697,
+        "meanRecall": 1,
+        "activeRetrievalPasses": 10,
+        "passTypes": {
+          "activeRetrieval": 10,
+          "structural": 0,
+          "triviallyEmpty": 1
+        },
+        "p50LatencyMs": 214.41
+      },
+      "serverCounters": {
+        "add": 36,
+        "update": 1,
+        "search": 12,
+        "corrections": 0,
+        "windows": 0,
+        "abstained": 1
+      }
+    }
+  ]
+}

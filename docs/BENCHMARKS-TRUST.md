@@ -2,7 +2,8 @@
 
 **Status: draft.** The rc.2 numbers on this page were produced on 2026-10-28 on branch
 `feat/breakthrough`, which merges the precision, consolidation, dependency and demo work (merge
-commit `64ec27c`; the PrecisionMemBench reports were committed in `c87b17c`). They were run
+commit `64ec27c`; the PrecisionMemBench reports were re-run at `50a1eee` without the wrapper `kinds`
+predicate). They were run
 offline, with no API key, no paid model and no LLM judge, and each one comes with the command
 that reproduces it from a fresh clone. The rc.1 numbers (branch `feat/unit1-proof-sprint`, commit
 range `e0bbb47..c97270c`, based on 2.0.0) are kept in their own subsections and marked as
@@ -20,8 +21,8 @@ The page follows the project's wording rules:
 
 | What | Result | Protocol | Report |
 |---|---|---|---|
-| PrecisionMemBench, single-turn | **70/77** lexical, **70/77** hybrid | protocol-exact, **no wrapper-side filter**, retrieval mode, no LLM judge; mean precision 0.871, recall 1.000 | `reports/precisionmembench/merged-{lexical,hybrid}/` |
-| PrecisionMemBench, session | **12/12** turns (lexical and hybrid) | same | same |
+| PrecisionMemBench, single-turn | **70/77** lexical, **70/77** hybrid | protocol-exact, **no wrapper-side filter and no `kinds` predicate**, retrieval mode, no LLM judge; mean precision 0.871, recall 1.000 | `reports/precisionmembench/final-{lexical,hybrid}/` |
+| PrecisionMemBench, session | **11/12** turns (lexical and hybrid) | same; the 12th turn needs an open-question kind policy the kernel is not told about | same |
 | Poisoning suite v1, consolidation on | **0/167 escapes, 0/60 false quarantines**, 0 errors; 294 gate decisions | 227 synthetic cases, lexical path; four signed passes per principal | `reports/poisoning/v1-consolidation/` |
 | Poisoning suite v1, default mode | 0/167 escapes, 0/60 false quarantines (unchanged from rc.1) | `npm run poisoning` | `reports/poisoning/v1/` |
 | Dependency suite v1 (synthetic) | invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), **0** stale-procedure executions | seed 20261028, accept-all eval reviewer, guarded executor, lexical path | `reports/dependencies/v1/` |
@@ -45,8 +46,10 @@ No judge is involved.
 
 The wrapper (`benchmarks/precisionmembench/server.mjs`) is translation only. After `recall()`
 returns, it drops, reranks, thresholds or deduplicates nothing. Every exclusion is a kernel
-decision recorded in the ledger. `run-summary.json` records `"wrapperFilter": "none"` and the kernel
-options in force.
+decision recorded in the ledger. `run-summary.json` records `"wrapperFilter": "none"`,
+`"recallKinds": null` (the wrapper passes no `kinds` predicate to `recall()`) and the kernel
+options in force. The wrapper still maps the protocol type `open_question` to the kernel kind
+`observation`; that is a translation, and nothing filters on it.
 
 **Before and after.** Same fixture and harness commit throughout.
 
@@ -54,26 +57,31 @@ options in force.
 |---|---|---|---|---|---|
 | rc.1, unfiltered (`lexical-protocol-raw`) | `e0bbb47` | none | 22/77 (28.6 %) | 0.262 / 0.954 | not run |
 | rc.1, comparable (`A-hybrid`) | `e0bbb47` | sweep-chosen: minSimilarity 0.65 + relative cutoff 0.5 | 48/77 (62.3 %) | 0.611 / 0.913 | 6/12 |
-| **rc.2, lexical** (`merged-lexical`) | `64ec27c` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **12/12** |
-| **rc.2, hybrid** (`merged-hybrid`) | `64ec27c` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **12/12** |
+| **rc.2, lexical** (`final-lexical`) | `50a1eee` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **11/12** |
+| **rc.2, hybrid** (`final-hybrid`) | `50a1eee` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **11/12** |
 
 So the score goes from 22 unfiltered, to 48 with filters chosen on the fixture, to 70 with the
 kernel's own controls and no filter. Both rc.2 runs have 42 active-retrieval passes, 19
-structural passes and 9 trivially-empty passes.
+structural passes and 9 trivially-empty passes. Session goes from 6/12 to 11/12. The failing
+turn (session turn 5) returns the open question `b-auth-open-q`; the harness expects open
+questions left out, but its `/search` request never says so, and the kernel is not told about
+an open-question kind policy. An earlier wrapper passed `kinds: ['fact','preference','decision']`
+on every search and scored 12/12; that was a wrapper-chosen exclusion, so it was removed, and
+the `merged-*` and non-base `A2-*` reports it produced were deleted (they remain in git history).
 
-**Ablations and variants.** These were run by unit A on the same wrapper with the kernel at
-`7b1ab58` (or `4526dc4` where marked). The recall source did not change between those commits and
-the merge.
+**Ablations and variants.** Re-run at `50a1eee` on the wrapper without a `kinds` predicate,
+except the two `A2-base-*` rows, which ran on the kernel before this work (`84cb6c3`) with the
+earlier wrapper that still passed `kinds` (that predicate can only have helped them).
 
 | Label | Kernel option changed | Single-turn | Mean P / R | Session |
 |---|---|---|---|---|
 | `A2-base-lexical` | before this work (`84cb6c3`) | 22/77 | 0.262 / 0.954 | 0/12 |
 | `A2-base-hybrid` | before this work (`84cb6c3`) | 11/77 | 0.066 / 1.000 | 0/12 |
-| `A2-lexical` | none (names gate `auto` + fuzzy) | 70/77 | 0.871 / 1.000 | 12/12 |
-| `A2-hybrid` | none, plus the bge-small dense channel | 70/77 | 0.871 / 1.000 | 12/12 |
-| `A2-hybrid-rerank` (`4526dc4`) | plus the cross-encoder | 70/77 | 0.871 / 1.000 | 12/12 |
-| `A2-ablate-nonames-lexical` (`4526dc4`) | `requireNamedMatch: false` | **20/77** | 0.249 / 1.000 | 0/12 |
-| `A2-ablate-nofuzzy-lexical` (`4526dc4`) | `fuzzy: false` | **64/77** | 0.748 / 0.861 | 12/12 |
+| `final-lexical` | none (names gate `auto` + fuzzy) | 70/77 | 0.871 / 1.000 | 11/12 |
+| `final-hybrid` | none, plus the bge-small dense channel | 70/77 | 0.871 / 1.000 | 11/12 |
+| `final-hybrid-rerank` | plus the cross-encoder | 70/77 | 0.871 / 1.000 | 11/12 |
+| `final-ablate-nonames-lexical` | `requireNamedMatch: false` | **20/77** | 0.249 / 1.000 | 0/12 |
+| `final-ablate-nofuzzy-lexical` | `fuzzy: false` | **64/77** | 0.748 / 0.861 | 11/12 |
 
 **The kernel controls that carry the number.** All of them are opt-in and off by default.
 
@@ -97,20 +105,25 @@ provider-registration patch step need the network once; scoring is offline. Both
 [`benchmarks/precisionmembench/README.md`](../benchmarks/precisionmembench/README.md).
 
 ```sh
-node benchmarks/precisionmembench/run.mjs --label merged-lexical --retrieval lexical --metadata protocol --both
-node benchmarks/precisionmembench/run.mjs --label merged-hybrid  --retrieval hybrid  --metadata protocol --both
-node benchmarks/precisionmembench/run.mjs --label A2-ablate-nonames-lexical --retrieval lexical --metadata protocol --both --named false
-node benchmarks/precisionmembench/run.mjs --label A2-ablate-nofuzzy-lexical --retrieval lexical --metadata protocol --both --no-fuzzy
+node benchmarks/precisionmembench/run.mjs --label final-lexical --retrieval lexical --metadata protocol --both
+node benchmarks/precisionmembench/run.mjs --label final-hybrid  --retrieval hybrid  --metadata protocol --both
+node benchmarks/precisionmembench/run.mjs --label final-hybrid-rerank --retrieval hybrid --metadata protocol --both --rerank
+node benchmarks/precisionmembench/run.mjs --label final-ablate-nonames-lexical --retrieval lexical --metadata protocol --both --named false
+node benchmarks/precisionmembench/run.mjs --label final-ablate-nofuzzy-lexical --retrieval lexical --metadata protocol --both --no-fuzzy
 ```
 
-`run.mjs` exits 3 on these runs, because the single-turn ava suite exits 1 on the 7 failing cases.
+`run.mjs` exits 3 on these runs, because the single-turn ava suite exits 1 on the 7 failing cases
+(and the session suite exits 1 on turn 5, except in the no-names ablation, where it fails more).
 
 **The seven remaining failures are the single-turn protocol ceiling.** In every remaining failure,
 one belief is returned that the case expects excluded. The reason for the exclusion is lifecycle
 metadata that the single-turn protocol does not send: `type`, `superseded_by` or `resolved_at`.
-Each query names the offending belief by one of its own aliases, so a names gate must admit it,
-and nothing else on the wire tells it apart from a current belief. The kernel could match content
-words such as "Previously", but that would be fixture-specific, so it does not.
+Each query names the offending belief by one of its own aliases, so a names gate must admit it.
+The wire does carry lifecycle hints in natural language and identifiers ("Previously used ...",
+"Was evaluating ...", names such as `database_sqlalchemy_old`, ids such as
+`b-sqlalchemy-superseded`), but mining them would be fixture-specific, so the kernel does not.
+The 7 cases are therefore a ceiling for a provider that does not mine lifecycle language from
+names, ids or text.
 
 The cases are:
 
@@ -138,7 +151,8 @@ record is superseded.
 - **The wrapper makes translation choices that a different wrapper could make differently.**
   - The canonical name is the first word of the belief text.
   - On `PUT /update`, inserted alias words become names one word at a time.
-  - `kinds: ['fact','preference','decision']` leaves out `observation`.
+  - The protocol type `open_question` maps to the kernel kind `observation`. No `kinds`
+    predicate is passed, so open questions are returned when they match (session turn 5).
 - **The cross-encoder neither helped nor hurt.** The reranked run ties the unreranked one at
   70/77.
 - **The latency effect is not established.** The runs were made on a machine at load average
@@ -181,7 +195,7 @@ The rc.1 losses, and their status in rc.2:
 | Compound 6–8 entity queries lost true hits to the relative cutoff | No longer applies: there is no cutoff, and recall is 1.000. |
 | "Nothing relevant" queries kept noise | Fixed on this fixture: they abstain natively. |
 | The reranker never helped | Still true: it ties at 70/77. |
-| Session mode 6/12 | 12/12. |
+| Session mode 6/12 | 11/12 without a wrapper kind policy (the 12th turn needs an open-question kind policy the kernel is not told about). |
 
 ## 2. Adversarial poisoning suite v1 (ours, synthetic, offline)
 
