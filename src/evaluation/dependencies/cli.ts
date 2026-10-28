@@ -9,6 +9,8 @@
  * which is how thresholds are tuned without touching the gate seed.
  * `--rare-runs N` (with `--seed`) reruns that corpus with N runs per rare
  * procedure; `--rare-runs 1` is the harder variant docs/DEPENDENCIES.md reports.
+ * `--no-floor` (with `--seed`, the gate seed allowed) drops the generator's
+ * observability floor; docs/DEPENDENCIES.md reports what that does to stale.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -20,7 +22,7 @@ import { buildDependencyReport, parseDependencyCorpus, renderDependencyReport, r
 const USAGE = [
   'Usage: node dist/evaluation/dependencies/cli.js --corpus <corpus.json> --out <directory> [--seeds 1,2,3]',
   '       node dist/evaluation/dependencies/cli.js --write-corpus <corpus.json>',
-  '       node dist/evaluation/dependencies/cli.js --seed <n> [--rare-runs <n>]',
+  '       node dist/evaluation/dependencies/cli.js --seed <n> [--rare-runs <n>] [--no-floor]',
 ].join('\n');
 
 function seeds(value: string | undefined): number[] {
@@ -33,7 +35,7 @@ function seeds(value: string | undefined): number[] {
 
 export async function dependenciesEvalCli(args = process.argv.slice(2)): Promise<number> {
   const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: {
-    corpus: { type: 'string' }, out: { type: 'string' }, 'write-corpus': { type: 'string' }, seeds: { type: 'string' }, seed: { type: 'string' }, 'rare-runs': { type: 'string' }, help: { type: 'boolean' },
+    corpus: { type: 'string' }, out: { type: 'string' }, 'write-corpus': { type: 'string' }, seeds: { type: 'string' }, seed: { type: 'string' }, 'rare-runs': { type: 'string' }, 'no-floor': { type: 'boolean' }, help: { type: 'boolean' },
   } });
   if (values.help) { console.log(USAGE); return 0; }
   const generated = serializeDependencyCorpus(generateDependencyCorpus());
@@ -45,15 +47,18 @@ export async function dependenciesEvalCli(args = process.argv.slice(2)): Promise
     return 0;
   }
   if (values.seed !== undefined) {
-    const [seed] = seeds(values.seed);
+    const noFloor = values['no-floor'] === true;
+    // A floorless corpus is never the gate corpus, so the gate seed is allowed there.
+    const [seed] = noFloor && values.seed.trim() === String(DEPENDENCY_CORPUS_SEED) ? [DEPENDENCY_CORPUS_SEED] : seeds(values.seed);
     const rareRuns = values['rare-runs'] === undefined ? undefined : Number(values['rare-runs']);
     if (rareRuns !== undefined && (!Number.isSafeInteger(rareRuns) || rareRuns < 1 || rareRuns > 8)) throw new Error('--rare-runs must be an integer from 1 to 8');
     const started = Date.now();
-    const result = await runDependencyCorpus(generateDependencyCorpus(seed, rareRuns === undefined ? {} : { rareRuns }));
-    console.log(JSON.stringify({ seed, ...(rareRuns === undefined ? {} : { rareRuns }), metrics: result.metrics, misses: result.misses, falseEdges: result.falseEdges, escapes: result.escapes, skipped: result.inference.skipped, seconds: (Date.now() - started) / 1000 }));
+    const result = await runDependencyCorpus(generateDependencyCorpus(seed, rareRuns === undefined ? {} : { rareRuns }, { observabilityFloor: !noFloor }));
+    console.log(JSON.stringify({ seed, ...(rareRuns === undefined ? {} : { rareRuns }), ...(noFloor ? { observabilityFloor: false } : {}), metrics: result.metrics, misses: result.misses, falseEdges: result.falseEdges, escapes: result.escapes, skipped: result.inference.skipped, seconds: (Date.now() - started) / 1000 }));
     return 0;
   }
   if (values['rare-runs'] !== undefined) throw new Error('--rare-runs applies to --seed runs only');
+  if (values['no-floor']) throw new Error('--no-floor applies to --seed runs only');
   if (!values.corpus || !values.out) { console.error(USAGE); return 2; }
   const text = readFileSync(resolve(values.corpus), 'utf8');
   const corpus = parseDependencyCorpus(text);

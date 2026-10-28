@@ -25,7 +25,7 @@ The page follows the project's wording rules:
 | PrecisionMemBench, session | **11/12** turns (lexical and hybrid) | same; the 12th turn needs an open-question kind policy the kernel is not told about | same |
 | Poisoning suite v1, consolidation on | **0/167 escapes, 0/60 false quarantines**, 0 errors; 294 gate decisions | 227 synthetic cases, lexical path; four signed passes per principal | `reports/poisoning/v1-consolidation/` |
 | Poisoning suite v1, default mode | 0/167 escapes, 0/60 false quarantines (unchanged from rc.1) | `npm run poisoning` | `reports/poisoning/v1/` |
-| Dependency suite v1 (synthetic) | invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), **0** stale-procedure executions | seed 20261028, accept-all eval reviewer, guarded executor, lexical path | `reports/dependencies/v1/` |
+| Dependency suite v1 (synthetic) | invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), **0** stale-procedure executions with the premise guard (inference alone: 7/248; guard false-hold rate 92.78 %) | seed 20261028, accept-all eval reviewer, guarded executor, lexical path | `reports/dependencies/v1/` |
 | `mnemosy demo` | five moments, each with a PROOF line measured live | offline, synthetic corpora, zero-model lexical path | printed per run ([DEMO.md](DEMO.md)) |
 | LoCoMo and LongMemEval-S retrieval | unchanged before vs after (largest delta: LoCoMo MRR +0.0014) | zero-model and hybrid, same commands before and after | section 6 |
 | Full test suite | 92 files, 1,545 tests passed | `npm run check` on the merged tree | — |
@@ -402,6 +402,15 @@ What these numbers rest on, stated plainly:
   stale procedures on the gate seed. All 7 are true pairs that inference had not linked; there
   are 0 on declared or accepted pairs. The guard also over-holds 82–95 dependents per corpus,
   which is reviewer load, not invalidation.
+- **Stale 0 with the premise guard; inference alone 7/248; guard false-hold rate 92.78 %.** The
+  guard is a blanket hold on any dependent with one judged successful co-use with a changed
+  premise, and it gives 0 on its own with zero accepted edges (84.54–93.14 % false holds across
+  the robustness seeds). Inference adds the kernel-side links (170 of 177 pairs invalidated
+  without the guard) and cuts guard holds from 272 to 97.
+- **Stale = 0 also rests on the generator's observability floor.** Every true edge is forced into
+  at least one judged successful task; without it (`--seed N --no-floor`) stale is 1 on the gate
+  seed and 2 on seed 11. 295 of 405 decoys cannot count as support by construction, so precision
+  is tested by the hub and incidental decoys only.
 - **The eval accepts every proposal** (reviewer `eval-policy-accept-all`). In production each
   proposal is a reviewer's decision. Precision on real controller traces is unmeasured, and hub
   premises are the main source of false edges.

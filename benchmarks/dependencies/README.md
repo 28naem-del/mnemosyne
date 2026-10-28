@@ -26,5 +26,9 @@ node dist/evaluation/dependencies/cli.js --write-corpus benchmarks/dependencies/
 node dist/evaluation/dependencies/cli.js --corpus benchmarks/dependencies/v1/corpus.json --out reports/dependencies/v1 --seeds 1,2,3,4,5,11,12,13,14,15
 ```
 
+The generator forces every true edge into at least one judged successful task (the observability
+floor). `node dist/evaluation/dependencies/cli.js --seed N --no-floor` runs a corpus without it;
+docs/DEPENDENCIES.md reports the effect (stale 1 on the gate seed, 2 on seed 11).
+
 [`docs/DEPENDENCIES.md`](../../docs/DEPENDENCIES.md) covers what is inferred, the eval
 protocol, the numbers and the limits.

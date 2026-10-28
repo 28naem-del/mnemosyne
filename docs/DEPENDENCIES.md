@@ -172,10 +172,15 @@ It holds a dependent when all of the following are true:
 
 A hold is a reason to review; it is not an invalidation.
 
-By default (`holdReliance: 0`) every successful co-use holds. Callers can opt in
-to release a pair on statistics. In that case, a pair whose Wilson upper bound
-on reliance is below `holdReliance` is treated as independent. The cost of the
-default is reviewer load, shown as "guard over-holds" below.
+By default (`holdReliance: 0`) every successful co-use holds. Said plainly, the
+default guard is a blanket hold: it holds every dependent that was used in at
+least one judged successful task with a premise that has since changed, whether
+or not the dependent relies on that premise. On the gate seed 90 of its 97
+holds (92.78 %) are on premises the dependent does not rely on. Callers can opt
+in to release a pair on statistics. In that case, a pair whose Wilson upper
+bound on reliance is below `holdReliance` is treated as independent. The cost of
+the default is reviewer load, shown as "guard over-holds" and the false-hold
+rate below.
 
 ## Evaluation protocol (synthetic)
 
@@ -212,8 +217,36 @@ The task stream adds noise:
 - unjudged and recall-only tasks;
 - six rare procedures with only two runs.
 
+Five of the decoy classes test different things. Three of them can never count
+as support under the rule, by construction: retrieved-unused (217 on the gate
+seed) is never in a used set, failed-only (58) is used only in failed tasks,
+and sibling (20) is only retrieved alongside successes or used in failures.
+That is 295 of the 405 decoys. Only the hub (89) and incidental (21) decoys
+test the statistics, and all three false edges on the gate seed come from them.
+Read the precision figure as precision against hub and incidental co-use.
+
 [`benchmarks/dependencies/README.md`](../benchmarks/dependencies/README.md) holds
 the hash and the regenerate command.
+
+### The observability floor
+
+The generator forces every true edge into at least one judged successful used
+set (`src/evaluation/dependencies/generator.ts`, comment "Observability
+floor"). A reliance that no task ever reports is invisible to any co-use
+method, so the floor keeps such pairs out of scope. It is also exactly the
+condition the default premise guard needs to hold a pair, so stale = 0 rests on
+it. The floor was in the first bench commit, before any result was seen.
+
+Without it (`node dist/evaluation/dependencies/cli.js --seed N --no-floor`,
+which drops only the injection and keeps every random draw), recall and
+precision are unchanged, but the guarded executor has stale executions:
+
+| Seed | Stale (guarded) | Escapes |
+| --- | --- | --- |
+| 20261028 (gate seed, floor removed) | 1 | S005 on F045 |
+| 11 | 2 | P083 on F028, P083 on R006 |
+
+Seed 12 does not trigger the floor and stays at 0.
 
 ```sh
 npm run build
@@ -265,6 +298,29 @@ From [`reports/dependencies/v1/report.md`](../reports/dependencies/v1/report.md)
 | Precision of accepted edges | 98.06 % (152 of 155) | >= 95 % |
 | Stale executions, guarded executor | 0 (248 checks, 120 corrections) | = 0 |
 
+**Stale = 0 is produced by the premise guard, not by inference.** The report
+decomposes it:
+
+| Configuration | Stale executions | Guard holds (true / false) | False-hold rate |
+| --- | --- | --- | --- |
+| Inference + accept-all, guard off (`staleWithoutGuard`) | 7 of 248 | n/a | n/a |
+| Guard on, zero accepted edges (`staleGuardOnly`) | 0 of 248 | 272 (179 / 93) | 34.19 % |
+| Inference + accept-all, guard on (the gate) | 0 of 248 | 97 (7 / 90) | 92.78 % |
+
+- Inference alone leaves 7 stale of 248 checks. The guard alone, with no
+  inference at all, already gives 0; with neither, at least 177 true undeclared
+  pairs stay active after their premise is corrected.
+- The guard's false-hold rate after accept-all is 92.78 % (90 of 97 holds),
+  and 84.54 % to 93.14 % across the ten robustness seeds.
+- What inference buys on top of the guard. The kernel's own cascade
+  invalidates 170 of 177 true undeclared pairs, so these no longer depend on
+  the executor using the guard (0 stale on declared or accepted pairs with the
+  kernel alone). Guard holds drop from 272 to 97, a shorter review queue of
+  cheaper holds. Each link is a declared dependency with a ledgered review
+  receipt, and each proposal is a review item with its evidence.
+- Stale = 0 also rests on the generator's observability floor; see
+  [The observability floor](#the-observability-floor).
+
 Further measurements from the same run:
 
 - **Recall over premises.** Macro recall is 96.29 %. Six of the seven misses
@@ -277,7 +333,8 @@ Further measurements from the same run:
 - **Over-invalidation.** Three dependents were invalidated by a premise outside
   their true closure; these are the false edges.
 - **Guard over-holds.** 90 dependents were held because a co-used premise
-  changed although they did not rely on it.
+  changed although they did not rely on it, against 7 useful holds: a
+  false-hold rate of 92.78 %.
 - **False accepted edges.** There were three: two through a hub premise and one
   incidental.
 
@@ -286,7 +343,9 @@ executions through the guarded executor:
 
 - recall ranged from 92.39 % to 96.81 %;
 - precision ranged from 95.06 % to 99.39 %;
-- guard over-holds ranged from 82 to 95.
+- guard over-holds ranged from 82 to 95;
+- the guard's false-hold rate ranged from 84.54 % to 93.14 %;
+- the guard alone, with zero accepted edges, also had zero stale executions.
 
 The report has the per-seed table.
 
@@ -326,9 +385,21 @@ numbers can be weighed.
   become meaningless. Precision on real traces is unmeasured.
 - **One co-use is invisible to inference.** Such pairs are covered only by the
   guard, and only if the executor uses it. The kernel alone does not hold them.
-- **The guard over-holds by design.** It holds 82 to 95 dependents per corpus
-  that did not rely on the corrected premise. Each one is a review item, not a
-  silent block; but the load is real.
+- **Stale = 0 is a property of the guard and of the corpus floor.** The guard
+  alone gives it with zero accepted edges; inference alone leaves 7 stale of
+  248. Without the generator's observability floor the guarded executor has 1
+  stale execution on the gate seed and 2 on seed 11.
+- **The guard over-holds by design.** It is a blanket hold on anything with at
+  least one successful co-use with a changed premise. It holds 82 to 95
+  dependents per corpus that did not rely on the corrected premise, a
+  false-hold rate of 84.54 % to 93.14 % (92.78 % on the gate seed). Each one is
+  a review item, not a silent block; but the load is real.
+- **Precision is tested by hub and incidental decoys only.** 295 of 405 decoys
+  can never count as support by construction.
+- **A failure traced against the dependent itself is not support,** and the
+  kernel then withholds that dependent, so inference rejects its pairs as
+  inactive (`tests/dependencies-failed-dependent.test.ts`). The suite records
+  failures only through a verifier, so the corpus does not exercise this path.
 - **The guard is a snapshot of co-use evidence.** Premise state is read live,
   but new tasks are seen only after a rebuild.
 - **Acceptance re-versions the dependent.** The successor has a new id and
@@ -346,4 +417,4 @@ numbers can be weighed.
   at review ("Dependency is already declared."). The eval skipped one such
   proposal.
 - **The eval is slow.** Recall cost grows with superseded rows, so one corpus
-  takes 30 to 40 s. Only the lexical retrieval path was measured.
+  takes 30 to 40 s, plus 10 to 15 s for the guard-only pass. Only the lexical retrieval path was measured.

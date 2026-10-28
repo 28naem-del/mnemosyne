@@ -31,7 +31,7 @@ The 3.0.0 line is built and measured in this repository, but it is not published
 - **Corrections that reach what nobody linked.** Dependencies are inferred from successful co-use and proposed for review. Once accepted, they are declared through `correct()`, and runtime skills can be linked to their premises. The measurement is on a synthetic seeded corpus (dependency suite v1, seed 20261028, 120 corrections):
   - invalidation recall is **96.05 %**;
   - precision of accepted edges is **98.06 %**;
-  - **0** stale procedures ran through the premise guard.
+  - **0** stale procedures ran through the premise guard. That zero comes from the guard, a blanket hold on anything co-used with a changed premise: inference alone leaves 7 of 248 checks stale, and the guard's false-hold rate is 92.78 %.
 
   [Inferred dependencies](docs/DEPENDENCIES.md)
 - **A demo that measures itself.** `mnemosy demo` walks through five moments on synthetic corpora, offline, on the zero-model lexical path:

@@ -72,7 +72,22 @@
       "guardOverHolds": 90,
       "guardHeldMisses": 7,
       "missesBelowMinSupport": 6,
-      "recallObservable": 0.994152
+      "recallObservable": 0.994152,
+      "staleWithoutGuard": 7,
+      "staleGuardOnly": 0,
+      "guardHolds": 97,
+      "guardTrueHolds": 7,
+      "guardFalseHolds": 90,
+      "guardFalseHoldRate": 0.927835,
+      "guardOnly": {
+        "staleExecutions": 0,
+        "staleChecks": 248,
+        "undeclaredLeftActive": 177,
+        "holds": 272,
+        "trueHolds": 179,
+        "falseHolds": 93,
+        "falseHoldRate": 0.341912
+      }
     },
     "inference": {
       "proposals": 156,
@@ -198,7 +213,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 10,
       "overInvalidated": 4,
-      "guardOverHolds": 86
+      "guardOverHolds": 86,
+      "staleWithoutGuard": 10,
+      "staleGuardOnly": 0,
+      "guardHolds": 96,
+      "guardTrueHolds": 10,
+      "guardFalseHolds": 86,
+      "guardFalseHoldRate": 0.895833
     },
     {
       "seed": 2,
@@ -208,7 +229,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 7,
       "overInvalidated": 3,
-      "guardOverHolds": 92
+      "guardOverHolds": 92,
+      "staleWithoutGuard": 7,
+      "staleGuardOnly": 0,
+      "guardHolds": 100,
+      "guardTrueHolds": 8,
+      "guardFalseHolds": 92,
+      "guardFalseHoldRate": 0.92
     },
     {
       "seed": 3,
@@ -218,7 +245,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 14,
       "overInvalidated": 4,
-      "guardOverHolds": 95
+      "guardOverHolds": 95,
+      "staleWithoutGuard": 14,
+      "staleGuardOnly": 0,
+      "guardHolds": 110,
+      "guardTrueHolds": 15,
+      "guardFalseHolds": 95,
+      "guardFalseHoldRate": 0.863636
     },
     {
       "seed": 4,
@@ -228,7 +261,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 15,
       "overInvalidated": 3,
-      "guardOverHolds": 82
+      "guardOverHolds": 82,
+      "staleWithoutGuard": 15,
+      "staleGuardOnly": 0,
+      "guardHolds": 97,
+      "guardTrueHolds": 15,
+      "guardFalseHolds": 82,
+      "guardFalseHoldRate": 0.845361
     },
     {
       "seed": 5,
@@ -238,7 +277,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 13,
       "overInvalidated": 1,
-      "guardOverHolds": 95
+      "guardOverHolds": 95,
+      "staleWithoutGuard": 13,
+      "staleGuardOnly": 0,
+      "guardHolds": 108,
+      "guardTrueHolds": 13,
+      "guardFalseHolds": 95,
+      "guardFalseHoldRate": 0.87963
     },
     {
       "seed": 11,
@@ -248,7 +293,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 9,
       "overInvalidated": 3,
-      "guardOverHolds": 89
+      "guardOverHolds": 89,
+      "staleWithoutGuard": 9,
+      "staleGuardOnly": 0,
+      "guardHolds": 98,
+      "guardTrueHolds": 9,
+      "guardFalseHolds": 89,
+      "guardFalseHoldRate": 0.908163
     },
     {
       "seed": 12,
@@ -258,7 +309,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 6,
       "overInvalidated": 4,
-      "guardOverHolds": 95
+      "guardOverHolds": 95,
+      "staleWithoutGuard": 6,
+      "staleGuardOnly": 0,
+      "guardHolds": 102,
+      "guardTrueHolds": 7,
+      "guardFalseHolds": 95,
+      "guardFalseHoldRate": 0.931373
     },
     {
       "seed": 13,
@@ -268,7 +325,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 10,
       "overInvalidated": 8,
-      "guardOverHolds": 95
+      "guardOverHolds": 95,
+      "staleWithoutGuard": 10,
+      "staleGuardOnly": 0,
+      "guardHolds": 105,
+      "guardTrueHolds": 10,
+      "guardFalseHolds": 95,
+      "guardFalseHoldRate": 0.904762
     },
     {
       "seed": 14,
@@ -278,7 +341,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 13,
       "overInvalidated": 3,
-      "guardOverHolds": 88
+      "guardOverHolds": 88,
+      "staleWithoutGuard": 13,
+      "staleGuardOnly": 0,
+      "guardHolds": 101,
+      "guardTrueHolds": 13,
+      "guardFalseHolds": 88,
+      "guardFalseHoldRate": 0.871287
     },
     {
       "seed": 15,
@@ -288,7 +357,13 @@
       "staleExecutions": 0,
       "kernelStaleExecutions": 9,
       "overInvalidated": 2,
-      "guardOverHolds": 86
+      "guardOverHolds": 86,
+      "staleWithoutGuard": 9,
+      "staleGuardOnly": 0,
+      "guardHolds": 95,
+      "guardTrueHolds": 9,
+      "guardFalseHolds": 86,
+      "guardFalseHoldRate": 0.905263
     }
   ]
 }
