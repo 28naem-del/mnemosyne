@@ -70,7 +70,7 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy entity [scope] --action create|resolve|relate|traverse --json JSON
 
   Provider file: {"baseUrl":"http://127.0.0.1:11434/v1","model":"chosen-model",
-                  "dimensions":768,"revision":"v1","apiKeyEnv":"NAMED_ENV"}
+                  "dimensions":768,"revision":"v1","apiKeyEnv":"NAMED_ENV","timeoutMs":120000}
   Only baseUrl and model are mandatory; index/hybrid also require dimensions.
   Provider configuration is explicit; no provider or paid API is selected by default.
   model refresh needs --provider-config and --json '{"sourceIds":["ID"]}'.
@@ -227,7 +227,7 @@ function agentCommand(values: CliValues) {
   if (Object.entries(values).some(([key, value]) => value !== undefined && !allowed.includes(key))) throw new Error('Unsupported option for this agent action.');
   const context = { requireWatched: z.boolean().optional(), taskId: z.string().min(1).max(160).optional() };
   const background = { intervalMs: z.number().int().min(10).max(60000).optional(), maxCycles: z.number().int().min(1).max(10000).optional(), maxDurationMs: z.number().int().min(1).max(3600000).optional(), maxCalls: z.number().int().min(0).max(10000).optional(), maxTotalInputBytes: z.number().int().min(0).max(67108864).optional() };
-  const drain = { maxJobs: z.number().int().min(1).max(64).optional(), maxCalls: z.number().int().min(0).max(64).optional(), maxTotalInputBytes: z.number().int().min(0).max(4194304).optional(), maxInputBytes: z.number().int().min(1024).max(262144).optional(), maxOutputBytes: z.number().int().min(256).max(65536).optional(), timeoutMs: z.number().int().min(10).max(60000).optional(), leaseMs: z.number().int().min(1).max(300000).optional(), maxAttempts: z.number().int().min(1).max(10).optional() };
+  const drain = { maxJobs: z.number().int().min(1).max(64).optional(), maxCalls: z.number().int().min(0).max(64).optional(), maxTotalInputBytes: z.number().int().min(0).max(4194304).optional(), maxInputBytes: z.number().int().min(1024).max(262144).optional(), maxOutputBytes: z.number().int().min(256).max(65536).optional(), timeoutMs: z.number().int().min(10).max(300000).optional(), leaseMs: z.number().int().min(1).max(600000).optional(), maxAttempts: z.number().int().min(1).max(10).optional() };
   const settings = action === 'context' ? z.object(context).strict().parse(jsonInput(values.json as string | undefined))
     : action === 'turn' ? z.object({ ...context, timeoutMs: z.number().int().min(1).max(300000).optional() }).strict().parse(jsonInput(values.json as string | undefined))
     : action === 'work' ? (values.watch ? z.object(background) : z.object(drain)).strict().parse(jsonInput(values.json as string | undefined))
@@ -260,10 +260,10 @@ function healthCommand(values: Record<string, string | boolean | undefined>) {
 
 function providerConfig(path: string | undefined) {
   const configPath = required(path, '--provider-config');
-  const schema = z.object({ baseUrl: z.string().min(1).max(2048), model: z.string().min(1).max(512), dimensions: z.number().int().min(1).max(65536).optional(), revision: z.string().min(1).max(512).optional(), apiKeyEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(256).optional() }).strict();
+  const schema = z.object({ baseUrl: z.string().min(1).max(2048), model: z.string().min(1).max(512), dimensions: z.number().int().min(1).max(65536).optional(), revision: z.string().min(1).max(512).optional(), apiKeyEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(256).optional(), timeoutMs: z.number().int().min(1).max(300000).optional() }).strict();
   let config: z.infer<typeof schema>;
   try { config = schema.parse(JSON.parse(readLocalText(configPath, 16384))); }
-  catch { throw new Error('Invalid provider configuration file; use only baseUrl, model, dimensions, revision and apiKeyEnv.'); }
+  catch { throw new Error('Invalid provider configuration file; use only baseUrl, model, dimensions, revision, apiKeyEnv and timeoutMs (1 to 300000 ms).'); }
   const apiKey = config.apiKeyEnv ? process.env[config.apiKeyEnv] : undefined;
   if (config.apiKeyEnv && (!apiKey?.trim() || apiKey.length > 4096 || /[\r\n]/.test(apiKey))) throw new Error('The explicitly named API key environment variable is missing or invalid.');
   return { ...config, ...(apiKey ? { apiKey } : {}) };

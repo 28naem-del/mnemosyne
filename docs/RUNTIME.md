@@ -67,11 +67,11 @@ const queued = runtime.enqueue({ kind: 'observe', sourceIds: [captured.id] });
 console.log(queued.state); // queued: no model has been called
 ```
 
-The host supplies a `RuntimeProposer` and invokes `await runtime.runJobs({ proposer, maxJobs, maxCalls, maxInputBytes, maxOutputBytes, maxTotalInputBytes, timeoutMs, leaseMs, maxAttempts, signal })`. `runtime.jobs()` exposes durable states and result IDs. Default runs inspect at most 8 jobs, call at most 4 proposals, allow 3 attempts, and bound each proposal to a 30-second timeout. A lease prevents concurrent claims from both committing the same generation; expired claims can be recovered by a later run. No scheduler wakes itself.
+The host supplies a `RuntimeProposer` and invokes `await runtime.runJobs({ proposer, maxJobs, maxCalls, maxInputBytes, maxOutputBytes, maxTotalInputBytes, timeoutMs, leaseMs, maxAttempts, signal })`. `runtime.jobs()` exposes durable states and result IDs. Default runs inspect at most 8 jobs, call at most 4 proposals, allow 3 attempts, and bound each proposal to a 30-second timeout. `timeoutMs` accepts 10 ms to 300,000 ms (5 minutes) for slow local models; `leaseMs` defaults to the larger of 60 seconds and `timeoutMs` plus one second, must exceed `timeoutMs`, and accepts at most 600,000 ms. A lease prevents concurrent claims from both committing the same generation; expired claims can be recovered by a later run. No scheduler wakes itself.
 
 An observation proposer returns `{"observations":[{"text":"...","sourceIds":["supplied-id"]}]}`. A model proposer returns `{"text":"...","sourceIds":["supplied-id"]}`. Output is strictly validated, bounded and checked for unsupported IDs or duplicate/no-progress text. Source state is rechecked after the callback and again before commit. This validates provenance and structure; it cannot determine whether a novel summary is semantically correct.
 
-For a real model, explicitly construct `createCompatibleProposer({ baseUrl, model, apiKey?, timeoutMs?, maxResponseBytes? })` from `mnemosy-ai/providers`. The adapter sends OpenAI-compatible chat-completion requests, rejects redirects, requires HTTPS for nonloopback hosts and bounds responses. Its name describes the wire protocol; it does not select OpenAI or any other vendor automatically.
+For a real model, explicitly construct `createCompatibleProposer({ baseUrl, model, apiKey?, timeoutMs?, maxResponseBytes? })` from `mnemosy-ai/providers`. Its own HTTP `timeoutMs` defaults to 30 seconds and accepts 1 ms to 300,000 ms; raise it together with the `runJobs` `timeoutMs`, because whichever is shorter ends the call. The adapter sends OpenAI-compatible chat-completion requests, rejects redirects, requires HTTPS for nonloopback hosts and bounds responses. Its name describes the wire protocol; it does not select OpenAI or any other vendor automatically.
 
 CLI provider files have this shape. Replace the model with one already available at the chosen endpoint before invoking it:
 
@@ -82,7 +82,7 @@ CLI provider files have this shape. Replace the model with one already available
 }
 ```
 
-`apiKeyEnv` optionally names the environment variable containing that endpoint's credential; do not put a literal key in the JSON file. The CLI accepts only `baseUrl`, `model`, `dimensions`, `revision` and `apiKeyEnv`. Proposer and embedding models commonly require different configuration files.
+`apiKeyEnv` optionally names the environment variable containing that endpoint's credential; do not put a literal key in the JSON file. The CLI accepts only `baseUrl`, `model`, `dimensions`, `revision`, `apiKeyEnv` and `timeoutMs`. `timeoutMs` (1 to 300,000 ms, default 30,000) is passed to the provider adapter; for a slow local model set it in the provider file and pass a matching `--json '{"timeoutMs":120000}'` to `run-jobs`. Proposer and embedding models commonly require different configuration files.
 
 After capture, substitute a returned source ID in these commands:
 

@@ -94,7 +94,7 @@ export class MemoryAgent {
     this.#builder = options.contextBuilder; this.#proposer = options.proposer;
     this.#readOnly = z.boolean().parse(options.readOnly ?? false);
     this.#trust = z.enum(['untrusted', 'observed']).parse(options.captureTrust ?? 'untrusted');
-    this.#budgets = z.object({ maxJobs: z.number().int().min(1).max(64).optional(), maxCalls: z.number().int().min(0).max(64).optional(), maxTotalInputBytes: z.number().int().min(0).max(4_194_304).optional(), maxInputBytes: z.number().int().min(1024).max(262_144).optional(), maxOutputBytes: z.number().int().min(256).max(65_536).optional(), timeoutMs: z.number().int().min(10).max(60000).optional(), leaseMs: z.number().int().max(300000).optional(), maxAttempts: z.number().int().min(1).max(10).optional() }).strict().parse(options.jobBudgets ?? {});
+    this.#budgets = z.object({ maxJobs: z.number().int().min(1).max(64).optional(), maxCalls: z.number().int().min(0).max(64).optional(), maxTotalInputBytes: z.number().int().min(0).max(4_194_304).optional(), maxInputBytes: z.number().int().min(1024).max(262_144).optional(), maxOutputBytes: z.number().int().min(256).max(65_536).optional(), timeoutMs: z.number().int().min(10).max(300000).optional(), leaseMs: z.number().int().max(600000).optional(), maxAttempts: z.number().int().min(1).max(10).optional() }).strict().parse(options.jobBudgets ?? {});
     if (this.#budgets.leaseMs !== undefined && this.#budgets.leaseMs <= (this.#budgets.timeoutMs ?? 30000)) throw new TypeError('Lease must exceed the proposer timeout.');
     Object.defineProperties(this, { runtime: { writable: false }, maintenance: { writable: false } });
   }
