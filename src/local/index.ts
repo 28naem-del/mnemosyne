@@ -29,13 +29,25 @@ import { createDenseIndex, prepareDenseIndexSchema, readIdentity, resolveDenseIn
 import { corpusStats, corpusStatsCacheKey, hasTemporalBounds, liveClockSteppedBack, markTemporalBoundsIfNeeded, noteLiveClock, seedLiveClockFromStore, type CorpusStatsCache } from './bm25-corpus-stats.js';
 import type { HnswIndex } from './vector/hnsw.js';
 import type { StoredEmbedding } from './types.js';
+import type { RecallAbstention, RecallScoreFloors } from './types.js';
+import { fuzzyEligible, singleEditCandidates } from './fuzzy.js';
+import {
+  declaredNames, hasFloors, lifecycleSql, matchesMetadataFilter, mergeFloors, metadataFilterSql, NameIndex, parseFloors, parseMetadataFilter, parseNamedMatch, selectTerms,
+  type MetadataFilter, type NamedMatchMode,
+} from './precision.js';
 
 export type * from './types.js';
 
 type DataRow = { data: string };
 type TemporalView = { asOf: string; knownAt: string; historical: boolean };
 type ScoredId = { id: string; score: number };
-type DenseScan = { model: string; dimensions: number; query: number[]; maxCandidates: number; time: TemporalView; includeUntrusted: boolean; kinds: string[]; minSimilarity: number };
+type DenseScan = { model: string; dimensions: number; query: number[]; maxCandidates: number; time: TemporalView; includeUntrusted: boolean; kinds: string[]; minSimilarity: number; filter?: SqlPredicate };
+/** A SQL fragment over the `memories m` alias with its bound parameters, in order. */
+type SqlPredicate = { sql: string; parameters: string[] };
+/** The precision controls of one recall, validated and merged with the instance
+ * defaults. `active` is false exactly when the recall behaves as it did before
+ * these controls existed. */
+type Precision = { floors: RecallScoreFloors; named: NamedMatchMode; fuzzy: boolean; filter: MetadataFilter | null; active: boolean };
 type DenseRow = { id: string; vector: string | Uint8Array; source_hash: string; record: string };
 
 /** Shortlist depth as a multiple of the candidate budget. An index proposes more
@@ -87,6 +99,11 @@ const TEMPORAL_PRIORITY_SLACK_MS = 7 * 86_400_000;
  * guards against the FINAL pass demoting a strong match, not against the
  * candidate pass having changed which matches the reranker was shown. */
 const TEMPORAL_PRIORITY_KEEP = 3;
+/** What one fuzzy-expanded posting term counts for against a term the caller
+ * wrote: a typo match is evidence, but weaker than the word itself. */
+const FUZZY_WEIGHT = 0.5;
+/** At most this many single-edit neighbours are added per unmatched query term. */
+const FUZZY_EXPANSIONS = 8;
 /**
  * Bound for the T1.4 option-B "when-intent" prior (see `WHEN_INTENT_QUERY_RE`
  * and `#prioritizeTimeBearing`). Deliberately far shallower than
@@ -215,10 +232,19 @@ export class LocalMemory {
    * since a `StatementSync` is reused only for repeated `.get()`/`.all()`
    * calls with different bound parameters and never mutates what it returns. */
   #preparedCache = new Map<string, StatementSync>();
+  readonly #minScores: RecallScoreFloors;
+  readonly #requireNamedMatch: NamedMatchMode;
+  readonly #fuzzy: boolean;
+  /** Declared names of this scope, rebuilt on the same write/data-version signal
+   * the vector drain uses. Only ever built by a recall that consults names. */
+  #nameIndex?: { writeSeq: number; dataVersion: number; index: NameIndex };
+  /** Why the recall that just ran returned nothing; undefined when it returned
+   * results. Synchronous end to end, like `#granularityTrace`. */
+  #abstention?: RecallAbstention;
 
   constructor(options: LocalMemoryOptions) {
     const input = v.object(options, 'options');
-    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode', 'sqliteVecPath', 'cacheSize', 'granularity'], 'options');
+    v.keys(input, ['path', 'workspaceId', 'agentId', 'now', 'tokenCounter', 'retrieval', 'embedder', 'modelCacheDir', 'requireEmbedder', 'minSimilarity', 'rrfK', 'ledger', 'rerank', 'reranker', 'rerankTopN', 'indexMode', 'sqliteVecPath', 'cacheSize', 'granularity', 'minScores', 'requireNamedMatch', 'fuzzy'], 'options');
     this.#workspaceId = v.string(options.workspaceId, 'workspaceId', 160);
     this.#agentId = v.string(options.agentId, 'agentId', 160);
     const path = v.string(options.path, 'path', 4096);
@@ -245,6 +271,9 @@ export class LocalMemory {
     this.#rerankTopN = v.limit(options.rerankTopN, 50, 200);
     this.#minSimilarity = this.#similarity(options.minSimilarity, 0);
     this.#rrfK = v.limit(options.rrfK, 10, 1000);
+    this.#minScores = parseFloors(options.minScores, 'minScores');
+    this.#requireNamedMatch = parseNamedMatch(options.requireNamedMatch, 'requireNamedMatch') ?? false;
+    this.#fuzzy = v.boolean(options.fuzzy);
     if (options.granularity !== undefined) v.keys(v.object(options.granularity, 'granularity'), ['sessionKeys', 'windowTurns', 'windowStride', 'summarySentences', 'summaryKeywords', 'weight', 'expandDocs', 'expandTurns', 'reserve', 'rerankContext', 'rerankContextTokens', 'rerankContextTopN'], 'granularity');
     this.#granularity = resolveOptions(options.granularity);
     const ledger = options.ledger === undefined ? {} : options.ledger;
@@ -642,6 +671,10 @@ export class LocalMemory {
       maxCandidates: v.limit(input.maxCandidates, 1000, 10000),
       rerankTopN: reranked ? this.#rerankTopN : null,
       minSimilarity: this.#similarity(input.minSimilarity, this.#minSimilarity),
+      // Each precision control is recorded only when it is in force, so a recall
+      // that uses none of them keeps exactly the configuration hash it had before
+      // they existed.
+      ...this.#precisionConfig(input),
     };
     // Each stage is truncated to the configured bound, and the bound is disclosed:
     // `total` is the depth the stage actually produced, `recorded` what survived it.
@@ -666,6 +699,7 @@ export class LocalMemory {
       ...(this.#granularityTrace ? { granularity: this.#granularityTrace.ledger } : {}),
       schema: 2, config, configSha256: retrievalConfigSha256(config),
       candidates: [], candidateCounts, verifier: null,
+      ...(this.#abstention && !results.length ? { abstained: this.#abstention } : {}),
     };
     const references = results.map((result, rank) => ({ memoryId: result.memory.id, rank, score: result.score }));
     this.#transaction(() => { this.#lastRetrievalId = this.#appendLedger('recall', null, { retrieval }, references, candidates) || undefined; });
@@ -675,6 +709,12 @@ export class LocalMemory {
    * undefined if none has been recorded. It is the handle a caller passes to
    * `recordRetrievalOutcome` after acting on what it recalled. */
   get lastRetrievalId(): string | undefined { return this.#lastRetrievalId; }
+
+  /** Why the most recent `recall()` (or `compile()`) on THIS instance returned
+   * nothing — `no-candidates`, `no-named-match` or `below-floor`, with the floors
+   * in force and the best score seen — or undefined when it returned results.
+   * The same object the ledger records as `retrieval.abstained`. */
+  get lastAbstention(): RecallAbstention | undefined { return this.#abstention; }
 
   /**
    * Fills the verifier-outcome slot on a recorded retrieval.
@@ -1168,6 +1208,7 @@ export class LocalMemory {
     const route = this.#route(input), routed = this.#routed(input, route);
     const embedder = this.#resolveEmbedder();
     this.#granularityTrace = undefined;
+    this.#abstention = undefined;
     const started = performance.now();
     // The trace is collected only when the ledger will record it; a disabled
     // ledger leaves retrieval allocating nothing extra.
@@ -1176,17 +1217,11 @@ export class LocalMemory {
     let results: RecallResult[];
     if (embedder) results = this.#hybridRecall(routed, embedder, collect, route);
     else {
-      results = this.#rankedRecall(routed);
       // The derived indexes are fused into the dense/lexical RRF map, which the
       // zero-model path never builds. Requesting them there is reported, never
       // silently ignored.
       if (input.granularity === 'multi') this.#granularityDegraded = 'multi-granularity fusion needs the hybrid path; this recall ran turn-only';
-      // With no dense channel the lexical ranking IS the candidate set, so the
-      // trace records exactly what the stage produced at the requested depth.
-      collect?.push({ stage: 'lexical', candidates: results.map(entry => ({ id: entry.memory.id, score: entry.score })) });
-      // No deeper pool exists on this path, so a parsed window reorders what was
-      // returned rather than reaching past it.
-      results = this.#prioritized(results, route);
+      results = this.#lexicalRecall(routed, route, collect);
     }
     // The ledger records the query the CALLER asked, with the routing decision
     // beside it, so entries stay comparable across routing on and off.
@@ -1398,6 +1433,203 @@ export class LocalMemory {
     return { isolated: [...rescored, ...carried.map(demote), ...tail.map(demote)], contextual };
   }
 
+  /** The precision controls in force for one recall: the instance defaults with
+   * the recall's own values laid over them. */
+  #precision(input: RecallInput): Precision {
+    const floors = mergeFloors(this.#minScores, parseFloors(input.minScores, 'minScores'));
+    const named = parseNamedMatch(input.requireNamedMatch, 'requireNamedMatch') ?? this.#requireNamedMatch;
+    const fuzzy = input.fuzzy === undefined ? this.#fuzzy : v.boolean(input.fuzzy);
+    const filter = parseMetadataFilter(input.metadata);
+    return { floors, named, fuzzy, filter, active: named !== false || hasFloors(floors) };
+  }
+
+  /** The ledger's view of the precision controls. Each is recorded only when it
+   * is in force, so a recall that uses none keeps its old configuration hash. */
+  #precisionConfig(input: RecallInput): Partial<LedgerRetrievalConfig> {
+    const precision = this.#precision(input);
+    return {
+      ...(hasFloors(precision.floors) ? { minScores: precision.floors } : {}),
+      ...(precision.named === false ? {} : { requireNamedMatch: precision.named }),
+      ...(precision.fuzzy ? { fuzzy: true as const } : {}),
+      ...(input.kinds?.length ? { kinds: [...new Set(input.kinds)].sort() } : {}),
+      ...(precision.filter ? { metadataFilter: { keys: precision.filter.keys, sha256: precision.filter.sha256 } } : {}),
+    };
+  }
+
+  /** Record-level predicates every channel applies in SQL, against `memories m`:
+   * the lifecycle prefilter and the caller's metadata predicate. */
+  #extraPredicate(time: TemporalView, filter: MetadataFilter | null): SqlPredicate {
+    const lifecycle = lifecycleSql(time), metadata = metadataFilterSql(filter);
+    return { sql: `${lifecycle.sql} ${metadata.sql}`, parameters: [...lifecycle.parameters, ...metadata.parameters] };
+  }
+
+  /** Postings of one term, counted up to a bound: only the order between terms
+   * matters to `selectTerms`, and a bound keeps a stopword from costing a scan. */
+  #termFrequency(term: string): number {
+    const row = this.#db.prepare('SELECT count(*) AS n FROM (SELECT 1 FROM local_terms INDEXED BY local_terms_term WHERE term=? LIMIT 100000)').get(term) as { n: number | bigint };
+    return Number(row.n);
+  }
+
+  /**
+   * Single-edit neighbours of the query terms that match nothing in scope.
+   *
+   * A term the store already contains is never expanded, so a correctly spelled
+   * query ranks exactly as it does without `fuzzy`. A neighbour is kept only if
+   * the store holds it, which is what keeps the expansion deterministic and small.
+   */
+  #fuzzyExpansion(terms: readonly string[]): string[] {
+    const present = this.#db.prepare(`SELECT j.value AS term FROM json_each(?) j WHERE EXISTS (
+      SELECT 1 FROM local_terms t INDEXED BY local_terms_term CROSS JOIN memories m ON m.id=t.memory_id
+      WHERE t.term=j.value AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace') LIMIT 1) ORDER BY j.key`);
+    const has = (candidates: readonly string[]): string[] => candidates.length
+      ? (present.all(JSON.stringify(candidates), this.#workspaceId, this.#agentId) as { term: string }[]).map((row) => row.term) : [];
+    const known = new Set(has(terms.filter(fuzzyEligible)));
+    const expansion = new Set<string>();
+    for (const term of terms) {
+      if (!fuzzyEligible(term) || known.has(term)) continue;
+      for (const neighbour of has(singleEditCandidates(term)).slice(0, FUZZY_EXPANSIONS)) if (!terms.includes(neighbour)) expansion.add(neighbour);
+    }
+    return [...expansion];
+  }
+
+  /** The declared-name index of this scope, rebuilt only after a write. */
+  #names(): NameIndex {
+    const dataVersion = this.#dataVersion();
+    const cached = this.#nameIndex;
+    if (cached && cached.writeSeq === this.#writeSeq && cached.dataVersion === dataVersion) return cached.index;
+    const index = new NameIndex();
+    const rows = this.#db.prepare(`SELECT id,json_extract(data,'$.metadata.names') AS names FROM memories
+      WHERE workspace_id=? AND (agent_id=? OR visibility='workspace') AND json_type(data,'$.metadata.names')='array' ORDER BY id`).all(this.#workspaceId, this.#agentId) as { id: string; names: string }[];
+    for (const row of rows) {
+      let names: unknown;
+      try { names = JSON.parse(row.names); } catch { continue; }
+      if (Array.isArray(names)) index.add(row.id, names.filter((name): name is string => typeof name === 'string').slice(0, 64));
+    }
+    this.#nameIndex = { writeSeq: this.#writeSeq, dataVersion, index };
+    return index;
+  }
+
+  /**
+   * The names channel: records whose declared names occur in the query.
+   *
+   * Every hit passes the same scope, trust, advisory, temporal, kind, lifecycle
+   * and metadata gates as the lexical channel, in SQL, and then the temporal
+   * reconstruction, before it can rank — the name index itself is scope-wide.
+   */
+  #namedChannel(input: RecallInput, precision: Precision, time: TemporalView): ScoredId[] {
+    const index = this.#names();
+    if (!index.size) return [];
+    const includeUntrusted = v.boolean(input.includeUntrusted);
+    const kinds = input.kinds === undefined ? [] : v.strings(input.kinds, 'kinds', 6).map((kind) => v.enumeration(kind, v.KINDS, 'kind'));
+    const extra = this.#extraPredicate(time, precision.filter);
+    const gate = this.#db.prepare(`SELECT m.data FROM memories m WHERE m.id=? AND m.workspace_id=? AND (m.agent_id=? OR m.visibility='workspace')
+      ${time.historical ? '' : "AND (m.status!='invalidated' OR json_extract(m.data,'$.invalidation.correctionId') IS NOT NULL)"}
+      AND m.created_at<=? AND coalesce(json_extract(m.data,'$.validFrom'),m.created_at)<=?
+      AND (json_extract(m.data,'$.validUntil') IS NULL OR json_extract(m.data,'$.validUntil')>?)
+      ${includeUntrusted ? '' : "AND m.trust!='untrusted'"}
+      AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
+      ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}
+      ${extra.sql}`);
+    const visible = new Map<string, boolean>();
+    const allowed = (id: string): boolean => {
+      let ok = visible.get(id);
+      if (ok === undefined) {
+        const row = gate.get(id, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds, ...extra.parameters);
+        const record = row ? this.#decode(row) : null;
+        ok = !!record && this.#at(record, time) !== null;
+        visible.set(id, ok);
+      }
+      return ok;
+    };
+    return index.match(v.string(input.query, 'query', 4096), precision.fuzzy, allowed).map(({ id, score }) => ({ id, score }));
+  }
+
+  /**
+   * The last step of every recall: hydrate the ranking in order and apply the
+   * named-match gate and the score floors, then explain an empty answer.
+   *
+   * Exclusions here are kernel decisions recorded in the ledger (the floors in
+   * `retrieval.config`, the reason in `retrieval.abstained`), never a caller's
+   * post-filter.
+   */
+  #finish(ranked: readonly ScoredId[], count: number, time: TemporalView, precision: Precision, options: {
+    named: Set<string> | null; channelTop: number; probabilities?: Map<string, number>;
+    eligible?: (memory: MemoryRecord) => boolean; hydrated?: Map<string, RecallResult>;
+  }): RecallResult[] {
+    const { floors } = precision;
+    const results: RecallResult[] = [];
+    let unnamed = false, belowFloor = false, considered = 0, top = -Infinity, best: number | undefined;
+    for (const entry of ranked) {
+      if (options.named && precision.named === true && !options.named.has(entry.id)) { unnamed = true; continue; }
+      const hydrated = options.hydrated?.get(entry.id);
+      let memory: MemoryRecord | null;
+      if (hydrated) memory = hydrated.memory;
+      else {
+        const stored = this.get(entry.id);
+        memory = stored && this.#at(stored, time);
+        if (memory && options.eligible && !options.eligible(memory)) continue;
+      }
+      if (!memory || !matchesMetadataFilter(memory.metadata, precision.filter)) continue;
+      // 'auto': a record that declares names must be found by one of them; a
+      // record without names competes on its text alone.
+      if (options.named && precision.named === 'auto' && !options.named.has(memory.id) && declaredNames(memory.metadata).length) { unnamed = true; continue; }
+      considered++;
+      top = Math.max(top, entry.score);
+      // A reranker floor binds only where a cross-encoder rescored the head; a
+      // candidate it never saw has no probability and does not clear the floor.
+      if (floors.reranker !== undefined && options.probabilities && (options.probabilities.get(entry.id) ?? -1) < floors.reranker) { belowFloor = true; continue; }
+      if (floors.final !== undefined && entry.score < floors.final) { belowFloor = true; continue; }
+      best ??= entry.score;
+      if (floors.finalRelative !== undefined && entry.score < best * floors.finalRelative) { belowFloor = true; continue; }
+      results.push(hydrated ? { ...hydrated, score: entry.score } : { memory, score: entry.score, outcomes: this.#outcomes(memory.id, time.historical ? time.knownAt : undefined) });
+      if (results.length === count) break;
+    }
+    if (!results.length) {
+      const channelTop = Number.isFinite(options.channelTop) ? options.channelTop : null;
+      const reason: RecallAbstention['reason'] = considered || belowFloor ? 'below-floor'
+        : unnamed ? 'no-named-match' : channelTop !== null && hasFloors(floors) ? 'below-floor' : 'no-candidates';
+      this.#abstention = { reason, floors, topScore: considered ? top : channelTop };
+    }
+    return results;
+  }
+
+  /**
+   * The zero-model recall. With no precision control in force it is exactly the
+   * lexical ranking it always was; with one, it ranks a deeper pool, fuses the
+   * names channel in, and lets `#finish` decide what survives.
+   */
+  #lexicalRecall(input: RecallInput, route: TemporalRoute | null, trace?: RetrievalTrace, eligible?: (memory: MemoryRecord) => boolean, at?: TemporalView): RecallResult[] {
+    const precision = this.#precision(input);
+    if (!precision.active) {
+      let results = this.#rankedRecall(input, eligible, at);
+      // With no dense channel the lexical ranking IS the candidate set, so the
+      // trace records exactly what the stage produced at the requested depth.
+      trace?.push({ stage: 'lexical', candidates: results.map(entry => ({ id: entry.memory.id, score: entry.score })) });
+      // No deeper pool exists on this path, so a parsed window reorders what was
+      // returned rather than reaching past it.
+      results = this.#prioritized(results, route);
+      if (!results.length) this.#abstention = { reason: 'no-candidates', floors: precision.floors, topScore: null };
+      return results;
+    }
+    const time = at ?? this.#temporal(input);
+    const count = v.limit(input.limit, 10);
+    const pool = this.#rankedRecall({ ...input, limit: Math.max(100, count) }, eligible, time);
+    const lexicalAll = pool.map(entry => ({ id: entry.memory.id, score: entry.score }));
+    const floors = precision.floors;
+    const lexical = floors.keyword === undefined ? lexicalAll : lexicalAll.filter(entry => entry.score >= floors.keyword!);
+    const names = precision.named === false ? null : this.#namedChannel(input, precision, time);
+    // Fused whenever names are consulted, even if none matched, so the final
+    // score a floor sees is on one scale for every recall with the same options.
+    let ranked: ScoredId[] = names ? [...this.#fuse([lexical, names], this.#rrfK).values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) : lexical;
+    trace?.push({ stage: 'lexical', candidates: lexicalAll }, ...(names ? [{ stage: 'names' as const, candidates: names }, { stage: 'fused' as const, candidates: ranked }] : []));
+    if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
+    return this.#finish(ranked, count, time, precision, {
+      named: names ? new Set(names.map(entry => entry.id)) : null, eligible,
+      hydrated: new Map(pool.map(entry => [entry.memory.id, entry])),
+      channelTop: Math.max(lexicalAll[0]?.score ?? -Infinity, names?.[0]?.score ?? -Infinity),
+    });
+  }
+
   /** RRF over the lexical channel and an exact cosine scan, on one synchronous call path. */
   #hybridRecall(input: RecallInput, embedder: SyncMemoryEmbedder, trace?: RetrievalTrace, route?: TemporalRoute | null): RecallResult[] {
     this.#assertOpen();
@@ -1412,18 +1644,26 @@ export class LocalMemory {
     // Scope, visibility, trust, advisory and temporal gates are enforced in the
     // SQL of BOTH channels, exactly as they are for lexical-only recall.
     const lexical = this.#rankedRecall({ ...input, limit: 100 }, undefined, time);
+    const precision = this.#precision(input), floors = precision.floors;
     const { model, dimensions } = this.#embeddingContract(embedder);
     this.#indexPendingVectors(embedder, model, dimensions);
     const embedded = embedder.embedSync([v.string(input.query, 'query', 4096)], 'query');
     if (!Array.isArray(embedded) || embedded.length !== 1) throw new TypeError('Embedder must return one query vector');
     const query = this.#vector(embedded[0], dimensions);
-    const semantic = this.#scanVectorsSync({ model, dimensions, query, maxCandidates, time, includeUntrusted, kinds: input.kinds ?? [], minSimilarity: this.#similarity(input.minSimilarity, this.#minSimilarity) });
-    const lexicalScored = lexical.map(entry => ({ id: entry.memory.id, score: entry.score }));
-    const fused = this.#fuse([lexicalScored, semantic], this.#rrfK);
+    const scanned = this.#scanVectorsSync({ model, dimensions, query, maxCandidates, time, includeUntrusted, kinds: input.kinds ?? [], minSimilarity: this.#similarity(input.minSimilarity, this.#minSimilarity), filter: this.#extraPredicate(time, precision.filter) });
+    // Floors are applied after each channel produced its ranking, not inside it:
+    // a threshold on the channel's own score keeps exactly the head it would have
+    // kept, and the trace below still shows what the floor removed.
+    const semantic = floors.semantic === undefined ? scanned : scanned.filter(entry => entry.score >= floors.semantic!);
+    const lexicalAll = lexical.map(entry => ({ id: entry.memory.id, score: entry.score }));
+    const lexicalScored = floors.keyword === undefined ? lexicalAll : lexicalAll.filter(entry => entry.score >= floors.keyword!);
+    const names = precision.named === false ? null : this.#namedChannel(input, precision, time);
+    const fused = this.#fuse(names ? [lexicalScored, semantic, names] : [lexicalScored, semantic], this.#rrfK);
     const multi = this.#multiGranularity(input, fused, { model, dimensions, query }, time, this.#rrfK, this.#rerankTopN);
     let ranked = multi?.ranked ?? [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-    trace?.push({ stage: 'lexical', candidates: lexicalScored },
-      { stage: 'dense', candidates: [...semantic].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) },
+    trace?.push({ stage: 'lexical', candidates: lexicalAll },
+      { stage: 'dense', candidates: [...scanned].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) },
+      ...(names ? [{ stage: 'names' as const, candidates: names }] : []),
       { stage: 'fused', candidates: ranked });
     // Before the reranker takes its slice, not only after: a cross-encoder that
     // never sees the in-window candidate cannot rank it, and the slice is where
@@ -1440,19 +1680,19 @@ export class LocalMemory {
     const reranked = this.#rerankSync(input, ranked, time, multi?.reserved ?? 0,
       multi ? (memory) => this.#eligibleAt(memory.id, time, includeUntrusted) : undefined);
     if (reranked) { ranked = multi ? this.#withReranker(ranked, reranked.isolated, reranked.contextual) : reranked.isolated; trace?.push({ stage: 'reranked', candidates: ranked }); }
+    // The cross-encoder's own probability, recovered from the (0.5, 1) band the
+    // rescored head occupies. A candidate the reranker never saw has none.
+    const probabilities = reranked && floors.reranker !== undefined
+      ? new Map(reranked.isolated.filter(entry => entry.score > 0.5).map(entry => [entry.id, 2 * entry.score - 1])) : undefined;
     // Blend BEFORE prioritise: prioritisation re-orders whichever candidate list exists,
     // and the granularity blend is what defines that list. Prioritising first would let
     // the blend undo it.
     if (route) ranked = this.#prioritize(ranked, route.window, (entry) => this.#when(entry.id), TEMPORAL_PRIORITY_KEEP);
     if (whenIntent) ranked = this.#prioritizeTimeBearing(ranked, TEMPORAL_PRIORITY_KEEP, time.asOf);
-    const results: RecallResult[] = [];
-    for (const entry of ranked) {
-      const stored = this.get(entry.id), memory = stored && this.#at(stored, time);
-      if (!memory) continue;
-      results.push({ memory, score: entry.score, outcomes: this.#outcomes(memory.id, time.historical ? time.knownAt : undefined) });
-      if (results.length === count) break;
-    }
-    return results;
+    return this.#finish(ranked, count, time, precision, {
+      named: names ? new Set(names.map(entry => entry.id)) : null, probabilities,
+      channelTop: Math.max(lexicalAll[0]?.score ?? -Infinity, scanned[0]?.score ?? -Infinity, names?.[0]?.score ?? -Infinity),
+    });
   }
 
   /**
@@ -1553,11 +1793,12 @@ export class LocalMemory {
       AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       AND m.created_at<=? AND coalesce(json_extract(m.data,'$.validFrom'),m.created_at)<=?
       AND (json_extract(m.data,'$.validUntil') IS NULL OR json_extract(m.data,'$.validUntil')>?)
-      ${scan.kinds.length ? `AND m.kind IN (${scan.kinds.map(() => '?').join(',')})` : ''}`;
+      ${scan.kinds.length ? `AND m.kind IN (${scan.kinds.map(() => '?').join(',')})` : ''}
+      ${scan.filter?.sql ?? ''}`;
   }
 
   #denseWhereParameters(scan: DenseScan): string[] {
-    return [this.#workspaceId, this.#agentId, scan.time.knownAt, scan.time.asOf, scan.time.asOf, ...scan.kinds];
+    return [this.#workspaceId, this.#agentId, scan.time.knownAt, scan.time.asOf, scan.time.asOf, ...scan.kinds, ...(scan.filter?.parameters ?? [])];
   }
 
   /**
@@ -1735,7 +1976,7 @@ export class LocalMemory {
 
   #rankedRecall(input: RecallInput, eligible?: (memory: MemoryRecord) => boolean, at?: TemporalView): RecallResult[] {
     this.#assertOpen();
-    v.keys(v.object(input, 'recall'), ['query', 'limit', 'kinds', 'includeUntrusted', 'asOf', 'knownAt', 'maxCandidates', 'lexicalScoring', 'minSimilarity', 'temporalRouting', 'granularity'], 'recall');
+    v.keys(v.object(input, 'recall'), ['query', 'limit', 'kinds', 'includeUntrusted', 'asOf', 'knownAt', 'maxCandidates', 'lexicalScoring', 'minSimilarity', 'temporalRouting', 'granularity', 'minScores', 'requireNamedMatch', 'fuzzy', 'metadata'], 'recall');
     const query = v.string(input.query, 'query', 4096);
     const count = v.limit(input.limit, 10);
     const budget = v.limit(input.maxCandidates, 1000, 10000);
@@ -1743,18 +1984,28 @@ export class LocalMemory {
     const lexicalScoring = v.enumeration(input.lexicalScoring ?? 'bm25', ['overlap', 'bm25'] as const, 'lexicalScoring');
     v.enumeration(input.granularity ?? 'turn', ['turn', 'multi'] as const, 'granularity');
     const kinds = input.kinds === undefined ? [] : v.strings(input.kinds, 'kinds', 6).map((kind) => v.enumeration(kind, v.KINDS, 'kind'));
-    const terms = [...new Set(this.#tokens(query))].slice(0, 64);
-    if (!terms.length) return [];
+    const precision = this.#precision(input);
+    const unique = [...new Set(this.#tokens(query))];
+    const selected = selectTerms(unique, 64, (term) => this.#termFrequency(term));
+    if (!selected.length) return [];
     const time = at ?? this.#temporal(input);
-    if (lexicalScoring === 'bm25') return this.#bm25Recall({ terms, count, budget, kinds, includeUntrusted, time }, eligible);
+    const expansion = precision.fuzzy ? this.#fuzzyExpansion(selected) : null;
+    const terms = expansion ? [...selected, ...expansion] : selected;
+    const weights = expansion?.length ? new Map(expansion.map(term => [term, FUZZY_WEIGHT])) : undefined;
+    const extra = this.#extraPredicate(time, precision.filter);
+    if (lexicalScoring === 'bm25') return this.#bm25Recall({ terms, count, budget, kinds, includeUntrusted, time, extra, weights }, eligible);
     // Materialize grouped posting hits before hydrating records. Otherwise SQLite
     // can drive this join from the scope/time index and inspect every workspace
     // record even for one rare term. Grouping first also hydrates broad matches
     // once per record, not once per query term. Scope, temporal and advisory gates
     // still precede ranking/truncation; only ranked candidates cross into JavaScript.
     const outcomeTime = time.historical ? time.knownAt : '9999-12-31T23:59:59.999Z';
+    // An expanded term counts for FUZZY_WEIGHT of a hit, and the normaliser stays
+    // the number of terms the caller actually wrote.
+    const expanded = expansion ?? [];
+    const hits = expanded.length ? `total(CASE WHEN term IN (${expanded.map(() => '?').join(',')}) THEN ${FUZZY_WEIGHT} ELSE 1.0 END)` : 'count(*)';
     const rows = this.#db.prepare(`WITH matches AS MATERIALIZED (
-      SELECT memory_id,count(*) AS hits FROM local_terms INDEXED BY local_terms_term
+      SELECT memory_id,${hits} AS hits FROM local_terms INDEXED BY local_terms_term
       WHERE term IN (${terms.map(() => '?').join(',')}) GROUP BY memory_id
     ), candidates AS (
       SELECT m.id,m.data,(1.0+t.hits*1.0/?)/s.length_penalty AS lexical,
@@ -1768,8 +2019,9 @@ export class LocalMemory {
       ${includeUntrusted ? '' : "AND m.trust!='untrusted'"}
       AND coalesce(json_extract(m.data,'$.metadata.advisory'),1)!=0
       ${kinds.length ? `AND m.kind IN (${kinds.map(() => '?').join(',')})` : ''}
+      ${extra.sql}
     ) SELECT data,successes,failures,lexical*(1+min(successes,3)*0.05)/(1+failures*10) AS score FROM candidates ORDER BY score DESC,id ASC LIMIT ?
-    `).all(...terms, terms.length, outcomeTime, outcomeTime, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds, budget) as (DataRow & { score: number; successes: number; failures: number })[];
+    `).all(...expanded, ...terms, selected.length, outcomeTime, outcomeTime, this.#workspaceId, this.#agentId, time.knownAt, time.asOf, time.asOf, ...kinds, ...extra.parameters, budget) as (DataRow & { score: number; successes: number; failures: number })[];
     const ranked: RecallResult[] = [];
     for (const row of rows) {
       const memory = this.#at(this.#decode(row)!, time);
@@ -1790,7 +2042,7 @@ export class LocalMemory {
    * per query. Per-term document frequency stays uncached, read straight off
    * the term-indexed `candidates` query below — already O(matching
    * postings), not O(corpus), before this change. */
-  #bm25Recall(input: { terms: string[]; count: number; budget: number; kinds: string[]; includeUntrusted: boolean; time: TemporalView }, eligible?: (memory: MemoryRecord) => boolean): RecallResult[] {
+  #bm25Recall(input: { terms: string[]; count: number; budget: number; kinds: string[]; includeUntrusted: boolean; time: TemporalView; extra?: SqlPredicate; weights?: Map<string, number> }, eligible?: (memory: MemoryRecord) => boolean): RecallResult[] {
     this.#repairTermFrequencies();
     const { terms, kinds, time } = input;
     const matches = `WITH matches AS MATERIALIZED (
@@ -1840,10 +2092,10 @@ export class LocalMemory {
     // IDF the same way raw recall's diagnostic contract always counted it.
     const candidates = this.#db.prepare(`${matches}
       SELECT m.data,s.token_count,t.frequencies FROM matches t CROSS JOIN memories m ON m.id=t.memory_id
-      CROSS JOIN local_search s ON s.memory_id=m.id WHERE ${scope}`);
+      CROSS JOIN local_search s ON s.memory_id=m.id WHERE ${scope} ${input.extra?.sql ?? ''}`);
     const frequency = new Map<string, number>();
     const scored: { memory: MemoryRecord; tokenCount: number; frequencies: [string, number][] }[] = [];
-    for (const value of candidates.iterate(...terms, ...parameters)) {
+    for (const value of candidates.iterate(...terms, ...parameters, ...(input.extra?.parameters ?? []))) {
       const row = value as DataRow & { token_count: number; frequencies: string };
       const memory = this.#at(this.#decode(row)!, time);
       if (!memory) continue;
@@ -1858,7 +2110,7 @@ export class LocalMemory {
         const df = frequency.get(term);
         if (df === undefined) continue;
         const idf = Math.log1p((documents - df + 0.5) / (df + 0.5));
-        score += idf * (occurrences * 2.2) / (occurrences + 1.2 * (0.25 + 0.75 * row.tokenCount / averageLength));
+        score += (input.weights?.get(term) ?? 1) * idf * (occurrences * 2.2) / (occurrences + 1.2 * (0.25 + 0.75 * row.tokenCount / averageLength));
       }
       const outcomes = this.#outcomes(row.memory.id, time.historical ? time.knownAt : undefined);
       score = score * (1 + Math.min(outcomes.successes, 3) * 0.05) / (1 + outcomes.failures * 10);
@@ -2249,6 +2501,11 @@ export class LocalMemory {
     this.#assertOpen();
     // Routed once here rather than held in a local: `time` is recomputed from
     // `input` at every invalidation boundary below, and must see the same clocks.
+    // The precision controls live on recall()'s synchronous path; this legacy
+    // async path would silently ignore them, so it refuses them instead.
+    for (const key of ['minScores', 'requireNamedMatch', 'fuzzy', 'metadata'] as const) {
+      if (request && typeof request === 'object' && request[key] !== undefined) throw new TypeError(`recallHybrid does not support ${key}; use recall()`);
+    }
     const route = this.#route(request), input = this.#routed(request, route);
     v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'rerankTopN', 'signal', 'timeoutMs', 'maxCandidates', 'rrfK'], 'hybrid options');
     const { model, dimensions } = this.#embeddingContract(options.embedder);
@@ -2741,7 +2998,7 @@ export class LocalMemory {
 
   compile(input: CompileInput): ContextPacket {
     const route = this.#route(input), routed = this.#routed(input, route);
-    return this.#compile(routed, (eligible, time) => this.#prioritized(this.#rankedRecall({ query: routed.query, limit: 100, asOf: routed.asOf, knownAt: routed.knownAt, lexicalScoring: routed.lexicalScoring, granularity: routed.granularity }, eligible, time), route));
+    return this.#compile(routed, (eligible, time) => this.#lexicalRecall({ query: routed.query, limit: 100, asOf: routed.asOf, knownAt: routed.knownAt, lexicalScoring: routed.lexicalScoring, granularity: routed.granularity }, route, undefined, eligible, time));
   }
 
   async compileHybrid(input: CompileInput, options: HybridRecallOptions): Promise<ContextPacket> {
@@ -2825,13 +3082,16 @@ export class LocalMemory {
         packet.conflicts.push({ key: `task:${error.taskId}`, ids: error.memoryIds });
         packet.excluded.push(...error.memoryIds.map((id) => ({ id, reason: 'checkpoint-conflict' as const })));
         packet.uncertainty.push(error.message);
+        packet.abstention = { reason: 'withheld', floors: mergeFloors(this.#minScores, {}), topScore: null };
         diagnosticText();
         return packet;
       }
     }
     // Apply provenance eligibility before top-k, so rejected high scoring records
     // cannot starve an otherwise useful candidate later in the matching corpus.
+    this.#abstention = undefined;
     const candidates = retrieve(eligible, time);
+    const retrievalAbstention = this.#abstention as RecallAbstention | undefined;
     if (taskCheckpoint && eligible(taskCheckpoint) && !candidates.some((candidate) => candidate.memory.id === taskCheckpoint.id)) candidates.unshift({ memory: taskCheckpoint, score: 1, outcomes: this.#outcomes(taskCheckpoint.id, time.historical ? time.knownAt : undefined) });
     for (const candidate of candidates) {
       const memory = candidate.memory;
@@ -2858,6 +3118,13 @@ export class LocalMemory {
     if (packet.conflicts.length) packet.uncertainty.push('Conflicting keyed facts require resolution; no winner was selected.');
     packet.uncertainty = [...new Set(packet.uncertainty)];
     packet.abstained = packet.items.length === 0;
+    // Why, when there is nothing: retrieval's own reason when it produced no
+    // candidate, otherwise the budget or the provenance gate that took them all.
+    if (packet.abstained) {
+      packet.abstention = !candidates.length
+        ? retrievalAbstention ?? { reason: 'no-candidates', floors: mergeFloors(this.#minScores, {}), topScore: null }
+        : { reason: packet.excluded.some((entry) => entry.reason === 'budget' || entry.reason === 'conflict-budget') ? 'budget' : 'withheld', floors: mergeFloors(this.#minScores, {}), topScore: Math.max(...candidates.map((candidate) => candidate.score)) };
+    }
     if (packet.abstained && packet.excluded.some((entry) => ['failed-outcome', 'provenance-conflict', 'checkpoint-conflict'].includes(entry.reason))) diagnosticText();
     return packet;
   }

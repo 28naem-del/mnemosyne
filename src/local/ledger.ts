@@ -4,7 +4,7 @@ import type { LedgerCandidate, LedgerEntry, LedgerEvent, LedgerRetrievalConfig, 
 export const LEDGER_EVENTS: readonly LedgerEvent[] = ['store', 'correction', 'recall', 'outcome', 'erasure', 'promotion', 'consolidation', 'dependency'];
 
 /** Ordered so a decoded candidate set reads in the order the stages actually ran. */
-export const RETRIEVAL_STAGES: readonly RetrievalStage[] = ['lexical', 'dense', 'fused', 'reranked'];
+export const RETRIEVAL_STAGES: readonly RetrievalStage[] = ['lexical', 'dense', 'names', 'fused', 'reranked'];
 
 /**
  * Digest of the retrieval configuration, over canonically ordered keys so the

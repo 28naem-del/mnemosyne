@@ -40,8 +40,10 @@ export interface LedgerProvenance {
   validUntil?: string;
 }
 
-/** A ranking stage a candidate passed through on its way to (or out of) the result set. */
-export type RetrievalStage = 'lexical' | 'dense' | 'fused' | 'reranked';
+/** A ranking stage a candidate passed through on its way to (or out of) the result set.
+ * `names` is the name/alias phrase channel; it only appears on a recall that turned
+ * it on through `requireNamedMatch`. */
+export type RetrievalStage = 'lexical' | 'dense' | 'names' | 'fused' | 'reranked';
 
 /** One candidate as ONE stage ranked it. A candidate the dense channel found and
  * the reranker demoted appears once per stage, which is what makes a retrieval
@@ -72,6 +74,59 @@ export interface LedgerRetrievalConfig {
   /** Fused candidates handed to the reranker; null when no reranker ran. */
   rerankTopN: number | null;
   minSimilarity: number;
+  /** The score floors this recall enforced. Absent when none was set, so entries
+   * written without floors keep the configuration hash they always had. */
+  minScores?: RecallScoreFloors;
+  /** Present only when the name/alias gate ran. */
+  requireNamedMatch?: true | 'auto';
+  /** Present only when guarded single-edit term expansion was on. */
+  fuzzy?: true;
+  /** A kind predicate the caller asked the kernel to evaluate in SQL. Absent when
+   * the recall did not restrict kinds. */
+  kinds?: MemoryKind[];
+  /** The metadata predicate the kernel evaluated in SQL, as the keys it constrained
+   * and a digest of the canonical filter. The values are not stored, for the same
+   * reason the query is not stored by default. */
+  metadataFilter?: { keys: string[]; sha256: string };
+}
+
+/** Per-stage score floors. Every floor is optional and inclusive: a candidate
+ * scoring exactly the floor clears it.
+ *
+ * - `keyword`: the lexical channel's own score (BM25 or overlap). A lexical
+ *   candidate below it leaves the lexical channel; it can still arrive through
+ *   another channel.
+ * - `semantic`: the dense cosine, 0-1. Combined with `minSimilarity` by taking
+ *   the larger of the two.
+ * - `reranker`: the cross-encoder's probability, 0-1 (the logistic of its raw
+ *   score). When set and a reranker ran, a candidate the reranker did not clear —
+ *   including one it never saw — is not returned.
+ * - `final`: the score the result would be returned with.
+ * - `finalRelative`: a fraction of the best final score, 0-1.
+ *
+ * Floors exclude; they never reorder. When nothing clears them the recall
+ * returns an empty list and the ledger records why, rather than returning the
+ * nearest unrelated record. */
+export interface RecallScoreFloors {
+  keyword?: number;
+  semantic?: number;
+  reranker?: number;
+  final?: number;
+  finalRelative?: number;
+}
+
+/** Why a recall returned nothing.
+ * - `no-candidates`: no channel produced a candidate in scope.
+ * - `no-named-match`: candidates existed, but the name/alias gate admitted none.
+ * - `below-floor`: candidates existed, but none cleared the score floors. */
+export type RecallAbstentionReason = 'no-candidates' | 'no-named-match' | 'below-floor';
+
+/** The kernel's own account of an empty recall. `topScore` is the best score the
+ * stage that emptied the list saw, or null when there was nothing to score. */
+export interface RecallAbstention {
+  reason: RecallAbstentionReason;
+  floors: RecallScoreFloors;
+  topScore: number | null;
 }
 
 /** The verdict of a verifier on the task a retrieval informed. The slot exists on
@@ -145,6 +200,10 @@ export interface LedgerRetrieval {
   candidateCounts: { stage: RetrievalStage; total: number; recorded: number }[];
   /** Null until a verifier judges the task this retrieval informed. */
   verifier: LedgerVerifierOutcome | null;
+  /** Present only when this recall returned nothing: the reason, the floors in
+   * force and the best score seen. An entry without it either returned results or
+   * was written before native abstention existed. */
+  abstained?: RecallAbstention;
 }
 
 export interface LedgerCorrection {
@@ -319,6 +378,12 @@ export interface StoreMemoryInput {
   evidence?: string;
   key?: string;
   dependencies?: string[];
+  /** Free-form JSON. One key is read by recall: `names`, an array of strings
+   * naming what this record is about (a canonical name and its aliases). A recall
+   * with `requireNamedMatch` matches them as whole token phrases against the query
+   * — underscores and punctuation separate tokens, case and accents are ignored —
+   * so `"github actions"` matches "GitHub Actions" but not "actions" alone.
+   * Non-string entries are ignored; nothing else about the record changes. */
   metadata?: Record<string, JsonValue>;
   validFrom?: string;
   validUntil?: string;
@@ -414,6 +479,13 @@ export interface LocalMemoryOptions {
    * asks for `granularity: 'multi'`, so these settings change nothing on their
    * own. */
   granularity?: GranularityOptions;
+  /** Default score floors for every recall; a recall's own `minScores` replaces
+   * them key by key. See {@link RecallScoreFloors}. Defaults to none. */
+  minScores?: RecallScoreFloors;
+  /** Default for `RecallInput.requireNamedMatch`. Defaults to false. */
+  requireNamedMatch?: boolean | 'auto';
+  /** Default for `RecallInput.fuzzy`. Defaults to false. */
+  fuzzy?: boolean;
 }
 
 /** What retrieval actually does, as opposed to what was asked for. A hybrid
@@ -486,6 +558,33 @@ export interface RecallInput {
    * records, and each of those passes the same eligibility gate as any other
    * candidate before it can be returned. */
   granularity?: GranularityMode;
+  /** Score floors for this recall, replacing the instance defaults key by key.
+   * See {@link RecallScoreFloors}. */
+  minScores?: RecallScoreFloors;
+  /** The name/alias gate over `metadata.names` (see {@link StoreMemoryInput}).
+   *
+   * - `false` (default): names are not consulted; retrieval is unchanged.
+   * - `true`: only records whose names occur in the query as a whole phrase may
+   *   be returned. A query that names nothing returns `[]`, recorded in the ledger
+   *   as the abstention reason `no-named-match`.
+   * - `'auto'`: a record that declares names may only be returned through one of
+   *   them; a record without names is retrieved as usual.
+   *
+   * Either way the names stage is also a candidate channel fused beside the
+   * others, so a record named in the query is found even when no content term
+   * matches. */
+  requireNamedMatch?: boolean | 'auto';
+  /** Guarded single-edit typo tolerance (see `fuzzy.ts`): a query term with no
+   * exact posting in scope also matches stored terms one edit away that share its
+   * first two letters, with at least four letters each and no digits. Name phrases
+   * match per token under the same guard. Deterministic and model-free; off by
+   * default. Expanded terms score at half weight. */
+  fuzzy?: boolean;
+  /** A metadata predicate the kernel evaluates in the SQL of every channel, before
+   * ranking: each key must hold a string equal to the value, or to one of the
+   * values when an array is given. At most 32 keys and 64 values per key. This is
+   * a scope selector, not an authentication boundary. */
+  metadata?: Record<string, string | string[]>;
 }
 
 export interface ListMemoryInput {
@@ -617,6 +716,17 @@ export interface ContextPacket {
   conflicts: { key: string; ids: string[] }[];
   uncertainty: string[];
   abstained: boolean;
+  /** Why the packet is empty, present only when `abstained` is true. `budget` and
+   * `withheld` mean candidates existed but none fit the token budget or passed the
+   * provenance/outcome gate; the other reasons come from retrieval itself. */
+  abstention?: ContextAbstention;
+}
+
+/** The reason a context packet carries no items. */
+export interface ContextAbstention {
+  reason: RecallAbstentionReason | 'budget' | 'withheld';
+  floors: RecallScoreFloors;
+  topScore: number | null;
 }
 
 export interface CheckpointInput {
