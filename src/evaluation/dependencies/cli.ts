@@ -50,7 +50,7 @@ export async function dependenciesEvalCli(args = process.argv.slice(2)): Promise
     if (rareRuns !== undefined && (!Number.isSafeInteger(rareRuns) || rareRuns < 1 || rareRuns > 8)) throw new Error('--rare-runs must be an integer from 1 to 8');
     const started = Date.now();
     const result = await runDependencyCorpus(generateDependencyCorpus(seed, rareRuns === undefined ? {} : { rareRuns }));
-    console.log(JSON.stringify({ seed, ...(rareRuns === undefined ? {} : { rareRuns }), metrics: result.metrics, misses: result.misses, falseEdges: result.falseEdges, seconds: (Date.now() - started) / 1000 }));
+    console.log(JSON.stringify({ seed, ...(rareRuns === undefined ? {} : { rareRuns }), metrics: result.metrics, misses: result.misses, falseEdges: result.falseEdges, escapes: result.escapes, skipped: result.inference.skipped, seconds: (Date.now() - started) / 1000 }));
     return 0;
   }
   if (values['rare-runs'] !== undefined) throw new Error('--rare-runs applies to --seed runs only');

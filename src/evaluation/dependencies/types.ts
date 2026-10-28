@@ -124,7 +124,10 @@ export interface DependencyEvalMetrics {
 
 export interface DependencyEvalResult {
   metrics: DependencyEvalMetrics;
-  inference: { proposals: number; accepted: number; skipped: number; evidence: InferenceEvidence };
+  /** `skipped`: proposals whose eval-policy review threw, with the error. */
+  inference: { proposals: number; accepted: number; skipped: { dependent: string; premise: string; error: string }[]; evidence: InferenceEvidence };
+  /** Guarded stale executions, with the path that handed the stale dependent out. */
+  escapes: { dependent: string; premise: string; via: string[] }[];
   /** `coUses`: judged successful tasks whose reported used set held the dependent
    * and the premise that carries the pair (corpus-side count). */
   misses: { dependent: string; premise: string; reason: string; coUses: number }[];

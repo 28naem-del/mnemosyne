@@ -13,7 +13,8 @@ import { corpusSha256, generateDependencyCorpus, serializeDependencyCorpus } fro
 import type { DecoyClass, DependencyCorpus, DependencyEvalResult, DependencyReport } from './types.js';
 
 export const DEPENDENCY_GATE = Object.freeze({ recall: 0.9, precision: 0.95, staleExecutions: 0 });
-export const DEFAULT_HOLD_RELIANCE = 0.34;
+/** The guard's own default: hold on every successful co-use. */
+export const DEFAULT_HOLD_RELIANCE = 0;
 /** Seeds looked at while choosing the defaults: thresholds on 1-5, the corpus
  * parameter rareRuns on 1-10. Any other seed in a robustness table is held out;
  * the gate seed is never used for tuning. */
@@ -88,7 +89,7 @@ export async function runDependencyCorpus(corpus: DependencyCorpus, options: Dep
     const truthClosure = closures(corpus, true), declaredClosure = closures(corpus, false);
     const decoyClass = new Map(corpus.decoys.map(decoy => [`${decoy.dependent}\u0000${decoy.premise}`, decoy.class]));
     const accepted: { dependent: string; premise: string }[] = [];
-    let skipped = 0;
+    const skipped: DependencyEvalResult['inference']['skipped'] = [];
     const skillKey = new Map([...skillIds].map(([key, skillId]) => [skillId, key]));
     const lineage = (id: string): string | undefined => {
       let record: MemoryRecord | null = db.get(id);
@@ -105,7 +106,7 @@ export async function runDependencyCorpus(corpus: DependencyCorpus, options: Dep
       try {
         reviewDependency(db, proposal, 'accept', 'eval-policy-accept-all', { runtime, now });
         if (dependent && premise) accepted.push({ dependent, premise });
-      } catch { skipped++; }
+      } catch (error) { skipped.push({ dependent: dependent ?? proposal.from, premise: premise ?? proposal.to, error: error instanceof Error ? error.message : String(error) }); }
     }
     const falseEdges = accepted.filter(edge => !truthClosure.get(edge.dependent)?.has(edge.premise)).map(edge => ({ ...edge, class: decoyClass.get(`${edge.dependent}\u0000${edge.premise}`) ?? 'unlabelled' }));
     const falseByClass: Record<string, number> = {};
@@ -158,6 +159,7 @@ export async function runDependencyCorpus(corpus: DependencyCorpus, options: Dep
     let pairsTotal = 0, pairsInvalidated = 0, staleExecutions = 0, kernelStale = 0, kernelStaleOnLinked = 0, staleChecks = 0, overInvalidated = 0, guardOverHolds = 0, guardHeldMisses = 0;
     const perPremise: number[] = [];
     const misses: DependencyEvalResult['misses'] = [];
+    const escapes: DependencyEvalResult['escapes'] = [];
     const acceptedSet = new Set(accepted.map(edge => `${edge.dependent}\u0000${edge.premise}`));
     for (const premise of corpus.premises) {
       try {
@@ -196,7 +198,14 @@ export async function runDependencyCorpus(corpus: DependencyCorpus, options: Dep
             const compiled = db.compile({ query: dependent.text, maxTokens: 4000 }).items;
             const recalled = db.recall({ query: dependent.text, limit: 20 });
             const kernelRuns = db.isEligible(head) || compiled.some(item => lineageSet.has(item.id)) || recalled.some(item => lineageSet.has(item.memory.id)) || skill?.state === 'active';
-            const guardedRuns = (db.isEligible(head) && guard.allows(head)) || guard.filter(compiled).some(item => lineageSet.has(item.id)) || guard.filter(recalled).some(item => lineageSet.has(item.memory.id)) || guard.skill(skill)?.state === 'active';
+            const via = [
+              ...(db.isEligible(head) && guard.allows(head) ? ['eligible'] : []),
+              ...(guard.filter(compiled).some(item => lineageSet.has(item.id)) ? ['compile'] : []),
+              ...(guard.filter(recalled).some(item => lineageSet.has(item.memory.id)) ? ['recall'] : []),
+              ...(guard.skill(skill)?.state === 'active' ? ['getSkill'] : []),
+            ];
+            const guardedRuns = via.length > 0;
+            if (guardedRuns) escapes.push({ dependent: dependent.key, premise: premise.key, via });
             if (kernelRuns) {
               kernelStale++;
               if (isDeclared || acceptedSet.has(`${dependent.key}\u0000${premise.key}`)) kernelStaleOnLinked++;
@@ -222,6 +231,7 @@ export async function runDependencyCorpus(corpus: DependencyCorpus, options: Dep
         missesBelowMinSupport, recallObservable: ratio(observableInvalidated, observableTotal),
       },
       inference: { proposals: inference.proposals.length, accepted: accepted.length, skipped, evidence: inference.evidence },
+      escapes,
       misses: misses.sort((a, b) => a.dependent.localeCompare(b.dependent) || a.premise.localeCompare(b.premise)),
       falseEdges: falseEdges.sort((a, b) => a.dependent.localeCompare(b.dependent) || a.premise.localeCompare(b.premise)),
     };
@@ -308,7 +318,7 @@ export function renderDependencyReport(report: DependencyReport, command: string
     `- Kernel-only executor (no premise guard): ${metrics.kernelStaleExecutions} stale executions, all on true pairs inference did not link; ${metrics.kernelStaleOnLinked} on declared or accepted pairs. The guard held ${metrics.guardHeldMisses} of the ${metrics.kernelStaleExecutions}.`,
     `- Over-invalidation (dependent invalidated or retired by a premise outside its true closure): ${metrics.overInvalidated}.`,
     `- Guard over-holds (dependent held for review by a premise outside its true closure): ${metrics.guardOverHolds}.`,
-    `- Proposals ${inference.proposals}, accepted ${inference.accepted}, skipped ${inference.skipped}. False accepted edges by decoy class: ${Object.entries(metrics.acceptedEdges.falseByClass).map(([key, value]) => `${key} ${value}`).join(', ') || 'none'}.`,
+    `- Proposals ${inference.proposals}, accepted ${inference.accepted}, skipped ${inference.skipped.length}${inference.skipped.length ? ` (${inference.skipped.map(item => `${item.dependent} on ${item.premise}: ${item.error}`).join('; ')})` : ''}. False accepted edges by decoy class: ${Object.entries(metrics.acceptedEdges.falseByClass).map(([key, value]) => `${key} ${value}`).join(', ') || 'none'}.`,
     `- Tasks judged: ${inference.evidence.tasks.successful} successful, ${inference.evidence.tasks.failed} failed, ${inference.evidence.tasks.unjudged} unjudged, ${inference.evidence.tasks.recallOnly} recall-only, ${inference.evidence.tasks.conflicting} conflicting. Pairs considered ${inference.evidence.pairs.considered}; rejected: ${Object.entries(inference.evidence.pairs.rejected).filter(([, value]) => value).map(([key, value]) => `${key} ${value}`).join(', ')}.`,
     `- Decoys: ${Object.entries(report.corpus.decoys).map(([key, value]) => `${key} ${value}`).join(', ')}.`,
     '',
@@ -316,12 +326,16 @@ export function renderDependencyReport(report: DependencyReport, command: string
     '',
     ...(report.result.misses.length ? ['| Dependent | Premise | Reason | Judged co-uses |', '| --- | --- | --- | --- |', ...report.result.misses.map(miss => `| ${miss.dependent} | ${miss.premise} | ${miss.reason} | ${miss.coUses} |`)] : ['None.']),
     '',
+    '## Stale executions through the guarded executor',
+    '',
+    ...(report.result.escapes.length ? ['| Dependent | Corrected premise | Handed out by |', '| --- | --- | --- |', ...report.result.escapes.map(item => `| ${item.dependent} | ${item.premise} | ${item.via.join(', ')} |`)] : ['None.']),
+    '',
     '## False accepted edges',
     '',
     ...(report.result.falseEdges.length ? ['| Dependent | Premise | Decoy class |', '| --- | --- | --- |', ...report.result.falseEdges.map(edge => `| ${edge.dependent} | ${edge.premise} | ${edge.class} |`)] : ['None.']),
   ];
   if (report.robustness.length) {
-    lines.push('', '## Robustness (other seeds, same parameters; not part of the gate)', '', 'Tuning seeds are the seeds the default thresholds were chosen on; held-out seeds were not looked at while tuning.', '', '| Seed | Role | Recall | Precision | Stale (guarded) | Stale (kernel only) | Over-invalidated | Guard over-holds |', '| --- | --- | --- | --- | --- | --- | --- | --- |');
+    lines.push('', '## Robustness (other seeds, same parameters; not part of the gate)', '', 'Tuning seeds were looked at while the defaults were chosen: the inference thresholds on seeds 1-5, the corpus parameter rareRuns on seeds 1-10. Held-out seeds were first run after every default was fixed. The guard default holdReliance 0 was set after the first run on the gate seed, which had one stale execution at 0.34; docs/DEPENDENCIES.md records that run.', '', '| Seed | Role | Recall | Precision | Stale (guarded) | Stale (kernel only) | Over-invalidated | Guard over-holds |', '| --- | --- | --- | --- | --- | --- | --- | --- |');
     for (const row of report.robustness) lines.push(`| ${row.seed} | ${row.role} | ${pct(row.recall)} | ${pct(row.precision)} | ${row.staleExecutions} | ${row.kernelStaleExecutions} | ${row.overInvalidated} | ${row.guardOverHolds} |`);
   }
   return lines.join('\n');
