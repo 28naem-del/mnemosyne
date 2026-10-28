@@ -233,7 +233,6 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
   - Only the lexical path was measured.
 - **Benchmarks not scored.** MemSecBench is not scored (it needs the authors' cases and paid judge
   calls), and ConsolidationBench is still blocked.
-- **Docs not updated.** `site/` pages still describe the classic demo.
 
 ## [3.0.0-rc.1] — not published; folded into 3.0.0-rc.2
 
