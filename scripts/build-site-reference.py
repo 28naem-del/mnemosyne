@@ -24,6 +24,10 @@ GUIDES = (
     'TIMELINE', 'LOCAL-INTELLIGENCE', 'EVIDENCE-GATE',
 )
 DEST = SITE / 'docs/reference'
+# Source links resolve against the tag the website documents.
+SOURCE_REF = 'v3.0.0-rc.2'
+SHARE_IMAGE = '/assets/share-card.png'
+SHARE_ALT = 'Mnemosyne: the next agent starts wiser. Persistent, local-first memory for AI agents.'
 LINK = re.compile(r'<a\s+([^>]*?)href="([^"]+)"([^>]*)>(.*?)</a>', re.DOTALL)
 
 
@@ -58,7 +62,7 @@ def render() -> None:
             if resolved.is_relative_to(ROOT) and resolved.is_file():
                 relative = resolved.relative_to(ROOT)
                 if relative.parts[0] in ('src', 'examples', 'docs'):
-                    new = IDENTITY['repository'] + '/blob/v2.0.0-rc.8/' + quote(relative.as_posix())
+                    new = IDENTITY['repository'] + '/blob/' + SOURCE_REF + '/' + quote(relative.as_posix())
                     if parsed.fragment:
                         new += '#' + quote(parsed.fragment, safe='-_.~')
                     return f'<a {before}href="{escape(new, quote=True)}"{after}>{label}</a>'
@@ -67,8 +71,16 @@ def render() -> None:
         content = LINK.sub(reference_link, content)
         title_match = re.search(r'^#\s+(.+)$', source.read_text(), re.MULTILINE)
         title = title_match.group(1) if title_match else source.stem
+        site = IDENTITY['site'].rstrip('/')
+        repository = IDENTITY['repository']
+        page_title = escape(f'{title} — Mnemosyne', quote=True)
+        description = escape(f'Mnemosyne reference guide: {title}. Applies to 2.0.0 (stable) and 3.0.0-rc.2 (pre-release).', quote=True)
+        alt = escape(SHARE_ALT, quote=True)
         document = f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} — Mnemosyne</title><meta name="description" content="Documentation for the Mnemosyne 2.0 source release candidate."><meta name="theme-color" content="#070b12"><link rel="canonical" href="{escape(IDENTITY['site'], quote=True)}{target}"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">2.0.0-rc.8 / technical preview</p><aside class="note reference-notice"><strong>2.0 release candidate.</strong> These examples match the tagged source release. Test your workload and review the documented operational boundaries before production. <a href="../#build">Release access and status</a>.</aside><article class="article">{content}</article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="company-footer"><a href="../../#company">Built by {escape(IDENTITY['company'])} · Delaware</a><span>Fully self-funded to date</span><a href="mailto:{escape(IDENTITY['contact'], quote=True)}">Contact</a></div></footer></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} — Mnemosyne</title><meta name="description" content="{description}"><meta name="theme-color" content="#070b12"><link rel="canonical" href="{escape(site, quote=True)}{target}"><link rel="icon" href="../../favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../../apple-touch-icon.png"><link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../launch.css"><link rel="stylesheet" href="../../cinematic.css">
+<meta property="og:type" content="article"><meta property="og:title" content="{page_title}"><meta property="og:description" content="{description}"><meta property="og:url" content="{escape(site, quote=True)}{target}"><meta property="og:site_name" content="Mnemosyne"><meta property="og:image" content="{escape(site, quote=True)}{SHARE_IMAGE}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="{alt}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{page_title}"><meta name="twitter:description" content="{description}"><meta name="twitter:image" content="{escape(site, quote=True)}{SHARE_IMAGE}"><meta name="twitter:image:alt" content="{alt}">
+</head><body><a class="skip" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../../">mnemosyne</a><nav class="nav" aria-label="Reference navigation"><a href="../">Documentation</a><a href="../../trust/">Trust</a><a href="../../#company">Company &amp; contact</a></nav></header><main id="main" class="wrap reference-page"><p class="version">Reference · 2.0.0 stable / 3.0.0-rc.2 pre-release</p><aside class="note reference-notice"><strong>2.0.0 is the stable release (npm latest); 3.0.0-rc.2 is the newest pre-release (npm next).</strong> These guides describe the Local Engine and runtime shared by both; any source-file links point to the {SOURCE_REF} tag. From 3.0.0-rc.2 the Vector Engine APIs (<code>createMnemosyne</code> and its subpaths) live in <code>mnemosy-ai-legacy</code>, which is not on npm; see <a href="../#upgrade-3">Upgrading to 3.0.0-rc.2</a>. Test your workload and review the documented operational boundaries before production.</aside><article class="article">{content}</article><p><a href="../">Return to documentation</a></p></main><footer class="site-footer wrap"><div class="footer-links"><a href="../">Documentation</a><a href="../../trust/">Trust</a><a href="{repository}">GitHub</a><a href="{repository}/releases">Releases</a><a href="{repository}/blob/main/CHANGELOG.md">Changelog</a><a href="{repository}/issues">Support: GitHub issues</a><a href="{repository}/blob/main/SECURITY.md">Security</a><a href="{repository}/blob/main/CONTRIBUTING.md">Contributing</a><a href="{repository}/blob/main/LICENSE">MIT license</a></div><div class="company-footer"><a href="../../#company">Built by {escape(IDENTITY['company'])} · Delaware</a><span>Fully self-funded to date</span><a href="mailto:{escape(IDENTITY['contact'], quote=True)}">Contact</a></div></footer></body></html>
 '''
         for name in ('styles.css', 'launch.css', 'cinematic.css'):
             revision = hashlib.sha256((SITE / name).read_bytes()).hexdigest()[:12]
