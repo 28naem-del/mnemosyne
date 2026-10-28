@@ -70,6 +70,42 @@ const stateAt = (memory: LocalMemory, knownAt: string): string => replayState(me
 
 export interface StoredReceipt { ledgerId: string; sequence: number; recordedAt: string; receipt: ConsolidationReceipt }
 
+/**
+ * The highest ledger sequence in this scope. The ledger reads oldest first
+ * only, so this searches on "is there an entry after x" with one-row reads,
+ * O(log n), instead of paging the whole ledger.
+ */
+function ledgerHighWater(memory: LocalMemory): number {
+  const after = (sequence: number): boolean => memory.ledger({ after: sequence, limit: 1 }).entries.length > 0;
+  if (!after(0)) return 0;
+  let low = 0, high = 1, step = 1;
+  while (after(high)) { low = high; step *= 2; high += step; }
+  while (high - low > 1) { const mid = Math.floor((low + high) / 2); if (after(mid)) low = mid; else high = mid; }
+  return high;
+}
+
+/** Non-consolidation ledger writes in this scope after `sequence`, counted up to 1000. */
+function writesAfter(memory: LocalMemory, sequence: number): { count: number; capped: boolean } {
+  const page = memory.ledger({ after: sequence, limit: 1000 });
+  return { count: page.entries.filter((entry) => entry.event !== 'consolidation').length, capped: page.nextCursor !== undefined };
+}
+
+/** Which keys a caller trusts: the caller's own signer unless it explicitly opts out with `'any'`. */
+function trustedKeys(value: unknown, signer: ConsolidationSigner): readonly string[] | undefined {
+  if (value === 'any') return undefined;
+  if (value === undefined) return [signer.keyId];
+  return v.strings(value, 'trustedKeyIds', 64, 64);
+}
+
+/** Null when a receipt's digest, its signature and the diff signature it carries all check out; otherwise what failed. */
+export function receiptProblem(receipt: ConsolidationReceipt): string | null {
+  if (receipt?.schema !== 'mnemosyne-consolidation-receipt-v1') return 'unknown receipt schema';
+  if (receiptDigest(receipt) !== receipt.digest) return 'digest does not match the receipt';
+  if (!verifyConsolidationSignature(receiptSignatureMessage(receipt.digest), receipt.receiptSignature)) return 'receipt signature does not verify';
+  if (receipt.signature !== null && (receipt.candidateDiffSha256 === null || !verifyConsolidationSignature(diffSignatureMessage(receipt.candidateDiffSha256), receipt.signature))) return 'diff signature does not verify';
+  return null;
+}
+
 /** Every consolidation receipt in this scope, oldest first. */
 export function consolidationReceipts(memory: LocalMemory): StoredReceipt[] {
   return ledgerEntries(memory, ['consolidation']).map((entry) => ({ ledgerId: entry.id, sequence: entry.sequence, recordedAt: entry.recordedAt, receipt: entry.consolidation as unknown as ConsolidationReceipt }));
@@ -244,8 +280,15 @@ function replay(memory: LocalMemory, snapshot: Snapshot, cut: string, diff: Cons
 
 export interface GateConsolidationOptions {
   signer: ConsolidationSigner;
-  /** When set, a diff signed by any other key is an invalid run. */
-  trustedKeyIds?: string[];
+  /**
+   * Keys whose diffs may be judged. Defaults to `[signer.keyId]`, the gate's
+   * own key, so a diff signed by any other key is an `invalid_run`.
+   * `'any'` turns pinning off and accepts any diff whose signature verifies
+   * against the key embedded in the diff itself. That is UNSAFE: anyone can
+   * mint a key and sign a diff with it, so `'any'` proves only that the diff
+   * was not altered after signing, never who wrote it.
+   */
+  trustedKeyIds?: string[] | 'any';
   caps?: Partial<ConsolidationCaps>;
 }
 
@@ -297,8 +340,10 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
   const input = v.object(options, 'consolidation gate options');
   v.keys(input, ['signer', 'trustedKeyIds', 'caps'], 'consolidation gate options');
   if (!options.signer || typeof options.signer.sign !== 'function') throw new TypeError('A consolidation signer is required');
-  const trusted = options.trustedKeyIds === undefined ? undefined : v.strings(options.trustedKeyIds, 'trustedKeyIds', 64, 64);
+  const trusted = trustedKeys(options.trustedKeyIds, options.signer);
   const caps = resolveCaps(options.caps);
+  // Taken before the snapshot, so any write that could be missing from it is after this mark.
+  const scoringMark = ledgerHighWater(memory);
   const { snapshot, cut } = snapshotAt(memory);
   const stateNow = stateAt(memory, cut);
   const replaySet = buildReplaySet(memory);
@@ -307,9 +352,13 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
   let scores: ConsolidationScores | null = null;
   let faults: boolean[] = [];
   const invalid = verifyDiff(memory, diff, trusted);
+  const prior = consolidationReceipts(memory);
   const scoringHead = chainHead(memory);
   const provisional = passIdFor(scoringHead, typeof diff?.digest === 'string' ? diff.digest : 'invalid');
+  // A signed diff is single-use: once kept, it is never judged again, even after its rollback restored the state it was signed over.
+  const reused = invalid ? undefined : prior.find(({ receipt }) => receipt.action === 'gate' && receipt.verdict === 'kept' && receipt.candidateDiffSha256 === diff.digest);
   if (invalid) { verdict = 'invalid_run'; reason = invalid; }
+  else if (reused) { verdict = 'conflict'; reason = `this signed diff was already kept as ${reused.receipt.passId}; a diff is single-use, propose a fresh one`; }
   else if (diff.stateBefore !== stateNow) { verdict = 'conflict'; reason = 'the diff was proposed over a different state than the current one'; }
   else if (changedCandidates(memory, diff)) { verdict = 'conflict'; reason = `${changedCandidates(memory, diff)} candidate record(s) changed since the diff was signed`; }
   else {
@@ -350,7 +399,11 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
     let stateAfter = stateNow;
     if (head !== scoringHead) { verdict = 'conflict'; reason = 'another consolidation receipt was written while this pass was scored'; }
     else if (verdict === 'kept') {
-      if (stateAt(memory, cut) !== stateNow || changedCandidates(memory, diff)) { verdict = 'conflict'; reason = 'the store changed while this pass was scored'; }
+      // Any write after scoring, an insert included, voids the scores: a ledger entry after the mark, or a current state that differs from the scored one.
+      const later = writesAfter(memory, scoringMark);
+      const { cut: applyAt } = snapshotAt(memory);
+      if (later.count) { verdict = 'conflict'; reason = `the store changed while this pass was scored: ${later.count}${later.capped ? '+' : ''} ledger write(s) after scoring`; }
+      else if (stateAt(memory, applyAt) !== stateNow || stateAt(memory, cut) !== stateNow || changedCandidates(memory, diff)) { verdict = 'conflict'; reason = 'the store changed while this pass was scored'; }
       else {
         created = applyDiff(memory, diff, passId, false);
         const latest = created.reduce((time, entry) => { const at = memory.get(entry.id)!.createdAt; return at > time ? at : time; }, cut);
@@ -367,7 +420,10 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
   });
 }
 
-export interface ConsolidateOptions extends ProposeConsolidationOptions { trustedKeyIds?: string[] }
+export interface ConsolidateOptions extends ProposeConsolidationOptions {
+  /** As in {@link GateConsolidationOptions}: the signer's own key by default; `'any'` is unsafe. */
+  trustedKeyIds?: string[] | 'any';
+}
 
 /** Proposes and gates in one step. Returns null when the proposer had nothing to offer (no receipt is written). */
 export function consolidate(memory: LocalMemory, options: ConsolidateOptions): (ConsolidationResult & { diff: ConsolidationDiff }) | null {
@@ -376,7 +432,7 @@ export function consolidate(memory: LocalMemory, options: ConsolidateOptions): (
   const { trustedKeyIds, ...propose } = options;
   const diff = proposeConsolidation(memory, propose);
   if (!diff) return null;
-  return { ...gateConsolidation(memory, diff, { signer: options.signer, ...(trustedKeyIds ? { trustedKeyIds } : {}), ...(options.caps ? { caps: options.caps } : {}) }), diff };
+  return { ...gateConsolidation(memory, diff, { signer: options.signer, ...(trustedKeyIds === undefined ? {} : { trustedKeyIds }), ...(options.caps ? { caps: options.caps } : {}) }), diff };
 }
 
 export interface RollbackConsolidationResult {
@@ -395,16 +451,27 @@ export interface RollbackConsolidationResult {
  * Undoes one kept pass exactly: deletes the records it created when each is
  * byte-identical to its recorded fingerprint and nothing later depends on it.
  * Anything else is a `conflict` receipt and nothing changes.
+ *
+ * The kept receipt is verified first (digest, receipt signature, diff
+ * signature, and a receipt key in `trustedKeyIds`, the signer's own key by
+ * default): a receipt edited in the database is refused, not acted on.
+ * `restored` is true only when the records were removed AND the store is back
+ * at the pass's exact `stateBefore`; when later writes make that impossible,
+ * the reason says so.
  */
-export function rollbackConsolidation(memory: LocalMemory, passId: string, options: { signer: ConsolidationSigner }): RollbackConsolidationResult {
+export function rollbackConsolidation(memory: LocalMemory, passId: string, options: { signer: ConsolidationSigner; trustedKeyIds?: string[] | 'any' }): RollbackConsolidationResult {
   v.string(passId, 'passId', 160);
   const input = v.object(options, 'consolidation rollback options');
-  v.keys(input, ['signer'], 'consolidation rollback options');
+  v.keys(input, ['signer', 'trustedKeyIds'], 'consolidation rollback options');
   if (!options.signer || typeof options.signer.sign !== 'function') throw new TypeError('A consolidation signer is required');
+  const trusted = trustedKeys(options.trustedKeyIds, options.signer);
   const receipts = consolidationReceipts(memory);
-  const kept = receipts.find(({ receipt }) => receipt.action === 'gate' && receipt.passId === passId && receipt.verdict === 'kept')?.receipt;
-  if (!kept) throw new Error(`No kept consolidation pass ${passId} in this scope`);
-  if (receipts.some(({ receipt }) => receipt.action === 'rollback' && receipt.rollbackOf === passId && receipt.verdict === 'rolled_back')) throw new Error(`Consolidation pass ${passId} is already rolled back`);
+  const stored = receipts.find(({ receipt }) => receipt?.action === 'gate' && receipt.passId === passId && receipt.verdict === 'kept');
+  if (!stored) throw new Error(`No kept consolidation pass ${passId} in this scope`);
+  const kept = stored.receipt;
+  const problem = receiptProblem(kept) ?? (trusted && !trusted.includes(kept.receiptSignature.keyId) ? 'receipt is signed by a key that is not trusted' : null);
+  if (problem) throw new Error(`The receipt of consolidation pass ${passId} does not verify (${problem}); nothing was rolled back`);
+  if (receipts.some(({ receipt }) => receipt?.action === 'rollback' && receipt.rollbackOf === passId && receipt.verdict === 'rolled_back')) throw new Error(`Consolidation pass ${passId} is already rolled back`);
   const { cut } = snapshotAt(memory);
   const before = stateAt(memory, cut);
   return memory.atomic(() => {
@@ -419,7 +486,15 @@ export function rollbackConsolidation(memory: LocalMemory, passId: string, optio
       reason = `rollback of ${passId} refused: ${error.conflictCount} created record(s) changed or have later dependent work`;
     }
     const stateAfter = stateAt(memory, cut);
-    const restored = stateAfter === kept.stateBefore;
+    const identical = stateAfter === kept.stateBefore;
+    const restored = verdict === 'rolled_back' && identical;
+    if (verdict === 'rolled_back' && !identical) {
+      const later = writesAfter(memory, stored.sequence);
+      reason += later.count
+        ? `; the store is not back at the pass's stateBefore because ${later.count}${later.capped ? '+' : ''} later write(s) in this scope changed it after the pass`
+        : '; the store is not back at the pass\'s stateBefore: it changed after the pass outside this scope\'s ledger';
+    }
+    if (verdict === 'conflict' && identical) reason += '; the store already matches the pass\'s stateBefore because its created record(s) were removed outside this rollback';
     const receipt = seal({
       schema: 'mnemosyne-consolidation-receipt-v1', action: 'rollback', passId: passIdFor(head, `rollback\n${passId}`), rollbackOf: passId,
       replaySetSha256: null, verifierSha256: CONSOLIDATION_VERIFIER_SHA256, stateBefore: before,
