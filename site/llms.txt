@@ -1,0 +1,52 @@
+# Mnemosyne
+
+> Local-first, long-term memory for AI agents. One SQLite file keeps what an agent learned together with the evidence it came from, and serves it to any host over TypeScript, MCP, CLI or authenticated HTTP. When a source is corrected, every memory that depended on it is retired, so the next agent starts from what is still true.
+
+Package: `mnemosy-ai` on npm (`latest` = 2.0.0, the stable release, since 2026-10-27; `next` = 3.0.0-rc.2, the newest pre-release, a breaking release that moves the legacy vector engine out; the older 1.x engine stays installable as `mnemosy-ai@1`). MIT licensed. Node.js >= 22.16. No API key, database server or Docker is needed for the local engine.
+
+Install and connect:
+- `npm install mnemosy-ai` (stable; or pin `mnemosy-ai@2.0.0`) or `npm install mnemosy-ai@next` (pre-release; or pin `mnemosy-ai@3.0.0-rc.2`), then `npx --no-install mnemosy demo` runs an offline demonstration. From 3.0.0-rc.2, `mnemosy demo` is a five-moment demo whose PROOF lines are measured live on synthetic corpora: replay, a correction that reaches dependents nobody linked, bisect, the poisoning suite and consolidation. `mnemosy demo --classic` runs the 2.0.0 demo.
+- MCP server for Claude Code (`.mcp.json`), Cursor (`.cursor/mcp.json`) or any MCP client: command `npx`, args `-y -p mnemosy-ai@2.0.0 mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace <workspace> --agent <agent>` (stable), or `mnemosy-ai@3.0.0-rc.2` / `mnemosy-ai@next` in place of `mnemosy-ai@2.0.0` for the pre-release. Add `--read-only` to omit mutation tools. 16 tools named `memory_*`: store, recall, context, correct, checkpoint, resume, observe, inspect, source, skill, model, entity, traverse, jobs, branch_preview, capture; `memory_forget` is added only with `--allow-destructive`.
+- TypeScript: `createLocalMemory` from `mnemosy-ai/local` (SQLite engine); `MemoryAgent` from `mnemosy-ai/agent`; `MemoryRuntime` from `mnemosy-ai/runtime`; `createMnemosyne` from `mnemosy-ai` 2.x (the service-backed vector engine; from 3.0.0-rc.2 it lives in the separate `mnemosy-ai-legacy` package, which is not on npm yet: build it from a checkout or stay on `mnemosy-ai@2`, see docs/MIGRATION-v3.md).
+
+Measured results (methods and caveats in the linked pages): LongMemEval-S answer accuracy 409 of 500 (81.8%, 95% CI 78.2-84.9) with reranked retrieval read by claude-sonnet-4.6 and judged by claude-haiku-4.5; LoCoMo reranker gain MRR@10 +0.163; a matched comparison run with every loss published. Two release targets are not met and are disclosed: recall latency at one million records (p95 139-223 ms against a 50 ms goal) and contextual reranking (71.98% all-evidence hit against a 72.80% gate, 0.82 points short).
+
+3.0.0-rc.2 pre-release, measured offline, with no LLM judge (protocols and what is not claimed are in docs/BENCHMARKS-TRUST.md):
+- PrecisionMemBench: 70/77 single-turn and 11/12 session turns, protocol-exact, with no wrapper-side filter, using the opt-in names gate and fuzzy matching. This is the public fixture the controls were designed against, so it is not a held-out estimate.
+- Poisoning suite v1 with consolidation on: zero escapes (0/167 attacks, 0/60 false quarantines, 227 synthetic cases, reproducible).
+- Dependency suite v1 (synthetic, seed 20261028, 120 corrections, accept-all eval reviewer): invalidation recall 96.05%, precision 98.06%, 0 stale procedures through the premise guard. The zero is the guard's: inference alone leaves 7 of 248 checks stale, and the guard's false-hold rate is 92.78%.
+- Replay determinism: 1000/1000 identical states across two readers and 24,000/24,000 as-of answers equal to ground truth. Bisect: precision 1.00 in about 1 s on a 2,000-record synthetic store (bar 60 s).
+- Default retrieval did not move: LoCoMo and LongMemEval-S recall are identical before and after.
+
+## Docs
+
+- [README](https://github.com/28naem-del/mnemosyne/blob/main/README.md): what it is, install, MCP config, measured results with limits, capability table.
+- [Quickstart](https://github.com/28naem-del/mnemosyne/blob/main/docs/quickstart.md): run the demos, choose an engine, first integration.
+- [Local API](https://github.com/28naem-del/mnemosyne/blob/main/docs/api.md): `createLocalMemory` store, recall, correct, compile, forget, scopes and trust.
+- [Agent lifecycle](https://github.com/28naem-del/mnemosyne/blob/main/docs/AGENT.md): `MemoryAgent`, checkpoints, handoff and resume.
+- [Context contract](https://github.com/28naem-del/mnemosyne/blob/main/docs/CONTEXT.md): budgeted context compilation, citations, uncertainty.
+- [Runtime](https://github.com/28naem-del/mnemosyne/blob/main/docs/RUNTIME.md): jobs, skill trials, project models, HTTP service, inspector and Python client.
+- [Local models](https://github.com/28naem-del/mnemosyne/blob/main/docs/LOCAL-MODELS.md): optional CPU embedder and reranker, hybrid recall, dense index modes.
+- [Provider tools](https://github.com/28naem-del/mnemosyne/blob/main/docs/PROVIDER-TOOLS.md): the six virtual memory operations exposed as OpenAI Responses functions and Gemini function declarations, and as Claude's native memory tool.
+- [Claude native memory commands](https://github.com/28naem-del/mnemosyne/blob/main/docs/ANTHROPIC-MEMORY.md): a client-side handler for Anthropic's native `memory_20250818` tool that stores its virtual files with revisions and provenance.
+- [Gradual migration bridge](https://github.com/28naem-del/mnemosyne/blob/main/docs/BRIDGE.md): read-only adapter over a previous memory system with staged routing.
+- [Import and export](https://github.com/28naem-del/mnemosyne/blob/main/docs/MIGRATION.md): eleven import profiles, preview, atomic apply, undo.
+- [Version 2 migration](https://github.com/28naem-del/mnemosyne/blob/main/docs/MIGRATION-v2.md): changes from the 1.x `latest` line.
+- [Version 3 migration](https://github.com/28naem-del/mnemosyne/blob/main/docs/MIGRATION-v3.md): the Qdrant engine (`createMnemosyne`, `/core`, `/cognitive`, `/graph`, `/broadcast`, `/pipeline`, `/cache`, `/tools`) moves to `mnemosy-ai-legacy`; blind `dream()`/`consolidate()` removed.
+- [Operations](https://github.com/28naem-del/mnemosyne/blob/main/docs/OPERATIONS.md): whole-database backup, integrity verification and restore into a new path.
+- [Deployment](https://github.com/28naem-del/mnemosyne/blob/main/docs/deployment.md): HTTP service, container, authentication.
+- [Benchmarks and trust evidence](https://github.com/28naem-del/mnemosyne/blob/main/docs/BENCHMARKS-TRUST.md): 3.0.0-rc.2 numbers with exact protocols, commands and what is not claimed.
+- [Consolidation gate](https://github.com/28naem-del/mnemosyne/blob/main/docs/CONSOLIDATION.md) and [signing design](https://github.com/28naem-del/mnemosyne/blob/main/docs/CONSOLIDATION-SIGNING.md): signed consolidation passes, kept only when replayed outcomes do not regress, undone in one call.
+- [Inferred dependencies](https://github.com/28naem-del/mnemosyne/blob/main/docs/DEPENDENCIES.md): undeclared dependencies proposed from co-use, reviewer-accepted through `correct()`, premise-linked skills.
+- [The five-moment demo](https://github.com/28naem-del/mnemosyne/blob/main/docs/DEMO.md): what each `mnemosy demo` moment shows, proves and does not prove.
+- [Evaluation](https://github.com/28naem-del/mnemosyne/blob/main/docs/EVALUATION.md) and [Benchmarks](https://github.com/28naem-del/mnemosyne/blob/main/docs/evaluation/BENCHMARKS.md): protocols, raw reports, fingerprints.
+- [Matched comparison run](https://github.com/28naem-del/mnemosyne/blob/main/COMPARISON.md): the 2.0.0 matched run, losses included.
+- [Changelog](https://github.com/28naem-del/mnemosyne/blob/main/CHANGELOG.md): every change with its commit and every unmet gate.
+- [Architecture](https://github.com/28naem-del/mnemosyne/blob/main/ARCHITECTURE.md): engines, storage, retrieval path.
+- [Examples](https://github.com/28naem-del/mnemosyne/blob/main/examples/README.md): 15 runnable examples, offline fixtures marked.
+
+## Optional
+
+- [AGENTS.md](https://github.com/28naem-del/mnemosyne/blob/main/AGENTS.md): instructions for coding agents working inside this repository.
+- [Security policy](https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md) and [Contributing](https://github.com/28naem-del/mnemosyne/blob/main/CONTRIBUTING.md).
+- [Website](https://mnemosy.ai), its [trust page](https://mnemosy.ai/trust/) and [npm package page](https://www.npmjs.com/package/mnemosy-ai).

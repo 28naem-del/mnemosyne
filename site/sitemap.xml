@@ -1,7 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://mnemosy.ai/</loc></url>
-  <url><loc>https://mnemosy.ai/features/</loc></url>
-  <url><loc>https://mnemosy.ai/compare/</loc></url>
-  <url><loc>https://mnemosy.ai/docs/</loc></url>
+  <url><loc>https://mnemosy.ai/</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/trust/</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/features/</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/compare/</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/AGENT-EVALUATION.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/AGENT.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/ANTHROPIC-MEMORY.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/BRIDGE.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/CONTEXT.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/EVIDENCE-GATE.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/LOCAL-INTELLIGENCE.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/MAINTENANCE.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/MIGRATION-v2.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/MIGRATION.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/OPERATIONS.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/PROFILES.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/PROVIDER-TOOLS.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/RECALL.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/RUNTIME.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/TIMELINE.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/docs/reference/deployment.html</loc><lastmod>2026-10-28</lastmod></url>
+  <url><loc>https://mnemosy.ai/llms.txt</loc><lastmod>2026-10-28</lastmod></url>
 </urlset>
