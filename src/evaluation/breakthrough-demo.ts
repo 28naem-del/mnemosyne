@@ -24,8 +24,10 @@
 import { performance } from 'node:perf_hooks';
 import * as v from '../local/validation.js';
 import { momentRemembers } from './breakthrough/moment-1.js';
+import { momentDownstream } from './breakthrough/moment-2.js';
 import { momentBisect } from './breakthrough/moment-3.js';
 import { momentPoisoning } from './breakthrough/moment-4.js';
+import { momentConsolidation } from './breakthrough/moment-5.js';
 import type { BreakthroughDemoOptions, BreakthroughDemoReport, Moment, MomentDefinition } from './breakthrough/types.js';
 
 export type { BreakthroughDemoOptions, BreakthroughDemoReport, Moment, MomentContext, MomentDefinition, MomentOutcome, MomentProof, MomentId } from './breakthrough/types.js';
@@ -42,8 +44,8 @@ export const BREAKTHROUGH_MOMENTS: readonly MomentDefinition[] = [
   },
   {
     id: 2, title: 'I corrected one fact and it fixed everything downstream, including things I never linked',
-    proofLabel: 'downstream repair', threshold: 'measured by the dependency moment',
-    pendingNote: 'arrives with unit C (src/dependencies: inferred dependencies accepted through correct())',
+    proofLabel: 'downstream repair', threshold: 'X/X undeclared invalidated, Y/Y accepted edges true, 0 stale, decoy survives',
+    run: momentDownstream,
   },
   {
     id: 3, title: 'It found the belief that made it wrong',
@@ -57,8 +59,8 @@ export const BREAKTHROUGH_MOMENTS: readonly MomentDefinition[] = [
   },
   {
     id: 5, title: 'It got better on its own, and handed me the receipt',
-    proofLabel: 'consolidation receipts', threshold: 'measured by the consolidation moment',
-    pendingNote: 'arrives with unit B (src/consolidation: a dream kept because it helped, one rolled back, with the receipt)',
+    proofLabel: 'consolidation receipts', threshold: 'kept >= 1 with delta >= 0 and hold-out >= 0, rolled back >= 1, rollback restores the identical stateSha256, chain verifies',
+    run: momentConsolidation,
   },
 ];
 
@@ -67,7 +69,10 @@ const LIMITATIONS = [
   'Retrieval is the zero-model lexical path; the hybrid (dense + reranker) path is not exercised here.',
   'Every number is measured live on this machine during this run; wall-clock timings vary with the machine.',
   'Poisoning results are "zero escapes on suite v1" for the cases in the suite, reproducible; not a claim about attacks outside it.',
-  'Moments without an implementation report `pending` and are counted neither as passed nor in the total.',
+  'Moments 2 and 5 run on small hand-built synthetic scenarios (a few records, tens of tasks); their PROOF is about this scenario. Suite-level numbers live in reports/dependencies/v1 and docs/CONSOLIDATION.md.',
+  'Moment 2 accepts every proposal as the reviewer would after checking; in production each acceptance is a human decision, and the premise guard is not used in the demo.',
+  'Moment 5 signs receipts with the consolidation module\'s fixed demo key, so receipts are reproducible; never sign a real store with it.',
+  'A moment registered without an implementation reports `pending` and is counted neither as passed nor in the total.',
 ];
 
 function integer(value: unknown, fallback: number, min: number, max: number, label: string): number {
@@ -128,6 +133,7 @@ export async function runBreakthroughDemo(options: BreakthroughDemoOptions = {})
     .map((moment) => `${moment.id}. ${moment.title} (${BREAKTHROUGH_MOMENTS.find((entry) => entry.id === moment.id)?.pendingNote ?? 'pending'})`);
   const durationMs = Math.round(performance.now() - started);
   out('');
-  out(`${passed}/${implemented.length} implemented moments proved, ${pending.length} pending (${moments.filter((moment) => moment.proof.passed === 'pending').map((moment) => moment.id).join(', ') || 'none'}). Total ${(durationMs / 1000).toFixed(1)} s.`);
+  if (!pending.length) out(`${passed}/${implemented.length} moments proved. Total ${(durationMs / 1000).toFixed(1)} s.`);
+  else out(`${passed}/${implemented.length} implemented moments proved, ${pending.length} pending (${moments.filter((moment) => moment.proof.passed === 'pending').map((moment) => moment.id).join(', ') || 'none'}). Total ${(durationMs / 1000).toFixed(1)} s.`);
   return { generatedAt, durationMs, moments, passed, total: implemented.length, pending, limitations: LIMITATIONS };
 }
