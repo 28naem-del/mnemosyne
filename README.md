@@ -8,13 +8,48 @@
 
 **The next agent starts wiser.**
 
+**Auditable memory for agents that act. Past beliefs replay exactly, corrections cascade through recorded dependencies, and consolidation is outcome-gated and reversible.**
+
 **Mnemosyne is local-first, long-term memory for AI agents: one SQLite file that keeps what an agent learned together with the evidence it came from, served to any host over TypeScript, MCP, CLI or HTTP.** When a source is corrected, every memory that depended on it is retired, so the next agent starts from what is still true instead of repeating a stale lesson.
 
 Mnemosyne connects memory to its consequences: a corrected requirement can retire a dependent procedure, a failed trial can withhold a skill, and a new agent can resume from an explicit handoff. Run the local engine in one SQLite file; connect your host through TypeScript, MCP, CLI, or authenticated HTTP with a Python client and live inspector.
 
 **2.0.0 · Stable release · MIT · Node.js ≥22.16**
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0) · [Contributing](CONTRIBUTING.md)
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [npm](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0) · [Contributing](CONTRIBUTING.md)
+
+## New in 3.0.0 (release candidate in this source tree, not yet on npm)
+
+The 3.0.0 line is built and measured in this repository, but it is not published: `npm install mnemosy-ai` still installs 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
+
+- **Precision you can switch on.** The new opt-in controls are a names gate and guarded single-edit fuzzy matching. Empty answers are native abstentions, and the ledger records why. With the controls on, the kernel scores **70/77 single-turn cases and 12/12 session turns on PrecisionMemBench**. That run was protocol-exact, in retrieval mode, with no LLM judge and no wrapper-side filter, and the lexical and hybrid paths score the same.
+  - For comparison, the kernel scored 22/77 unfiltered and 48/77 with the fixture-tuned wrapper filters of rc.1.
+  - The benchmark fixture is public, and the controls were designed against it, so this is not a held-out estimate.
+  - The 7 remaining cases need lifecycle fields that the single-turn protocol does not send.
+  - The default retrieval path is unchanged: LoCoMo and LongMemEval-S recall are identical before and after.
+- **Consolidation that has to earn its keep.** A consolidation pass is a signed diff, replayed against the agent's own recorded outcomes. It is kept only when nothing regresses and no invariant breaks, and one command undoes it, back to the identical state hash. With consolidation on, the poisoning suite v1 run (227 synthetic cases, reproducible) has **zero escapes: 0 of 167 attacks escaped and 0 of 60 benign controls were falsely quarantined**, across 294 gate decisions. An ungated control lets 85 of the 167 attacks through. [Consolidation gate](docs/CONSOLIDATION.md) · [Signing and receipts](docs/CONSOLIDATION-SIGNING.md)
+- **Corrections that reach what nobody linked.** Dependencies are inferred from successful co-use and proposed for review. Once accepted, they are declared through `correct()`, and runtime skills can be linked to their premises. The measurement is on a synthetic seeded corpus (dependency suite v1, seed 20261028, 120 corrections):
+  - invalidation recall is **96.05 %**;
+  - precision of accepted edges is **98.06 %**;
+  - **0** stale procedures ran through the premise guard.
+
+  [Inferred dependencies](docs/DEPENDENCIES.md)
+- **A demo that measures itself.** `mnemosy demo` walks through five moments on synthetic corpora, offline, on the zero-model lexical path:
+  1. a past belief replayed exactly;
+  2. a correction reaching dependents nobody linked;
+  3. `bisect` naming the record that caused a wrong answer;
+  4. a poisoning attempt caught, with the suite run live;
+  5. a consolidation kept, another rolled back, and the kept one undone.
+
+  Each moment prints a PROOF line measured in that run. [What each moment proves](docs/DEMO.md)
+
+```sh
+npm run build
+node dist/cli/index.js demo             # five moments, offline, each PROOF line measured live
+node dist/cli/index.js demo --classic   # the previous single-scenario demo
+```
+
+3.0 is a breaking release: the legacy vector engine moves to `mnemosy-ai-legacy` ([3.0 migration](docs/MIGRATION-v3.md)). The draft release notes are in the [changelog](CHANGELOG.md).
 
 ## Install and connect an agent
 
@@ -94,7 +129,7 @@ npm run demo
 npm run demo:learning
 ```
 
-The first demo uses a temporary database to show a handoff, correction, private scope and forgetting. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
+In 2.0.0, the first demo uses a temporary database to show a handoff, correction, private scope and forgetting. In this source tree (3.0.0 draft), `mnemosy demo` is the [five-moment demo](docs/DEMO.md) and the 2.0.0 demo is `mnemosy demo --classic`. The learning demo exercises capture, a scripted observation job, skill trials, explicit sharing and correction-driven retirement. Both run real local APIs with deterministic fixtures and no model calls. [Choose your next example](examples/README.md).
 
 For full contributor validation, run `npm run check`, `npm run check:docs` and `npm run check:public`. 2.0.0 is the 2.0.0-rc.10 candidate promoted to stable with no source change (one dependency security patch, `zod` 4.6.2 → 4.6.7, is noted in the changelog); it carries the Tier 1 retrieval work (hybrid default, cross-encoder reranking, opt-in dense index and temporal routing) over the RC9 packaging. The recorded evaluation reports remain historical measurements of the versions and conditions they name.
 
@@ -145,7 +180,7 @@ console.log(context.text); // Send eligible context to your responder.
 memory.close();
 ```
 
-The old procedure remains inspectable but is no longer eligible as current guidance. Dependencies must be declared by the controller. `observed` means the host recorded the source; it does not certify its truth. The default context counter measures UTF-8 bytes conservatively, not a model's tokenizer. [Context contract](docs/CONTEXT.md).
+The old procedure remains inspectable but is no longer eligible as current guidance. Dependencies are declared by the controller. In 3.0, the [dependencies module](docs/DEPENDENCIES.md) can also propose undeclared dependencies from successful co-use, and a reviewer accepts or rejects each one. `observed` means the host recorded the source; it does not certify its truth. The default context counter measures UTF-8 bytes conservatively, not a model's tokenizer. [Context contract](docs/CONTEXT.md).
 
 ## Tune the dense index
 
