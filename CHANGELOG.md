@@ -191,6 +191,12 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
   a different configuration hash, while calls without the new options keep their old hash.
 - **`recallHybrid` rejects the precision options with a `TypeError`.** It does not apply them.
 
+### Fixed
+
+- **`mnemosy demo` moment 1 could intermittently hang for about 120 s and fail with a replay
+  child-process timeout (`ETIMEDOUT`).** The replay input (about 73 KB) was passed to the child over
+  stdin, which can stall on macOS; it is now passed as a file in the demo's temporary directory.
+
 ### Known limits
 
 - **PrecisionMemBench.** The names gate abstains, by design, on queries that refer to a named

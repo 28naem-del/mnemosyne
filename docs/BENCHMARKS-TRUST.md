@@ -448,7 +448,7 @@ not show is in [DEMO.md](DEMO.md).
 | 2. A correction fixes what nobody linked | Inferred dependencies accepted through `correct()`, then the premise is corrected | undeclared dependents invalidated X/X, accepted edges true Y/Y, 0 stale | measured live in each run |
 | 3. It found the belief that made it wrong | `bisect` over a 2000-record synthetic store with one seeded false record | blame set equals the seeded record, under 60 s | precision 1.00, 1.53 s |
 | 4. Someone tried to poison it, and it caught it | M3 refusal shown in the ledger, then suite v1 run live | 0 escapes, false quarantines below 2 %, 0 errors | 227 cases, 0 escapes, 0 false quarantines, 0 errors |
-| 5. One consolidation kept, two rolled back, the kept one undone | One consolidation pass kept, one rolled back, the kept one undone to the identical hash, chain verified | kept ≥ 1 with outcome delta ≥ 0, rolled back ≥ 1, identical hash, chain ok | measured live in each run (the 2026-10-28 run: kept 1 at delta +2, rolled back 2, chain 4 receipts) |
+| 5. One consolidation kept, two rolled back, the kept one undone | One consolidation pass kept, two rolled back, the kept one undone to the identical hash, chain verified | kept ≥ 1 with outcome delta ≥ 0, rolled back ≥ 1, identical hash, chain ok | measured live in each run (the 2026-10-28 run: kept 1 at delta +2, rolled back 2, chain 4 receipts) |
 
 Counts are recomputed on every run, and times move with the machine. The demo's poisoning moment
 is the same runner as `npm run poisoning`.
