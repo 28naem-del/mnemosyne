@@ -179,6 +179,7 @@
     "demo:learning": "node dist/cli/index.js learning-demo",
     "demo:record": "node dist/cli/index.js demo --record",
     "evaluate": "node dist/cli/index.js evaluate",
+    "poisoning": "node dist/evaluation/poisoning/cli.js --cases benchmarks/poisoning/v1/cases.jsonl --out reports/poisoning/v1",
     "posttest": "node scripts/check-env-gated-tests.mjs",
     "prepublishOnly": "npm run clean && npm run check",
     "pretest": "npm run build",

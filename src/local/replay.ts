@@ -146,6 +146,8 @@ export interface ReplayProvenance {
   provenance?: LedgerEntry['provenance'];
   /** Present on `correction` entries. */
   correction?: LedgerEntry['correction'];
+  /** Present on `promotion` entries: the decision on this record, granted or quarantined. */
+  promotion?: LedgerEntry['promotion'];
 }
 
 export interface ReplayDiffRecord {
@@ -183,7 +185,7 @@ function provenanceOf(memory: ReplaySource, id: string): ReplayProvenance[] {
   if (typeof memory.ledger !== 'function') return [];
   let page: LedgerPage;
   try {
-    page = memory.ledger({ memoryId: id, events: ['store', 'correction'], limit: 100 });
+    page = memory.ledger({ memoryId: id, events: ['store', 'correction', 'promotion'], limit: 100 });
   } catch {
     return [];
   }
@@ -191,6 +193,7 @@ function provenanceOf(memory: ReplaySource, id: string): ReplayProvenance[] {
     ledgerId: entry.id, sequence: entry.sequence, event: entry.event, recordedAt: entry.recordedAt,
     ...(entry.provenance === undefined ? {} : { provenance: entry.provenance }),
     ...(entry.correction === undefined ? {} : { correction: entry.correction }),
+    ...(entry.promotion === undefined ? {} : { promotion: entry.promotion }),
   }));
 }
 

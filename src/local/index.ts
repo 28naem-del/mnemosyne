@@ -21,6 +21,7 @@ import { acquireSharedEmbedder, releaseSharedEmbedder } from './embedding/shared
 // after './ledger.js' and directly after './reranking/shared.js', and this gap
 // is the one place a third insertion merges without a conflict.
 import type { LedgerTemporalRouting } from './types.js';
+import type { LedgerPromotion, PromoteInput, PromotionCorroboration, PromotionDecision } from './types.js';
 import { parseTemporalQuery, TEMPORAL_ROUTING_CONFIDENCE_FLOOR, TEMPORAL_WINDOW_BOUNDS, WHEN_INTENT_QUERY_RE, isTimeBearingText, type TemporalWindow } from './temporal-query.js';
 import { acquireSharedReranker, releaseSharedReranker } from './reranking/shared.js';
 import { buildContextPassage, contextBudget, contextualChannel, type ContextNeighbour } from './reranking/context.js';
@@ -106,6 +107,8 @@ const SCOPE = "workspace_id = ? AND (agent_id = ? OR visibility = 'workspace')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const LOCAL_SNAPSHOT_LIMITS = Object.freeze({ maxRecords: 100000, maxBytes: 32 * 1024 * 1024 });
 const TRUST_LEVEL = { untrusted: 0, observed: 1, verified: 2 } as const;
+/** Nodes one promotion ancestry walk may visit before it gives up and quarantines. */
+const PROMOTION_ANCESTRY_LIMIT = 10000;
 
 export class CheckpointConflictError extends Error {
   readonly taskId: string;
@@ -605,7 +608,7 @@ export class LocalMemory {
    * Appends one ledger entry. Writes are part of the caller's transaction, so a
    * rolled-back belief change leaves no ledger entry claiming it happened.
    */
-  #appendLedger(event: LedgerEvent, memoryId: string | null, payload: Partial<Pick<LedgerEntry, 'provenance' | 'retrieval' | 'correction' | 'outcome' | 'erasure'>>, results?: { memoryId: string; rank: number; score: number }[], candidates?: LedgerCandidate[]): string {
+  #appendLedger(event: LedgerEvent, memoryId: string | null, payload: Partial<Pick<LedgerEntry, 'provenance' | 'retrieval' | 'correction' | 'outcome' | 'erasure' | 'promotion'>>, results?: { memoryId: string; rank: number; score: number }[], candidates?: LedgerCandidate[]): string {
     if (!this.#ledgerEnabled) return '';
     const id = randomUUID();
     // Retrieval results and candidates live in their own tables so erasure removes
@@ -728,10 +731,11 @@ export class LocalMemory {
    */
   ledger(query: LedgerQuery = {}): LedgerPage {
     this.#assertOpen();
-    v.keys(v.object(query, 'ledger query'), ['limit', 'after', 'events', 'memoryId'], 'ledger query');
+    v.keys(v.object(query, 'ledger query'), ['limit', 'after', 'events', 'event', 'memoryId'], 'ledger query');
     const limit = v.limit(query.limit, 100, 1000);
     if (query.after !== undefined && (typeof query.after !== 'number' || !Number.isSafeInteger(query.after) || query.after < 0)) throw new TypeError('after must be a nonnegative integer cursor');
     const events = query.events === undefined ? [] : [...new Set(v.strings(query.events, 'events', LEDGER_EVENTS.length).map(event => v.enumeration(event, LEDGER_EVENTS, 'ledger event')))];
+    if (query.event !== undefined && !events.includes(v.enumeration(query.event, LEDGER_EVENTS, 'ledger event'))) events.push(query.event);
     const memoryId = query.memoryId === undefined ? undefined : v.string(query.memoryId, 'memoryId', 160);
     const rows = this.#db.prepare(`SELECT sequence,id,workspace_id,agent_id,event,recorded_at,memory_id,data FROM local_ledger
       WHERE workspace_id=? AND agent_id=? AND sequence>?
@@ -2473,6 +2477,157 @@ export class LocalMemory {
     });
   }
 
+  /**
+   * Every provenance node a record descends from, itself included: `memory:<id>`
+   * for each record reached over `dependencies`, `supersedes` and
+   * `invalidation.sourceId`, plus `source:<uri>` and `author:<author>` for each of
+   * them. Only records visible in this scope are expanded; a hidden id is kept as
+   * an opaque node. Bounded by a visited set and `PROMOTION_ANCESTRY_LIMIT`.
+   */
+  #ancestors(id: string): { nodes: Set<string>; complete: boolean } {
+    const nodes = new Set<string>(), seen = new Set<string>(), pending = [id];
+    for (let index = 0; index < pending.length; index++) {
+      const current = pending[index];
+      if (seen.has(current)) continue;
+      if (nodes.size >= PROMOTION_ANCESTRY_LIMIT) return { nodes, complete: false };
+      seen.add(current);
+      nodes.add(`memory:${current}`);
+      const record = this.get(current);
+      if (!record) continue;
+      nodes.add(`source:${record.source.uri}`);
+      if (record.source.author !== undefined) nodes.add(`author:${record.source.author}`);
+      pending.push(...record.dependencies);
+      if (record.supersedes) pending.push(record.supersedes);
+      if (record.invalidation) pending.push(record.invalidation.sourceId);
+    }
+    return { nodes, complete: true };
+  }
+
+  /**
+   * Raises a record's trust only when independent evidence corroborates it
+   * (rule M3, `ancestry-disjoint-v1`). Granted iff the candidate is an active,
+   * owned, non-checkpoint record below `to`; every dependency is at least `to`;
+   * at least two distinct active corroborators at least `to` are visible here;
+   * every corroborator's ancestry is disjoint from the candidate's; and at least
+   * two corroborators are disjoint from each other. Anything else is quarantined
+   * and changes nothing but the ledger.
+   *
+   * A grant supersedes the candidate with a copy at the higher trust instead of
+   * editing it in place: trust is part of the bitemporal state, and an in-place
+   * edit would rewrite what a replay at an earlier cut point reports. For the same
+   * reason a candidate with active dependents is quarantined: dependencies are
+   * immutable, and superseding their source would orphan them.
+   *
+   * Both outcomes are written as a `promotion` ledger event whose verdict names the
+   * failing condition, including any shared ancestor. Outcome-gated and
+   * reversible (forget the promoted record), not a proof of truth.
+   */
+  promote(id: string, input: PromoteInput): PromotionDecision {
+    v.string(id, 'id', 160);
+    v.keys(v.object(input, 'promotion'), ['to', 'corroboration', 'reason'], 'promotion');
+    const to = v.enumeration(input.to, ['observed', 'verified'] as const, 'promotion target');
+    const named = v.strings(input.corroboration, 'corroboration', 16, 160);
+    const reason = v.string(input.reason, 'reason', 4096);
+    const rule = 'ancestry-disjoint-v1' as const;
+    const list = (nodes: readonly string[]): string => nodes.length > 3 ? `${nodes.slice(0, 3).join(', ')} and ${nodes.length - 3} more` : nodes.join(', ');
+    return this.#transaction(() => {
+      const candidate = this.#owned(id);
+      const from = candidate.trust, now = this.#time(), failures: string[] = [];
+      if (candidate.status !== 'active') failures.push(`candidate is ${candidate.status}, not active`);
+      if (candidate.kind === 'checkpoint') failures.push('checkpoints carry task state and are never promoted');
+      if (TRUST_LEVEL[from] >= TRUST_LEVEL[to]) failures.push(`candidate trust ${from} is already at or above ${to}`);
+      if (candidate.createdAt > now) failures.push('promotion clock precedes the candidate');
+      for (const dependencyId of candidate.dependencies) {
+        const dependency = this.get(dependencyId);
+        if (!dependency || TRUST_LEVEL[dependency.trust] < TRUST_LEVEL[to]) failures.push(`dependency ${dependencyId} has trust ${dependency?.trust ?? 'unavailable'}, below ${to}`);
+      }
+      const dependents = (this.#prepared("SELECT count(*) AS n FROM dependencies d JOIN memories m ON m.id=d.from_id WHERE d.workspace_id=? AND d.to_id=? AND m.status='active'").get(this.#workspaceId, candidate.id) as { n: number }).n;
+      if (dependents > 0) failures.push(`candidate has ${dependents} active dependent record(s) that promotion by supersession would orphan`);
+      const distinct = [...new Set(named)];
+      if (distinct.length < 2) failures.push(`at least 2 distinct corroborators are required, ${distinct.length} named`);
+      const own = this.#ancestors(candidate.id);
+      if (!own.complete) failures.push(`candidate ancestry exceeds ${PROMOTION_ANCESTRY_LIMIT} nodes, so disjointness cannot be shown`);
+      const corroboration: PromotionCorroboration[] = [], qualified: { id: string; nodes: Set<string> }[] = [];
+      for (const corroboratorId of distinct) {
+        const record = this.get(corroboratorId);
+        if (!record) {
+          corroboration.push({ id: corroboratorId, trust: null, disjointFromCandidate: false, sharedAncestors: [] });
+          failures.push(`corroborator ${corroboratorId} is not found in this scope`);
+          continue;
+        }
+        const ancestry = this.#ancestors(record.id);
+        const shared = [...ancestry.nodes].filter((node) => own.nodes.has(node)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        const disjoint = shared.length === 0 && ancestry.complete && own.complete;
+        corroboration.push({ id: record.id, trust: record.trust, disjointFromCandidate: disjoint, sharedAncestors: shared.slice(0, 32) });
+        let usable = true;
+        if (record.status !== 'active') { failures.push(`corroborator ${record.id} is ${record.status}, not active`); usable = false; }
+        if (TRUST_LEVEL[record.trust] < TRUST_LEVEL[to]) { failures.push(`corroborator ${record.id} has trust ${record.trust}, below ${to}`); usable = false; }
+        if (!ancestry.complete) { failures.push(`corroborator ${record.id} ancestry exceeds ${PROMOTION_ANCESTRY_LIMIT} nodes, so disjointness cannot be shown`); usable = false; }
+        if (shared.length) { failures.push(`corroborator ${record.id} shares ancestor ${list(shared)} with the candidate`); usable = false; }
+        if (usable) qualified.push({ id: record.id, nodes: ancestry.nodes });
+      }
+      let disjointPairs = 0, overlap: string | undefined;
+      const independent = new Set<string>();
+      for (let left = 0; left < qualified.length; left++) {
+        for (let right = left + 1; right < qualified.length; right++) {
+          const shared = [...qualified[left].nodes].filter((node) => qualified[right].nodes.has(node)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+          if (shared.length) { overlap ??= `corroborators ${qualified[left].id} and ${qualified[right].id} share ancestor ${list(shared)}`; continue; }
+          disjointPairs++; independent.add(qualified[left].id); independent.add(qualified[right].id);
+        }
+      }
+      if (!disjointPairs && qualified.length >= 2) failures.push(`no two corroborators are ancestry-disjoint from each other: ${overlap}`);
+      else if (!disjointPairs && !failures.length) failures.push('fewer than 2 corroborators qualify');
+      const decision = failures.length ? 'quarantined' : 'promoted';
+      const verdict = decision === 'promoted'
+        ? `promoted: ${independent.size} ancestry-disjoint corroborators (${disjointPairs} disjoint pair${disjointPairs === 1 ? '' : 's'}), ${from} -> ${to}`
+        : `quarantined: ${failures.join('; ')}`;
+      let result = candidate;
+      if (decision === 'promoted') {
+        this.#updateStatus(candidate, 'superseded', now);
+        const { evidence, invalidation: _invalidation, ...old } = candidate;
+        const corroborators = [...independent].sort();
+        result = {
+          ...old, id: randomUUID(), trust: to, status: 'active', supersedes: candidate.id, createdAt: now, updatedAt: now,
+          // The real-world interval is the candidate's; only what is believed about it changed.
+          validFrom: candidate.validFrom ?? candidate.createdAt,
+          ...(evidence !== undefined ? { evidence } : to === 'verified' ? { evidence: `${rule} promotion corroborated by ${corroborators.join(', ')}` } : {}),
+          metadata: v.metadata({ ...candidate.metadata, promotion: { rule, at: now, from, to, supersededId: candidate.id, corroboration: corroborators } }),
+        };
+        this.#validateDependencies(result);
+        this.#insert(result, 'promotion', now);
+      }
+      const promotion: LedgerPromotion = { memoryId: candidate.id, from, to, decision, reason, verdict, corroboration, disjointPairs, rule, ...(decision === 'promoted' ? { promotedId: result.id } : {}) };
+      const ledgerId = this.#appendLedger('promotion', candidate.id, { promotion });
+      this.#audit(candidate.id, decision === 'promoted' ? 'promoted' : 'promotion-quarantined');
+      return { ...promotion, record: result, ...(ledgerId ? { ledgerId } : {}) };
+    });
+  }
+
+  /**
+   * A promotion entry belongs to its candidate, so it survives the erasure of a
+   * corroborator it names. That entry must not outlive the erasure: the erased
+   * id is replaced and the verdict, which may quote it and its provenance, is
+   * redacted. The decision itself is kept. Opaque ids already copied into a
+   * promoted record's `metadata.promotion` are not rewritten: records are
+   * immutable and they carry no erased text.
+   */
+  #redactPromotions(erased: readonly string[]): void {
+    if (!erased.length) return;
+    const gone = new Set(erased);
+    const rows = this.#prepared("SELECT id,data FROM local_ledger WHERE workspace_id=? AND event='promotion'").all(this.#workspaceId) as { id: string; data: string }[];
+    for (const row of rows) {
+      if (!erased.some((id) => row.data.includes(id))) continue;
+      const payload = JSON.parse(row.data) as { promotion?: LedgerPromotion };
+      if (!payload.promotion) continue;
+      const promotion = payload.promotion;
+      const corroboration = promotion.corroboration.map((item) => gone.has(item.id)
+        ? { id: 'erased', trust: null, disjointFromCandidate: false, sharedAncestors: [] }
+        : { ...item, sharedAncestors: item.sharedAncestors.filter((node) => !gone.has(node.slice('memory:'.length)) || !node.startsWith('memory:')) });
+      const redacted: LedgerPromotion = { ...promotion, corroboration, verdict: `${promotion.decision}: verdict redacted after erasure of a record it named` };
+      this.#prepared('UPDATE local_ledger SET data=? WHERE id=?').run(JSON.stringify({ ...payload, promotion: redacted }), row.id);
+    }
+  }
+
   forget(id: string): { deletedIds: string[] } {
     let erased: number[] = [];
     const deletedIds = this.#transaction(() => {
@@ -2484,6 +2639,7 @@ export class LocalMemory {
       erased = this.#labelsFor(records.map((record) => record.id));
       this.#writeSeq++;
       for (const record of records) this.#db.prepare('DELETE FROM memories WHERE id=? AND workspace_id=?').run(record.id, this.#workspaceId);
+      this.#redactPromotions(records.map((record) => record.id));
       // Counts only. Naming the erased records here would defeat the erasure the
       // caller just asked for; their ledger entries cascaded away with them.
       this.#appendLedger('erasure', null, { erasure: { deletedCount: records.length } });

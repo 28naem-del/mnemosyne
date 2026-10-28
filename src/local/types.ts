@@ -8,11 +8,12 @@
  * ledger entries and its appearances in past retrievals through foreign keys,
  * so the ledger cannot become a back door around forget().
  */
-export type LedgerEvent = 'store' | 'correction' | 'recall' | 'outcome' | 'erasure';
+export type LedgerEvent = 'store' | 'correction' | 'recall' | 'outcome' | 'erasure' | 'promotion';
 
 /** Where a record came from and what it claimed at the moment it was written. */
 export interface LedgerProvenance {
-  origin: 'store' | 'correction' | 'checkpoint' | 'import';
+  /** `promotion` marks the superseding record a granted `promote()` wrote. */
+  origin: 'store' | 'correction' | 'checkpoint' | 'import' | 'promotion';
   sourceUri: string;
   author?: string;
   observedAt?: string;
@@ -153,6 +154,60 @@ export interface LedgerOutcome {
   evidenceSha256: string;
 }
 
+/** The only promotion rule this kernel implements; recorded on every decision so a
+ * later rule can never be mistaken for this one. */
+export type PromotionRule = 'ancestry-disjoint-v1';
+
+/** One named corroborator as the promotion gate judged it. */
+export interface PromotionCorroboration {
+  id: string;
+  /** Null when the id does not resolve to a record visible in this scope. */
+  trust: MemoryTrust | null;
+  disjointFromCandidate: boolean;
+  /** Ancestors it shares with the candidate: `memory:<id>`, `source:<uri>` and
+   * `author:<author>` nodes, sorted, at most 32. Empty when disjoint. */
+  sharedAncestors: string[];
+}
+
+/**
+ * A promotion decision (rule M3, ancestry-disjoint corroboration). Written for
+ * every `promote()` call, granted or not, so a quarantine is as auditable as a
+ * promotion. `reason` is the caller's; `verdict` is the kernel's.
+ */
+export interface LedgerPromotion {
+  /** The candidate the caller asked to promote. */
+  memoryId: string;
+  from: MemoryTrust;
+  to: 'observed' | 'verified';
+  decision: 'promoted' | 'quarantined';
+  reason: string;
+  /** Human-readable machine reason, e.g. `quarantined: corroborator <id> shares
+   * ancestor source:doc://handbook with the candidate`. */
+  verdict: string;
+  corroboration: PromotionCorroboration[];
+  /** Pairs of qualifying corroborators whose ancestries are disjoint from each other. */
+  disjointPairs: number;
+  rule: PromotionRule;
+  /** Present on a granted promotion: the record that carries the raised trust.
+   * Promotion supersedes the candidate rather than editing it in place, so the
+   * belief state at any earlier cut point replays unchanged. */
+  promotedId?: string;
+}
+
+export interface PromoteInput {
+  to: 'observed' | 'verified';
+  /** At least two distinct record ids, at most 16. */
+  corroboration: string[];
+  reason: string;
+}
+
+export interface PromotionDecision extends LedgerPromotion {
+  /** The superseding record on a granted promotion; the unchanged candidate otherwise. */
+  record: MemoryRecord;
+  /** Absent when the ledger is disabled. */
+  ledgerId?: string;
+}
+
 export interface LedgerEntry {
   id: string;
   /** Monotonic within one database; also the pagination cursor. */
@@ -167,6 +222,7 @@ export interface LedgerEntry {
   correction?: LedgerCorrection;
   outcome?: LedgerOutcome;
   erasure?: { deletedCount: number };
+  promotion?: LedgerPromotion;
 }
 
 export interface LedgerQuery {
@@ -174,6 +230,8 @@ export interface LedgerQuery {
   /** Exclusive lower bound; pass the previous page's nextCursor. */
   after?: number;
   events?: LedgerEvent[];
+  /** Shorthand for a single-event filter; combined with `events` when both are given. */
+  event?: LedgerEvent;
   memoryId?: string;
 }
 export interface LedgerPage { entries: LedgerEntry[]; nextCursor?: number }
