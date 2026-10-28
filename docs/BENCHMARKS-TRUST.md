@@ -57,8 +57,8 @@ options in force. The wrapper still maps the protocol type `open_question` to th
 |---|---|---|---|---|---|
 | rc.1, unfiltered (`lexical-protocol-raw`) | `e0bbb47` | none | 22/77 (28.6 %) | 0.262 / 0.954 | not run |
 | rc.1, comparable (`A-hybrid`) | `e0bbb47` | sweep-chosen: minSimilarity 0.65 + relative cutoff 0.5 | 48/77 (62.3 %) | 0.611 / 0.913 | 6/12 |
-| **rc.2, lexical** (`final-lexical`) | `50a1eee` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **11/12** |
-| **rc.2, hybrid** (`final-hybrid`) | `50a1eee` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **11/12** |
+| **rc.2, lexical** (`final-lexical`) | `16cd9c0` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **11/12** |
+| **rc.2, hybrid** (`final-hybrid`) | `16cd9c0` | **none** | **70/77 (90.9 %)** | 0.871 / 1.000 | **11/12** |
 
 So the score goes from 22 unfiltered, to 48 with filters chosen on the fixture, to 70 with the
 kernel's own controls and no filter. Both rc.2 runs have 42 active-retrieval passes, 19
