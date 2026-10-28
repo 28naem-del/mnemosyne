@@ -21,3 +21,4 @@ export { reflect, commitVerifiedLesson } from "./reflection/index.js";
 export { resolveConfig } from "./config.js";
 export type { MnemosyneConfig, MemoryCategory } from "./config.js";
 export { consolidate, createConsolidationSigner, gateConsolidation, proposeConsolidation, rollbackConsolidation, verifyConsolidationChain, type ConsolidationDiff, type ConsolidationReceipt } from "./consolidation/index.js";
+export { inferDependencies, reviewDependency, createPremiseGuard } from "./dependencies/index.js";

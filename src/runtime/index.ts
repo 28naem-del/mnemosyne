@@ -4,7 +4,7 @@ import type { JsonValue, LocalMemory, MemoryRecord, MemoryTrust } from '../local
 import { canonical } from '../local/validation.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseTranscriptJsonl } from './parsers.js';
-import type { CaptureInput, CaptureResult, EnqueueInput, IngestInput, IngestTextInput, ModelResult, ProposalBudgets, RunJobsOptions, RunJobsReport, RuntimeJob, RuntimeOptions, RuntimeProposalRequest, RuntimeProposer, RuntimeSkill, RuntimeSource, SkillDefinition, SkillPromotionPolicy, SkillTrialInput, SkillValidation } from './types.js';
+import type { CaptureInput, CaptureResult, EnqueueInput, IngestInput, IngestTextInput, ModelResult, ProposalBudgets, RunJobsOptions, RunJobsReport, RuntimeJob, RuntimeOptions, RuntimeProposalRequest, RuntimeProposer, RuntimeSkill, RuntimeSource, SkillDefinition, SkillPremise, SkillPromotionPolicy, SkillTrialInput, SkillValidation } from './types.js';
 export * from './types.js';
 export { parseTranscriptJsonl } from './parsers.js';
 
@@ -18,6 +18,7 @@ const sourceProposal = z.object({ text: text(16_384), sourceIds: ids }).strict()
 const skillSchema = z.object({ name: text(256), prerequisites: z.array(text(1024)).max(32), steps: z.array(text(2048)).min(1).max(32), parameters: z.record(text(80), z.object({ description: text(1024), required: z.boolean() }).strict()).refine(value => Object.keys(value).length <= 32 && Object.keys(value).every(key => !['__proto__', 'constructor', 'prototype'].includes(key)), 'Invalid skill parameters.'), evidenceIds: ids }).strict();
 const validationSchema = z.object({ passed: z.boolean(), evidence: text(8192), verifier: text(512), taskId: id, prerequisitesSatisfied: z.boolean() }).strict();
 const promotionPolicySchema = z.object({ id: text(160), minimumDistinctTasks: z.number().int().min(1).max(32), minimumDistinctVerifiers: z.number().int().min(1).max(32) }).strict();
+const premisesSchema = z.array(z.object({ memoryId: id, receiptId: id }).strict()).min(1).max(32);
 const LEGACY_SKILL_PROMOTION_POLICY = Object.freeze({ id: 'legacy-single-trial-v1', minimumDistinctTasks: 1, minimumDistinctVerifiers: 1 });
 /** Stronger controller policy for new skills. Distinct labels do not establish
  * independent verifiers; the controller must supply authentic trial evidence. */
@@ -42,11 +43,15 @@ function budget(value: number | undefined, fallback: number, min: number, max: n
   return number;
 }
 class RuntimeEvidenceError extends Error {}
+/** A linked premise (see `linkPremise`) was corrected, invalidated, failed or is
+ * otherwise no longer the state the reviewer accepted. */
+class RuntimePremiseError extends Error {}
 // Callback, JSON parser and schema errors can quote private source/model output.
 // Only fixed diagnostics may enter durable job history or returned reports.
 const safeErrors = new Set(['Runtime time budget exceeded.', 'Runtime operation cancelled.', 'Runtime output budget exceeded.', 'Runtime source input budget exceeded; enqueue a smaller source batch.', 'Job retry budget exhausted.', 'Proposal cites evidence that was not supplied.', 'Proposal makes no progress: duplicate source or observation.']);
 function errorText(error: unknown): string {
   if (error instanceof RuntimeEvidenceError) return 'Source evidence changed or is unavailable.';
+  if (error instanceof RuntimePremiseError) return 'Linked premise was corrected or is no longer eligible.';
   if (error instanceof SyntaxError || error instanceof z.ZodError) return 'Runtime response or persisted state has an invalid format.';
   return error instanceof Error && safeErrors.has(error.message) ? error.message : 'Runtime operation failed; private error details omitted.';
 }
@@ -477,21 +482,27 @@ export class MemoryRuntime {
     const generation = 1 + Number(previous?.metadata.generation ?? 0);
     const meta = { runtimeType: 'skill', skillId: skill.id, skillState: skill.state, advisory: skill.state === 'active', generation };
     const source = { uri: `runtime:skill:${skill.id}`, revision: skill.fingerprint };
+    // Linked premises are declared record dependencies, so correcting one
+    // invalidates this generation through the kernel cascade as well.
+    const dependencies = [...skill.definition.evidenceIds, ...(skill.premises ?? []).map(premise => premise.memoryId)];
     let record: MemoryRecord;
     if (previous && (previous.trust !== 'untrusted' || skill.state !== 'active')) {
-      record = this.memory.correct(previous.id, { text: JSON.stringify(payload), source, reason: `Skill transitioned to ${skill.state}.`, metadata: meta });
+      const added = dependencies.filter(dependency => !previous.dependencies.includes(dependency));
+      record = this.memory.correct(previous.id, { text: JSON.stringify(payload), source, reason: `Skill transitioned to ${skill.state}.`, metadata: meta, ...(added.length ? { dependencies: added } : {}) });
     } else {
-      record = this.memory.store({ text: JSON.stringify(payload), kind: 'procedure', trust: skill.state === 'active' ? 'observed' : 'untrusted', dependencies: skill.definition.evidenceIds, source, metadata: meta, idempotencyKey: `runtime-skill:${hash(payload)}` });
+      record = this.memory.store({ text: JSON.stringify(payload), kind: 'procedure', trust: skill.state === 'active' ? 'observed' : 'untrusted', dependencies, source, metadata: meta, idempotencyKey: `runtime-skill:${hash(payload)}` });
     }
     return { ...payload, recordId: record.id };
   }
   #readSkill(record: MemoryRecord): RuntimeSkill {
-    const payload = z.object({ id: digest, state: z.enum(['candidate', 'active', 'retired']), definition: skillSchema, fingerprint: digest, promotionPolicy: promotionPolicySchema.optional(), reason: text(1024).optional(), trials: z.array(validationSchema).max(32) }).strict().parse(JSON.parse(record.text));
+    const payload = z.object({ id: digest, state: z.enum(['candidate', 'active', 'retired']), definition: skillSchema, fingerprint: digest, promotionPolicy: promotionPolicySchema.optional(), reason: text(1024).optional(), trials: z.array(validationSchema).max(32), premises: premisesSchema.optional(), premiseFingerprint: digest.optional() }).strict().parse(JSON.parse(record.text));
+    const premiseIds = (payload.premises ?? []).map(premise => premise.memoryId);
+    const invalidPremises = (payload.premises === undefined) !== (payload.premiseFingerprint === undefined) || new Set(premiseIds).size !== premiseIds.length || premiseIds.some(premiseId => payload.definition.evidenceIds.includes(premiseId));
     const promoted = promotionSatisfied(payload.trials, payload.promotionPolicy ?? LEGACY_SKILL_PROMOTION_POLICY);
     const failedTrial = payload.trials.some(trial => !trial.passed || !trial.prerequisitesSatisfied);
     const invalidCandidate = payload.state === 'candidate' && (promoted || failedTrial || record.trust !== 'untrusted');
     const invalidActive = payload.state === 'active' && (record.trust === 'untrusted' || !promoted || this.memory.getOutcomeSummary(record.id).successes < 1);
-    if (record.agentId !== this.memory.agentId || record.workspaceId !== this.memory.workspaceId || record.kind !== 'procedure' || record.visibility !== 'private' || record.metadata.skillId !== payload.id || record.metadata.skillState !== payload.state || record.metadata.advisory !== (payload.state === 'active') || record.source.uri !== `runtime:skill:${payload.id}` || record.source.revision !== payload.fingerprint || skillIdentity(payload.definition, payload.fingerprint, payload.promotionPolicy) !== payload.id || canonical(record.dependencies) !== canonical(payload.definition.evidenceIds) || !Number.isSafeInteger(record.metadata.generation) || Number(record.metadata.generation) < 1 || new Set(payload.trials.map(trial => trial.taskId)).size !== payload.trials.length || new Set(payload.trials.map(trial => trial.evidence)).size !== payload.trials.length || invalidCandidate || invalidActive) throw new Error('Invalid persisted runtime skill envelope.');
+    if (record.agentId !== this.memory.agentId || record.workspaceId !== this.memory.workspaceId || record.kind !== 'procedure' || record.visibility !== 'private' || record.metadata.skillId !== payload.id || record.metadata.skillState !== payload.state || record.metadata.advisory !== (payload.state === 'active') || record.source.uri !== `runtime:skill:${payload.id}` || record.source.revision !== payload.fingerprint || skillIdentity(payload.definition, payload.fingerprint, payload.promotionPolicy) !== payload.id || invalidPremises || canonical(record.dependencies) !== canonical([...payload.definition.evidenceIds, ...premiseIds]) || !Number.isSafeInteger(record.metadata.generation) || Number(record.metadata.generation) < 1 || new Set(payload.trials.map(trial => trial.taskId)).size !== payload.trials.length || new Set(payload.trials.map(trial => trial.evidence)).size !== payload.trials.length || invalidCandidate || invalidActive) throw new Error('Invalid persisted runtime skill envelope.');
     return { ...payload, recordId: record.id };
   }
   getSkill(skillId: string): RuntimeSkill | null {
@@ -503,7 +514,11 @@ export class MemoryRuntime {
     try { skill = this.#readSkill(record); } catch { return null; }
     if (skill.state === 'retired') return skill;
     try {
-      if (this.#sources(skill.definition.evidenceIds).fingerprint !== skill.fingerprint || (skill.state === 'active' && !this.memory.isEligible(record.id))) throw new Error('Skill evidence or outcomes changed.');
+      if (this.#sources(skill.definition.evidenceIds).fingerprint !== skill.fingerprint) throw new Error('Skill evidence or outcomes changed.');
+      // Checked before eligibility: a corrected premise also invalidates this
+      // record through the cascade, and the premise is the reason worth reporting.
+      this.#checkPremises(skill);
+      if (skill.state === 'active' && !this.memory.isEligible(record.id)) throw new Error('Skill evidence or outcomes changed.');
       return skill;
     } catch (error) {
       // Effective retirement is immediate even if no job runner is awake. The
@@ -524,6 +539,7 @@ export class MemoryRuntime {
     return this.memory.atomic(() => {
       const latest = this.getSkill(input.id);
       if (!latest || latest.recordId !== skill.recordId || latest.state === 'retired' || this.#sources(skill.definition.evidenceIds).fingerprint !== before.fingerprint) throw new Error('Skill or evidence changed during trial.');
+      this.#checkPremises(skill);
       const previous = skill.trials.find(trial => trial.taskId === validation.taskId || trial.evidence === validation.evidence);
       if (previous) {
         if (canonical(previous) !== canonical(validation)) throw new Error('Skill trial identity payload conflict.');
@@ -538,6 +554,62 @@ export class MemoryRuntime {
       // Passing a candidate trial is evidence toward promotion, not a success
       // outcome on reusable guidance. Only an active generation is actionable.
       if (state === 'active') this.memory.recordOutcome({ memoryId: next.recordId, success: true, evidence: validation.evidence, verifier: validation.verifier, taskId: validation.taskId });
+      return next;
+    });
+  }
+  /** Throws `RuntimePremiseError` unless every linked premise is still the
+   * eligible state the reviewer accepted. */
+  #checkPremises(skill: RuntimeSkill): void {
+    if (skill.premises && this.#premiseFingerprint(skill.premises) !== skill.premiseFingerprint) throw new RuntimePremiseError('Linked premise changed.');
+  }
+  #premiseFingerprint(premises: SkillPremise[]): string {
+    try { return this.#sources(premises.map(premise => premise.memoryId)).fingerprint; }
+    catch (error) { throw error instanceof RuntimeEvidenceError ? new RuntimePremiseError('Linked premise is stale.') : error; }
+  }
+  /** Finds the accepted `dependency` receipt that authorizes this exact link,
+   * scanning receipt pages within the runtime scan budget. */
+  #acceptedReceipt(receiptId: string, skillId: string, memoryId: string): void {
+    let after: number | undefined, scanned = 0;
+    do {
+      const page = this.memory.ledger({ events: ['dependency'], limit: 1000, ...(after === undefined ? {} : { after }) });
+      const entry = page.entries.find(candidate => candidate.id === receiptId);
+      if (entry) {
+        const receipt = entry.dependency;
+        if (!receipt || receipt.decision !== 'accept' || receipt.to !== memoryId || receipt.skillId !== skillId) throw new Error('Receipt does not accept this skill premise.');
+        return;
+      }
+      scanned += page.entries.length;
+      if (scanned > this.#scanLimit) throw new Error('Runtime inventory exceeds scan budget; narrow or increase maxScanRecords.');
+      after = page.nextCursor;
+    } while (after !== undefined);
+    throw new Error('Accepted dependency receipt not found.');
+  }
+  /**
+   * M6 premise link: records that a skill relies on `memoryId` although its
+   * definition never listed it as evidence. Only an accepted `dependency` ledger
+   * receipt naming this skill and premise authorizes the link, so it is never a
+   * silent mutation. The new generation declares the premise as a record
+   * dependency and binds its fingerprint: correcting the premise invalidates the
+   * generation through the kernel cascade, `getSkill` reports it retired with a
+   * premise reason, and `trialSkill` refuses it. Skill identity is unchanged.
+   * Linking an active skill carries its last passing trial onto the new
+   * generation, exactly as a promoting trial does.
+   */
+  linkPremise(skillId: string, memoryId: string, receiptId: string): RuntimeSkill {
+    if (!this.captureEnabled || !this.recallEnabled) throw new Error('Capture and recall must be enabled to link skill premises.');
+    text(64).parse(skillId); id.parse(memoryId); id.parse(receiptId);
+    return this.memory.atomic(() => {
+      const skill = this.getSkill(skillId);
+      if (!skill || skill.state === 'retired') throw new Error('Skill is missing, retired or has stale evidence.');
+      const linked = skill.premises ?? [];
+      if (linked.some(premise => premise.memoryId === memoryId)) return skill;
+      if (skill.definition.evidenceIds.includes(memoryId)) throw new Error('Premise is already declared skill evidence.');
+      if (linked.length >= 32) throw new Error('Skill premise budget exhausted.');
+      this.#acceptedReceipt(receiptId, skillId, memoryId);
+      const premises = [...linked, { memoryId, receiptId }];
+      const next = this.#storeSkill({ ...skill, premises, premiseFingerprint: this.#premiseFingerprint(premises) });
+      const trial = skill.trials[skill.trials.length - 1];
+      if (skill.state === 'active' && trial) this.memory.recordOutcome({ memoryId: next.recordId, success: true, evidence: trial.evidence, verifier: trial.verifier, taskId: trial.taskId });
       return next;
     });
   }

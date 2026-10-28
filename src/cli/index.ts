@@ -17,6 +17,7 @@ import { requireExistingDatabase, runMigrationCommand } from './migration.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseJsonWithSpans } from '../migration/json-spans.js';
 import { MemoryAgent } from '../agent/index.js';
+import { inferDependencies, reviewDependency, type InferDependenciesOptions } from '../dependencies/index.js';
 
 const HELP = `Mnemosyne ${VERSION} — portable agent memory
 
@@ -59,6 +60,10 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy migrate [scope] --action rollback --batch NAME --revision RECEIPT_HASH --confirm
   mnemosy migrate [scope] --action forget --id SOURCE_ID --confirm
   mnemosy health [scope] --action scan|watch|check|recall [--id ID] [--json JSON]
+  mnemosy dependencies [scope] --infer [--min-support N] [--json JSON]
+                   Surface undeclared dependencies inferred from successful co-use (reads only)
+  mnemosy dependencies [scope] --review DIGEST --accept|--reject --reviewer NAME [--reason TEXT]
+                   Ledger a review decision; accept links the edge through correct()
   mnemosy serve [scope] --token-file FILE [--port 8765]
   mnemosy capture [scope] --file FILE --adapter text|generic|codex|claude
                    [--session NAME] [--trust observed] [--watch --interval 1000]
@@ -188,6 +193,9 @@ const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
   mcp: [], serve: [],
   // Isolated evaluations create and read temporary memory, even without an output file.
   demo: ['read', 'write'], 'learning-demo': ['read', 'write'], evaluate: ['read', 'write'], 'benchmark-agent': ['read', 'write'],
+  // Inference only reads; --review also writes (receipt, and correct() on accept),
+  // which dependenciesCommand checks before SQLite opens.
+  dependencies: ['read'],
 };
 const ACTION_ACCESS: Readonly<Record<string, { defaultAction?: string; actions: Readonly<Record<string, readonly CliAccess[]>> }>> = {
   agent: { defaultAction: 'context', actions: { context: ['read'], turn: ['read', 'write'], 'capture-events': ['read', 'write'], work: ['read', 'write'], status: ['read'] } },
@@ -262,6 +270,28 @@ function healthCommand(values: Record<string, string | boolean | undefined>) {
   return { action, input: { memoryId, ...z.object({ expectedStateHash: z.string().regex(/^[a-f0-9]{64}$/), observation: z.object({ status: z.enum(['confirmed', 'changed', 'unavailable']), evidence: text(8192), verifier: text(512), sourceRevision: text(1024).optional() }).strict() }).strict().parse(json()) } } as const;
 }
 
+/** Validates `dependencies` before SQLite opens: one mode, its flags only, and the
+ * review's write capability (infer reads; review reads and writes). */
+function dependenciesCommand(values: CliValues) {
+  const review = values.review as string | undefined;
+  if (!!values.infer === (review !== undefined)) throw new Error('dependencies requires exactly one of --infer or --review DIGEST.');
+  const shared = ['db', 'workspace', 'agent', 'read-only', 'no-capture', 'no-recall', 'json'];
+  const allowed = [...shared, ...(review === undefined ? ['infer', 'min-support'] : ['review', 'accept', 'reject', 'reviewer', 'reason', 'min-support'])];
+  if (Object.entries(values).some(([key, value]) => value !== undefined && !allowed.includes(key))) throw new Error('Unsupported option for this dependencies mode.');
+  const settings = jsonInput(values.json as string | undefined) as InferDependenciesOptions;
+  const minSupport = values['min-support'] === undefined ? undefined : integer(values['min-support'] as string, 2, 1_000_000);
+  if (minSupport !== undefined && minSupport < 2) throw new Error('--min-support must be at least 2: one co-use cannot tell a premise from a coincidence.');
+  const options: InferDependenciesOptions = { ...settings, ...(minSupport === undefined ? {} : { minSupport }) };
+  if (review === undefined) return { options } as const;
+  if (values['read-only']) throw new Error('dependencies review: memory mutations are disabled by --read-only.');
+  if (values['no-capture']) throw new Error('dependencies review: memory writes are disabled by --no-capture.');
+  if (!/^[a-f0-9]{64}$/.test(review)) throw new Error('--review takes a proposal digest (64 lowercase hex characters) from dependencies --infer.');
+  if (!!values.accept === !!values.reject) throw new Error('dependencies --review requires exactly one of --accept or --reject.');
+  const reviewer = required(values.reviewer as string | undefined, '--reviewer');
+  const note = values.reason as string | undefined;
+  return { options, review: { digest: review, decision: values.accept ? 'accept' as const : 'reject' as const, reviewer, ...(note === undefined ? {} : { note }) } } as const;
+}
+
 function providerConfig(path: string | undefined) {
   const configPath = required(path, '--provider-config');
   const schema = z.object({ baseUrl: z.string().min(1).max(2048), model: z.string().min(1).max(512), dimensions: z.number().int().min(1).max(65536).optional(), revision: z.string().min(1).max(512).optional(), apiKeyEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(256).optional(), timeoutMs: z.number().int().min(1).max(300000).optional() }).strict();
@@ -332,6 +362,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     profile: { type: 'string' }, 'source-store': { type: 'string' }, 'source-owner': { type: 'string' },
     'assume-missing-owner': { type: 'boolean' }, 'acknowledge-partial': { type: 'boolean' },
     collection: { type: 'string' }, 'logical-path': { type: 'string' }, 'qdrant-text-field': { type: 'string' },
+    infer: { type: 'boolean' }, 'min-support': { type: 'string' }, review: { type: 'string' },
+    accept: { type: 'boolean' }, reject: { type: 'boolean' }, reviewer: { type: 'string' },
   } });
   if (values.version) { process.stdout.write(`${VERSION}\n`); return; }
   if (values.help || !positionals.length) { process.stdout.write(HELP); return; }
@@ -412,6 +444,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   }
   const health = command === 'health' ? healthCommand(values) : undefined;
   const agentOptions = command === 'agent' ? agentCommand(values) : undefined;
+  const dependencyOptions = command === 'dependencies' ? dependenciesCommand(values) : undefined;
   if (health) requireExistingDatabase(resolve(required(values.db, '--db')));
   const memory = createLocalMemory({ path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') });
   const runtime = new MemoryRuntime(memory, { captureEnabled: !values['no-capture'], recallEnabled: !values['no-recall'] });
@@ -635,6 +668,16 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       case 'import': {
         const path = resolve(required(values.file, '--file'));
         print(memory.import(readSnapshot(path))); break;
+      }
+      case 'dependencies': {
+        const { options, review } = dependencyOptions!;
+        if (!review) { print(inferDependencies(memory, options)); break; }
+        // The digest names a proposal as it was shown; re-infer and match it, so a
+        // reviewer can only decide on evidence that is still current.
+        const proposal = inferDependencies(memory, { ...options, maxProposals: 100_000 }).proposals.find(item => item.digest === review.digest);
+        if (!proposal) throw new Error('No current proposal has that digest; run dependencies --infer again.');
+        print(reviewDependency(memory, proposal, review.decision, review.reviewer, { runtime, ...(review.note === undefined ? {} : { note: review.note }) }));
+        break;
       }
     }
   } finally { memory.close(); }

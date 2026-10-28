@@ -98,6 +98,13 @@ export interface SkillPromotionPolicy {
   /** Integer from 1 to 32. Verifier identifiers are controller assertions, not authentication. */
   minimumDistinctVerifiers: number;
 }
+/** A premise a skill relies on without listing it as evidence. It exists only
+ * because a reviewer accepted an inferred dependency: `receiptId` is that
+ * accepted `dependency` ledger receipt (see docs/DEPENDENCIES.md). */
+export interface SkillPremise {
+  memoryId: string;
+  receiptId: string;
+}
 export interface RuntimeSkill {
   id: string;
   recordId: string;
@@ -108,6 +115,12 @@ export interface RuntimeSkill {
   promotionPolicy?: SkillPromotionPolicy;
   reason?: string;
   trials: { passed: boolean; evidence: string; verifier: string; taskId: string; prerequisitesSatisfied: boolean }[];
+  /** Premises linked by `linkPremise`, oldest first. Absent until the first link,
+   * so skills persisted before premise links read back unchanged. */
+  premises?: SkillPremise[];
+  /** Source fingerprint of `premises` when they were linked. Any change to a
+   * linked premise (correction, invalidation, failure) retires the skill. */
+  premiseFingerprint?: string;
 }
 export interface SkillValidation {
   passed: boolean;

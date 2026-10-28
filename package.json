@@ -101,6 +101,10 @@
     "./consolidation": {
       "types": "./dist/consolidation/index.d.ts",
       "import": "./dist/consolidation/index.js"
+    },
+    "./dependencies": {
+      "types": "./dist/dependencies/index.d.ts",
+      "import": "./dist/dependencies/index.js"
     }
   },
   "files": [

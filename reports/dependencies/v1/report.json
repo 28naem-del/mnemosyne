@@ -1,0 +1,294 @@
+{
+  "command": "node dist/evaluation/dependencies/cli.js --corpus benchmarks/dependencies/v1/corpus.json --out reports/dependencies/v1 --seeds 1,2,3,4,5,11,12,13,14,15",
+  "suite": "dependencies-v1",
+  "synthetic": true,
+  "rule": "co-use-success-v1",
+  "retrieval": "lexical",
+  "corpus": {
+    "sha256": "e56da493f548a94907b6f95b9f8c2c8d3a984b9ad7f079706921e3801aca0d6f",
+    "seed": 20261028,
+    "matchesGenerator": true,
+    "records": 228,
+    "premises": 120,
+    "procedures": 84,
+    "skills": 24,
+    "tasks": 717,
+    "trueEdges": 160,
+    "declaredEdges": 78,
+    "decoys": {
+      "retrieved-unused": 217,
+      "failed-only": 58,
+      "sibling": 20,
+      "incidental": 21,
+      "hub": 89
+    }
+  },
+  "thresholds": {
+    "minSupport": 2,
+    "minReliance": 0.4,
+    "minLift": 1.5,
+    "minConfidence": 0.25,
+    "z": 1,
+    "holdReliance": 0
+  },
+  "gate": {
+    "recall": {
+      "value": 0.960452,
+      "min": 0.9
+    },
+    "precision": {
+      "value": 0.980645,
+      "min": 0.95
+    },
+    "staleExecutions": {
+      "value": 0,
+      "max": 0
+    },
+    "passed": true
+  },
+  "result": {
+    "metrics": {
+      "recall": 0.960452,
+      "recallMacro": 0.962857,
+      "recallPairs": {
+        "invalidated": 170,
+        "total": 177
+      },
+      "precision": 0.980645,
+      "acceptedEdges": {
+        "correct": 152,
+        "total": 155,
+        "falseByClass": {
+          "incidental": 1,
+          "hub": 2
+        }
+      },
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 7,
+      "kernelStaleOnLinked": 0,
+      "staleChecks": 248,
+      "corrections": 120,
+      "overInvalidated": 3,
+      "guardOverHolds": 90,
+      "guardHeldMisses": 7,
+      "missesBelowMinSupport": 6,
+      "recallObservable": 0.994152
+    },
+    "inference": {
+      "proposals": 156,
+      "accepted": 155,
+      "skipped": [
+        {
+          "dependent": "P053",
+          "premise": "F058",
+          "error": "Dependency is already declared."
+        }
+      ],
+      "evidence": {
+        "rule": "co-use-success-v1",
+        "thresholds": {
+          "minSupport": 2,
+          "minReliance": 0.4,
+          "minLift": 1.5,
+          "minConfidence": 0.25,
+          "z": 1
+        },
+        "scanned": {
+          "records": 929,
+          "traces": 677,
+          "ledgerEntries": 1868,
+          "ledgerPages": 2,
+          "truncated": false
+        },
+        "tasks": {
+          "successful": 556,
+          "failed": 104,
+          "unjudged": 17,
+          "conflicting": 0,
+          "traced": 660,
+          "attributed": 0,
+          "recallOnly": 40
+        },
+        "pairs": {
+          "considered": 319,
+          "proposed": 156,
+          "rejected": {
+            "reviewed": 0,
+            "inactive": 0,
+            "declared": 66,
+            "cycle": 0,
+            "incompatible": 0,
+            "support": 94,
+            "reliance": 2,
+            "lift": 0,
+            "confidence": 1
+          }
+        }
+      }
+    },
+    "escapes": [],
+    "misses": [
+      {
+        "dependent": "P008",
+        "premise": "F059",
+        "reason": "not-inferred",
+        "coUses": 2
+      },
+      {
+        "dependent": "P011",
+        "premise": "R012",
+        "reason": "not-inferred",
+        "coUses": 1
+      },
+      {
+        "dependent": "P065",
+        "premise": "R007",
+        "reason": "not-inferred",
+        "coUses": 1
+      },
+      {
+        "dependent": "P082",
+        "premise": "F015",
+        "reason": "not-inferred",
+        "coUses": 1
+      },
+      {
+        "dependent": "P083",
+        "premise": "F013",
+        "reason": "not-inferred",
+        "coUses": 1
+      },
+      {
+        "dependent": "P084",
+        "premise": "F002",
+        "reason": "not-inferred",
+        "coUses": 1
+      },
+      {
+        "dependent": "S005",
+        "premise": "F045",
+        "reason": "not-inferred",
+        "coUses": 1
+      }
+    ],
+    "falseEdges": [
+      {
+        "dependent": "P061",
+        "premise": "R002",
+        "class": "hub"
+      },
+      {
+        "dependent": "S009",
+        "premise": "R002",
+        "class": "hub"
+      },
+      {
+        "dependent": "S015",
+        "premise": "F046",
+        "class": "incidental"
+      }
+    ]
+  },
+  "robustness": [
+    {
+      "seed": 1,
+      "role": "tuning",
+      "recall": 0.95122,
+      "precision": 0.977654,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 10,
+      "overInvalidated": 4,
+      "guardOverHolds": 86
+    },
+    {
+      "seed": 2,
+      "role": "tuning",
+      "recall": 0.963158,
+      "precision": 0.988095,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 7,
+      "overInvalidated": 3,
+      "guardOverHolds": 92
+    },
+    {
+      "seed": 3,
+      "role": "tuning",
+      "recall": 0.928934,
+      "precision": 0.982353,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 14,
+      "overInvalidated": 4,
+      "guardOverHolds": 95
+    },
+    {
+      "seed": 4,
+      "role": "tuning",
+      "recall": 0.923858,
+      "precision": 0.982558,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 15,
+      "overInvalidated": 3,
+      "guardOverHolds": 82
+    },
+    {
+      "seed": 5,
+      "role": "tuning",
+      "recall": 0.928177,
+      "precision": 0.993865,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 13,
+      "overInvalidated": 1,
+      "guardOverHolds": 95
+    },
+    {
+      "seed": 11,
+      "role": "held-out",
+      "recall": 0.949721,
+      "precision": 0.981132,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 9,
+      "overInvalidated": 3,
+      "guardOverHolds": 89
+    },
+    {
+      "seed": 12,
+      "role": "held-out",
+      "recall": 0.968085,
+      "precision": 0.976331,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 6,
+      "overInvalidated": 4,
+      "guardOverHolds": 95
+    },
+    {
+      "seed": 13,
+      "role": "held-out",
+      "recall": 0.94382,
+      "precision": 0.950617,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 10,
+      "overInvalidated": 8,
+      "guardOverHolds": 95
+    },
+    {
+      "seed": 14,
+      "role": "held-out",
+      "recall": 0.929348,
+      "precision": 0.981707,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 13,
+      "overInvalidated": 3,
+      "guardOverHolds": 88
+    },
+    {
+      "seed": 15,
+      "role": "held-out",
+      "recall": 0.95082,
+      "precision": 0.987805,
+      "staleExecutions": 0,
+      "kernelStaleExecutions": 9,
+      "overInvalidated": 2,
+      "guardOverHolds": 86
+    }
+  ]
+}
