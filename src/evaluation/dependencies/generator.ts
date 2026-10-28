@@ -109,7 +109,9 @@ function premises(random: SeededRandom, parameters: CorpusParameters): Premise[]
 }
 
 /** Generates corpus v1 for `seed`. Parameters default to the committed corpus. */
-export function generateDependencyCorpus(seed = DEPENDENCY_CORPUS_SEED, overrides: Partial<CorpusParameters> = {}): DependencyCorpus {
+/** `observabilityFloor: false` drops the floor injection below (same RNG draws,
+ * so only the injected co-uses differ); such a corpus is never the gate corpus. */
+export function generateDependencyCorpus(seed = DEPENDENCY_CORPUS_SEED, overrides: Partial<CorpusParameters> = {}, options: { observabilityFloor?: boolean } = {}): DependencyCorpus {
   const parameters: CorpusParameters = { ...DEFAULT_CORPUS_PARAMETERS, ...overrides };
   const random = new SeededRandom(seed);
   const all = premises(random, parameters);
@@ -211,14 +213,16 @@ export function generateDependencyCorpus(seed = DEPENDENCY_CORPUS_SEED, override
     }
     // Observability floor: every true dependency appears in at least one judged
     // successful used set. A reliance no task ever reports is invisible to any
-    // co-use method; it is out of scope here and stated as such in the docs.
+    // co-use method, and this is also exactly what the premise guard needs to
+    // hold a pair. docs/DEPENDENCIES.md, "The observability floor", states it
+    // and its measured effect (cli.js --seed N --no-floor reproduces it).
     const judged = own.filter(task => task.mode === 'trace' && task.success && task.judge !== 'none');
     if (!judged.length) {
       const first = own.find(task => task.mode === 'trace' && task.success)!;
       first.judge = 'trace';
       judged.push(first);
     }
-    for (const edge of plan.truth) {
+    for (const edge of options.observabilityFloor === false ? [] : plan.truth) {
       if (judged.some(task => task.used.includes(edge.premise))) continue;
       const target = judged[0];
       target.used = [...target.used, edge.premise];
