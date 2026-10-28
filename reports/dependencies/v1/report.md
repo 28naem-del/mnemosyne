@@ -18,6 +18,22 @@ Rule `co-use-success-v1`, thresholds: minSupport 2, minReliance 0.4, minLift 1.5
 
 Gate passed: true.
 
+## What produces stale = 0 (decomposition)
+
+Stale = 0 is produced by the premise guard, not by inference. With holdReliance 0 the guard is a blanket hold: it holds every dependent that had at least one judged successful co-use with a premise that has since changed, whether or not the dependent relies on it.
+
+| Configuration | Stale executions | Guard holds (true / false) | False-hold rate |
+| --- | --- | --- | --- |
+| Inference + accept-all, guard off | 7 of 248 | n/a | n/a |
+| Guard on, zero accepted edges | 0 of 248 | 272 (179 / 93) | 34.19% |
+| Inference + accept-all, guard on (the gate) | 0 of 248 | 97 (7 / 90) | 92.78% |
+
+- Inference alone leaves 7 stale of 248. With neither inference nor the guard, at least 177 true undeclared pairs stay active after their premise is corrected.
+- What inference buys on top of the guard: the kernel cascade itself invalidates 170 of 177 true undeclared pairs, so guard holds drop from 272 to 97, a shorter review queue of cheaper holds; the links are declared dependencies with ledgered review receipts, which hold without the guard in the executor; and every proposal is a review item with its evidence.
+- The guard's false-hold rate after accept-all is 92.78% (90 of 97 holds were on a premise outside the dependent's true closure).
+- Observability floor. The generator forces every true edge into at least one judged successful used set (src/evaluation/dependencies/generator.ts, "Observability floor"), which is exactly the condition the guard needs. Recorded without the floor (`node dist/evaluation/dependencies/cli.js --seed N --no-floor`): seed 20261028 stale 1 (S005 on F045); seed 11 stale 2 (P083 on F028, P083 on R006). Recall and precision are unchanged on those seeds.
+- Precision denominator. 295 of 405 decoys (retrieved-unused 217, failed-only 58, sibling 20) can never count as support under the rule, by construction. Precision is tested by the hub (89) and incidental (21) decoys only.
+
 ## Detail
 
 - Invalidation recall, macro over corrected premises: 96.29%.
@@ -57,15 +73,17 @@ None.
 
 Tuning seeds were looked at while the defaults were chosen: the inference thresholds on seeds 1-5, the corpus parameter rareRuns on seeds 1-10. Held-out seeds were first run after every default was fixed. The guard default holdReliance 0 was set after the first run on the gate seed, which had one stale execution at 0.34; docs/DEPENDENCIES.md records that run.
 
-| Seed | Role | Recall | Precision | Stale (guarded) | Stale (kernel only) | Over-invalidated | Guard over-holds |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | tuning | 95.12% | 97.77% | 0 | 10 | 4 | 86 |
-| 2 | tuning | 96.32% | 98.81% | 0 | 7 | 3 | 92 |
-| 3 | tuning | 92.89% | 98.24% | 0 | 14 | 4 | 95 |
-| 4 | tuning | 92.39% | 98.26% | 0 | 15 | 3 | 82 |
-| 5 | tuning | 92.82% | 99.39% | 0 | 13 | 1 | 95 |
-| 11 | held-out | 94.97% | 98.11% | 0 | 9 | 3 | 89 |
-| 12 | held-out | 96.81% | 97.63% | 0 | 6 | 4 | 95 |
-| 13 | held-out | 94.38% | 95.06% | 0 | 10 | 8 | 95 |
-| 14 | held-out | 92.93% | 98.17% | 0 | 13 | 3 | 88 |
-| 15 | held-out | 95.08% | 98.78% | 0 | 9 | 2 | 86 |
+| Seed | Role | Recall | Precision | Stale (guarded) | Stale (kernel only) | Over-invalidated | Guard over-holds | Stale, guard only (0 edges) | Guard holds (true / false) | Guard false-hold rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | tuning | 95.12% | 97.77% | 0 | 10 | 4 | 86 | 0 | 96 (10 / 86) | 89.58% |
+| 2 | tuning | 96.32% | 98.81% | 0 | 7 | 3 | 92 | 0 | 100 (8 / 92) | 92.00% |
+| 3 | tuning | 92.89% | 98.24% | 0 | 14 | 4 | 95 | 0 | 110 (15 / 95) | 86.36% |
+| 4 | tuning | 92.39% | 98.26% | 0 | 15 | 3 | 82 | 0 | 97 (15 / 82) | 84.54% |
+| 5 | tuning | 92.82% | 99.39% | 0 | 13 | 1 | 95 | 0 | 108 (13 / 95) | 87.96% |
+| 11 | held-out | 94.97% | 98.11% | 0 | 9 | 3 | 89 | 0 | 98 (9 / 89) | 90.82% |
+| 12 | held-out | 96.81% | 97.63% | 0 | 6 | 4 | 95 | 0 | 102 (7 / 95) | 93.14% |
+| 13 | held-out | 94.38% | 95.06% | 0 | 10 | 8 | 95 | 0 | 105 (10 / 95) | 90.48% |
+| 14 | held-out | 92.93% | 98.17% | 0 | 13 | 3 | 88 | 0 | 101 (13 / 88) | 87.13% |
+| 15 | held-out | 95.08% | 98.78% | 0 | 9 | 2 | 86 | 0 | 95 (9 / 86) | 90.53% |
+
+Stale (kernel only) is staleWithoutGuard. Guard false-hold rate across these seeds: 84.54% to 93.14%.

@@ -120,6 +120,35 @@ export interface DependencyEvalMetrics {
   /** Recall over the pairs whose carrying premise reached minSupport co-uses.
    * Diagnostic only; the gate is `recall`. */
   recallObservable: number;
+  /** Decomposition of the stale gate. Inference plus accept-all with the guard
+   * off: the same count as `kernelStaleExecutions`, named for what it isolates. */
+  staleWithoutGuard: number;
+  /** Guard on, zero accepted edges (`guardOnly.staleExecutions`): what the
+   * guard prevents on its own, with no help from inference. */
+  staleGuardOnly: number;
+  /** (correction, dependent) checks the guard held, after accept-all. */
+  guardHolds: number;
+  /** Holds on a premise in the dependent's true closure. */
+  guardTrueHolds: number;
+  /** Holds on a premise outside the true closure (includes `guardOverHolds`,
+   * plus holds on dependents a false edge had already invalidated). */
+  guardFalseHolds: number;
+  /** guardFalseHolds / guardHolds; 0 when nothing was held. */
+  guardFalseHoldRate: number;
+  guardOnly: GuardOnlyMetrics;
+}
+
+/** The guard alone: a fresh store, no inference, no accepted edge, the same
+ * corrections and guarded executor as the main run. */
+export interface GuardOnlyMetrics {
+  staleExecutions: number;
+  staleChecks: number;
+  /** True undeclared pairs the kernel left active: what would run with neither inference nor guard (lower bound). */
+  undeclaredLeftActive: number;
+  holds: number;
+  trueHolds: number;
+  falseHolds: number;
+  falseHoldRate: number;
 }
 
 export interface DependencyEvalResult {
@@ -144,5 +173,5 @@ export interface DependencyReport {
   gate: { recall: { value: number; min: number }; precision: { value: number; min: number }; staleExecutions: { value: number; max: number }; passed: boolean };
   result: DependencyEvalResult;
   /** `tuning`: seeds the thresholds were chosen on; `held-out`: never looked at while tuning. */
-  robustness: { seed: number; role: 'tuning' | 'held-out'; recall: number; precision: number; staleExecutions: number; kernelStaleExecutions: number; overInvalidated: number; guardOverHolds: number }[];
+  robustness: { seed: number; role: 'tuning' | 'held-out'; recall: number; precision: number; staleExecutions: number; kernelStaleExecutions: number; overInvalidated: number; guardOverHolds: number; staleWithoutGuard: number; staleGuardOnly: number; guardHolds: number; guardTrueHolds: number; guardFalseHolds: number; guardFalseHoldRate: number }[];
 }
