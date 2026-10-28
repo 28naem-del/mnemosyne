@@ -4,7 +4,7 @@
 
 ```bash
 npm run build
-node dist/cli/index.js demo                    # stream the five moments; exit 1 if an implemented proof fails
+node dist/cli/index.js demo                    # stream the five moments; exit 1 if any proof fails
 node dist/cli/index.js demo --record demo.json # also save the full report as JSON (refuses an existing file)
 node dist/cli/index.js demo --classic          # the previous single-scenario JSON demo
 ```
@@ -23,7 +23,21 @@ The programmatic entry point is `runBreakthroughDemo({ out?, seed?, records?, cu
 
 ### 2. I corrected one fact and it fixed everything downstream, including things I never linked
 
-**Pending.** Registered with a `pending` proof; it arrives with the inferred-dependency work (`src/dependencies`), whose accepted edges go through `correct(id, { dependencies })` so the correction cascade reaches records nobody linked by hand.
+**What you see.** A small hand-built synthetic billing scenario. One premise: the billing API base URL. Two runbooks declared it. Two more runbooks and one learned runtime skill used it and never said so. A key-rotation runbook (the decoy) was used with it only in tasks that failed. Each task goes through the APIs a controller uses: `recall()`, then `MemoryRuntime.recordTrace()` with the retrieved and used ids and a verifier outcome. A failed task's verdict is a task-level `recordRetrievalOutcome`, because a per-record failed outcome would make the premise itself ineligible. Then:
+
+1. `inferDependencies` (rule `co-use-success-v1`, read-only, no model) prints each proposal with its support, reliance, lift and Wilson confidence. The decoy is not proposed: a failed task is never support.
+2. Every proposal is accepted through `reviewDependency`. Each acceptance appends a `dependency` ledger receipt (its id is printed) and links the edge in the same transaction. A runbook is re-versioned with the premise declared; the skill gets the premise through `linkPremise`.
+3. One `correct()` of the premise. The demo prints, for each dependent, labelled declared or never linked, whether it was invalidated. The skill is reported `retired`, with the runtime's reason. The decoy is still active and still recalled.
+
+See [DEPENDENCIES.md](DEPENDENCIES.md) for the rule and its thresholds.
+
+**What it proves.** On this scenario, measured in this run:
+
+- undeclared dependents invalidated, X/X;
+- accepted edges that are true, Y/Y (every proposal must be accepted and true, and there must be one per undeclared dependent);
+- stale dependents still handed back after the correction, which must be 0.
+
+A dependent is stale if `recall({ limit: 20 })` or `compile({ maxTokens: 4000 })` returns any version of it, or if `runtime.getSkill()` reports the skill `active`. The same probes run before the correction and must return all five dependents, so the zero cannot come from probes that never matched. The premise guard (`createPremiseGuard`) is not used: the zero is the kernel cascade alone, through declared and accepted edges. When `reports/dependencies/v1/report.md` is in the checkout, the demo also prints the published suite-v1 numbers from it (recall 96.05 %, precision 98.06 %, stale 0 on 228 synthetic records and 120 corrections) as a pointer. They are not this moment's proof.
 
 ### 3. It found the belief that made it wrong
 
@@ -41,7 +55,22 @@ This moment is defensive research against our own kernel, run offline on synthet
 
 ### 5. It got better on its own, and handed me the receipt
 
-**Pending.** Registered with a `pending` proof; it arrives with the consolidation work (`src/consolidation`): one consolidation kept because a measured outcome improved, one rolled back because it did not, each with its ledger receipt.
+**What you see.** The consolidation module's synthetic ops store (`seedDemoStore` in `src/consolidation/demo.ts`): eleven records and ten recorded tasks with a verifier outcome, which form the replay set. Three dreams (consolidation passes) go through the gate (`proposeConsolidation` + `gateConsolidation`). The gate replays the recorded retrievals under the current state and under the proposed one, on a scratch copy.
+
+1. The deterministic, model-free proposer suggests two near-duplicate merges. The pass is **rolled back**: overall it helped, but one merge alone regressed.
+2. The same proposer runs again; backoff drops the faulted merge. This pass is **kept**, and the demo prints its outcome delta, the replay tasks and the hold-out delta.
+3. A laundering pass folds an untrusted forum tip into a policy-tier procedure. It is **rolled back** by the invariants, which are named.
+
+Each verdict prints its signed receipt: digest, keyId, `prevDigest` (the chain link), and whether the Ed25519 signature verifies. Then `rollbackConsolidation` undoes the kept pass in one call. The demo prints `stateSha256` before the pass, after it was kept, and after the rollback, with `identical: true`. Finally `verifyConsolidationChain` checks every receipt, pinned to the demo key. See [CONSOLIDATION.md](CONSOLIDATION.md) for the gate.
+
+**What it proves.** On this store, measured in this run:
+
+- passes kept: at least 1, with outcome delta >= 0 and hold-out delta >= 0;
+- passes rolled back: at least 1, each with its reason;
+- the rollback restores a state hash identical to the one before the kept pass, and the kept pass did change the state;
+- the receipt chain verifies, with one receipt per gate decision plus the rollback receipt.
+
+The gate is outcome-gated and reversible on the recorded tasks it replays. That is what is measured here; it is not a claim about tasks the agent never recorded.
 
 ## Honest limits
 
@@ -51,7 +80,10 @@ This moment is defensive research against our own kernel, run offline on synthet
 - **What "identical" covers.** Record ids are random UUIDs, so the hash values themselves differ between runs; the claim is that two independent readers of one store agree at every cut point. The hash covers the visible records; derived indexes, embeddings and the ledger are excluded by design (`REPLAY_EXCLUSIONS` in `src/local/replay.ts`). The cross-process gate with a `VACUUM` pass lives in `tests/local-replay-determinism.test.ts`.
 - **What the poisoning number covers.** "Zero escapes on suite v1 (227 cases, reproducible)" is a statement about the cases in the suite, not a claim that the kernel resists every attack. The suite's classes and their limits are in [POISONING-SUITE.md](POISONING-SUITE.md).
 - **One culprit.** Moment 3 seeds a single false record at `k = 1`, where the minimal blame set is unique. At larger `k` several minimal sets can exist; `bisect` reports that ambiguity (`minimalUnique`, `alternatives`) instead of hiding it.
-- **Pending moments.** Moments 2 and 5 print `pending` and are counted neither as passed nor in the total until their implementations land.
+- **Small scenarios for moments 2 and 5.** Each is a hand-built synthetic scenario: a few records and a few tens of tasks. Its PROOF says the mechanism works end to end on that scenario. It is not a recall or precision estimate. The suite-level numbers are in [DEPENDENCIES.md](DEPENDENCIES.md) and [CONSOLIDATION.md](CONSOLIDATION.md), with their own limits.
+- **The reviewer in moment 2 accepts everything.** In the demo every proposal is accepted, as a reviewer would after checking it. In production each acceptance is a person's decision, and that decision is what the receipt records. Moment 2 does not use the premise guard, which covers pairs with fewer than two successful co-uses.
+- **Demo signing key.** Moment 5 signs with the consolidation module's fixed demo key so that receipts are reproducible. Never sign a real store with it.
+- **Pending moments.** A moment registered without an implementation prints `pending` and is counted neither as passed nor in the total. None is pending today.
 
 ## Adding a moment
 
