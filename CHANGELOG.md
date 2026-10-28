@@ -7,14 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.0.0-rc.2] — draft, not released
+## [3.0.0-rc.2] - 2026-10-28
 
-Draft entry for the second 3.0.0 release candidate, which builds on rc.1 below. The root package
-version in this tree is still 2.0.0, and nothing in this section has been published. Every number
+The second 3.0.0 release candidate, and the first 3.0 release on npm. It is published on the
+`next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.2`); npm `latest` stays
+2.0.0, so unpinned installs are unaffected. It builds on rc.1 below, which was not published and is
+folded into this release. Every benchmark number
 reproduces offline, with no API key, no paid model and no LLM judge, using the command given next
-to it. The protocols and limits are in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
+to it (the latency figures come from a scratch harness that is not committed, and their protocol is
+stated in full). The protocols and limits are in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
 Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that commit, no wrapper `kinds` predicate): 93 test files,
 1,557 tests passed.
+
+### Breaking
+
+- **The legacy vector engine moved to `packages/legacy`.** `createMnemosyne`, the `./core`,
+  `./cognitive`, `./graph`, `./broadcast`, `./pipeline`, `./cache` and `./tools` subpaths and the
+  blind `dream()`/`consolidate()` consolidation are no longer in `mnemosy-ai`; they live unchanged in
+  the separate package `mnemosy-ai-legacy`, which is **not on npm yet**. Build it from a checkout of
+  this repository, or stay on `mnemosy-ai@2`, which keeps both engines. The import table and steps
+  are in [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md); the full list is under rc.1, "Removed
+  (breaking)", below.
+- **`mnemosy demo` runs the five-moment demo**, and the root `consolidate` export is a different
+  function from the legacy one. Both are described under "Changed (behaviour)" below.
 
 ### Added
 
@@ -94,37 +109,63 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
 
 ### Measured (commands in docs/BENCHMARKS-TRUST.md)
 
-- **PrecisionMemBench, protocol-exact, no wrapper-side filter, retrieval mode, no LLM judge.**
+- **PrecisionMemBench: 70/77 single-turn and 11/12 session turns**, on the public 35-belief
+  fixture, protocol-exact, in retrieval mode, with no wrapper-side filter, no wrapper `kinds`
+  predicate and no LLM judge. rc.1 scored 22/77 unfiltered and 48/77 with sweep-chosen wrapper
+  filters, and 6/12 session turns.
   - Single-turn: **70/77** on both the lexical and the hybrid path, with mean precision 0.871 and
-    recall 1.000. Session: **11/12** turns (rc.1: 6/12), with no wrapper `kinds` predicate. The
-    12th turn needs an open-question kind policy that the kernel is not told about.
+    recall 1.000. Session: **11/12** turns. The 12th turn needs an open-question kind policy that
+    the kernel is not told about.
   - Commands: `node benchmarks/precisionmembench/run.mjs --label final-lexical --retrieval lexical
     --metadata protocol --both`, and the same with `--retrieval hybrid`.
-  - rc.1 was 48/77 with sweep-chosen wrapper filters, and 22/77 unfiltered.
   - Ablations: names gate off 20/77, fuzzy off 64/77.
   - The 7 remaining failures need lifecycle fields that the single-turn protocol does not send.
-  - This is the public 35-belief fixture the controls were designed against, so it is not a
-    held-out estimate.
-- **Poisoning suite v1 with consolidation on.**
-  - 227 synthetic cases: **0/167 escapes, 0/60 false quarantines**, 0 errors.
+  - This is the public fixture the controls were designed against, so the score describes this
+    fixture, not unseen data.
+- **Poisoning suite v1 with consolidation on: 0/167 escapes and 0/60 false quarantines** on 227
+  synthetic cases, lexical path, 0 errors. Without the gate (the ungated negative control), 85/167
+  attacks escape.
   - 294 gate decisions: 11 kept, 184 rolled back, 99 `no_evidence`. No laundering pass was kept.
-  - The ungated negative control has 85/167 escapes.
   - Command: `node dist/evaluation/poisoning/cli.js --cases benchmarks/poisoning/v1/cases.jsonl
     --out reports/poisoning/v1-consolidation --consolidation`.
   - Default mode is unchanged and byte-identical: 0/167 escapes, 0/60 false quarantines.
-- **Dependency suite v1 (synthetic, seed 20261028).**
-  - Invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), and **0**
-    stale-procedure executions through the premise guard (248 checks, 120 corrections).
-  - Stale 0 is produced by the premise guard (0 also with zero accepted edges); inference alone
-    leaves 7/248 stale, and the guard's false-hold rate is 92.78 % (90 of 97 holds).
+  - These counts describe a synthetic case set we wrote; they are not rates for real agent traffic.
+- **Dependency suite v1: invalidation recall 96.05 % (170/177), precision 98.06 % (152/155), and 0
+  stale-procedure executions with the premise guard** (248 checks), on a synthetic seeded corpus
+  (seed 20261028, 120 corrections) with an accept-all eval reviewer.
+  - The zero is the premise guard's (0 also with zero accepted edges): inference alone leaves
+    7/248 stale, and the guard's false-hold rate is 92.78 % (90 of 97 holds).
+  - The generator forces every true edge to be observed at least once; without that floor stale
+    is 1–2 (see "Known limits").
   - Ten robustness seeds: recall 92.4–96.8 %, precision 95.1–99.4 %, stale 0.
   - Command: `node dist/evaluation/dependencies/cli.js --corpus benchmarks/dependencies/v1/corpus.json
     --out reports/dependencies/v1 --seeds 1,2,3,4,5,11,12,13,14,15`.
+- **Replay determinism: 1000/1000 identical states and 24,000/24,000 as-of answers.** Two readers
+  of one synthetic store (this process and a separate cold-open process) agree at 1000 seeded
+  `(asOf, knownAt)` cut points, and every as-of answer equals the ground truth taken from the plan.
+  Measured by moment 1 of `mnemosy demo`.
+- **Bisect: precision 1.00 in about 1 s on 2,000 records** (bar 60 s). One seeded false record in a
+  synthetic 2,000-record store is found and confirmed by re-running the real recall without it. The
+  documented run took 1.53 s; re-runs measured 0.6–1.2 s. Measured by moment 3 of `mnemosy demo`.
 - **The default retrieval path did not move.** Before and after this work:
   - LoCoMo zero-model recall@10, full set (1,986 questions, 1,531 annotated): 40.49 (overlap)
     and 52.47 (BM25);
   - LongMemEval-S cleaned, 470 annotated of 500, recall@20: lexical mean recall 89.72, BM25 95.08.
   - Summary committed at `reports/retrieval-regression/2026-10-28/summary.json`.
+- **Latency (loaded host; an indication, not an idle-machine figure).**
+  - Protocol: a synthetic file-backed store per process, built with 2,000 `store()` and 400
+    `correct()` calls (2,400 rows, 400 superseded); 30 warm-up queries, then 150 lexical or 60
+    hybrid timed recalls per series. Controls OFF and ON (`requireNamedMatch: 'auto'`,
+    `fuzzy: true`) were interleaved per query in the same process, and the build order rotated
+    across 4 lexical and 3 hybrid rounds. Hybrid used a deterministic stub embedder with the
+    reranker off. The always-on prefilter was isolated against a build with it disabled (not
+    shipped). The host had 10 cores at 1-minute load 5.12–11.32 (`ps` CPU sum 115–867 %).
+  - Opt-in controls: **+18.2 % p50** on BM25 recall (per-round range +10.4 to +21.6 %; p95 +2.2 %);
+    on hybrid recall no effect could be resolved (−4.7 % p50, range −8.5 to +23.2 %).
+  - Always-on lifecycle prefilter: no p50 cost on BM25 (−16.3 %) or hybrid (−0.5 %); see
+    "Known limits" for the `overlap` scorer.
+  - `store()` and `correct()` against 2.0.0: +11.2 % and +1.2 % p50 (lexical), within the
+    round-to-round spread.
 
 ### Changed (behaviour)
 
@@ -153,8 +194,19 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
 ### Known limits
 
 - **PrecisionMemBench.** The names gate abstains, by design, on queries that refer to a named
-  record without naming it. Recall latency under the new controls was not established on an idle
-  machine: a loaded-machine sample showed about +10–25 % p50.
+  record without naming it.
+- **Latency.**
+  - **The non-default `overlap` scorer is much slower.** With 400 superseded rows in the store,
+    `recall({ lexicalScoring: 'overlap' })` is **+458 % p50** slower than the same build with the
+    lifecycle prefilter disabled (26.6 ms against 4.8 ms; per-round range +414 to +694 %) and
+    +517 % against 2.0.0 (4.6 ms), on the loaded-host protocol above. The prefilter is always on
+    and has no switch. BM25, the default scorer, and hybrid recall are not affected, but MCP
+    `memory_recall` and the CLI expose `lexicalScoring: 'overlap'`. The cause has not been
+    investigated.
+  - **Idle-machine latency is unmeasured.** Every latency figure above comes from a loaded host,
+    and the per-round ranges are wide. The real embedder and reranker, stores larger than 2,400
+    rows, and a premise guard with task evidence were not measured. An earlier loaded-machine
+    before/after sample on 100 LongMemEval questions showed about +10–25 % p50.
 - **Consolidation.**
   - Replay is lexical.
   - A store with the default `queries: 'digest'` ledger setting records no query text, so every
@@ -166,7 +218,8 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
   - Paraphrase laundering is not caught. `declared-content` is a token-subset test, so an
     untrusted instruction restated, without citing it, only in words from trusted records is kept
     as a live `procedure`.
-  - No improvement-from-experience lift has been measured.
+  - No improvement from experience has been measured; the gate only keeps passes that do not
+    regress recorded outcomes.
 - **Dependencies.**
   - Stale = 0 holds only when the executor uses the premise guard. The kernel alone runs 7 stale
     procedures on the gate seed.
@@ -182,10 +235,10 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
   calls), and ConsolidationBench is still blocked.
 - **Docs not updated.** `site/` pages still describe the classic demo.
 
-## [3.0.0-rc.1] — draft, not released
+## [3.0.0-rc.1] — not published; folded into 3.0.0-rc.2
 
-Draft entry for the first 3.0.0 release candidate. The root package version in this tree is still
-2.0.0; nothing in this section has been published. Numbers below reproduce from a fresh clone of
+The first 3.0.0 release candidate. It was never tagged or published; everything in this section
+ships in 3.0.0-rc.2 above. Numbers below reproduce from a fresh clone of
 the branch with the commands in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
 
 ### Removed (breaking)
