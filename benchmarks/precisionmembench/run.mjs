@@ -5,8 +5,13 @@
 // reports to reports/precisionmembench/<label>/, then stop the server.
 //
 //   node benchmarks/precisionmembench/run.mjs --label lexical-protocol \
-//        --retrieval lexical --metadata protocol [--cutoff 0.3] [--min-score 3] [--min-sim 0.55] [--rerank] [--session|--both]
+//        --retrieval lexical --metadata protocol [--min-scores '{"reranker":0.3}'] [--named auto|true|false] [--no-fuzzy] [--rerank] [--session|--both]
 //        [--extended-harness]   apply patches/pmb-extended-metadata.patch to the clone for this run (configuration B)
+//
+// No wrapper-side filter exists any more: --min-scores, --named and --no-fuzzy are
+// KERNEL options (recall() evaluates them and the ledger records them), and
+// run-summary.json states `wrapperFilter: "none"`. The old --cutoff, --min-score
+// and --min-sim post-filters are rejected.
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -21,9 +26,12 @@ const flag = (name) => args.includes(`--${name}`);
 const label = opt('label', 'run');
 const retrieval = opt('retrieval', 'lexical');
 const metadata = opt('metadata', 'protocol');
-const cutoff = opt('cutoff');
-const minSim = opt('min-sim');
-const minScore = opt('min-score');
+for (const removed of ['cutoff', 'min-score', 'min-sim']) {
+  if (args.includes(`--${removed}`)) { console.error(`--${removed} was a wrapper-side filter and is no longer supported; use the kernel's --min-scores`); process.exit(2); }
+}
+const minScores = opt('min-scores');
+const named = opt('named', 'auto');
+const fuzzy = !flag('no-fuzzy');
 const lexical = opt('lexical-scoring');
 const port = Number(opt('port', '8089'));
 const outDir = resolve(root, 'reports/precisionmembench', label);
@@ -43,9 +51,9 @@ mkdirSync(outDir, { recursive: true });
 if (!existsSync(resolve(clone, 'node_modules/.bin/ava'))) { console.error('clone deps missing: run init.sh'); process.exit(2); }
 
 const env = { ...process.env, PORT: String(port), MNEMOSYNE_PMB_RETRIEVAL: retrieval, MNEMOSYNE_PMB_METADATA: metadata };
-if (cutoff) env.MNEMOSYNE_PMB_CUTOFF = cutoff;
-if (minSim) env.MNEMOSYNE_PMB_MIN_SIMILARITY = minSim;
-if (minScore) env.MNEMOSYNE_PMB_MIN_SCORE = minScore;
+if (minScores) env.MNEMOSYNE_PMB_MIN_SCORES = minScores;
+env.MNEMOSYNE_PMB_NAMED = named;
+if (!fuzzy) env.MNEMOSYNE_PMB_FUZZY = '0';
 if (lexical) env.MNEMOSYNE_PMB_LEXICAL_SCORING = lexical;
 if (flag('rerank')) env.MNEMOSYNE_PMB_RERANK = '1';
 delete env.OPENAI_API_KEY; delete env.ANTHROPIC_API_KEY; delete env.OPENROUTER_API_KEY;
@@ -67,7 +75,7 @@ if (!health) { console.error('server never became healthy'); stop(); process.exi
 console.log(`[run] server healthy: ${JSON.stringify(health)}`);
 
 const tests = flag('session') ? ['src/session-retrieval.external.eval.test.ts'] : flag('both') ? ['src/retrieval.external.eval.test.ts', 'src/session-retrieval.external.eval.test.ts'] : ['src/retrieval.external.eval.test.ts'];
-const summary = { label, retrieval, metadata, extendedHarness, harnessPatch: extendedHarness ? 'benchmarks/precisionmembench/patches/pmb-extended-metadata.patch' : null, cutoff: cutoff ?? null, minSimilarity: minSim ?? null, minScore: minScore ?? null, rerank: flag('rerank'), lexicalScoring: lexical ?? null, benchmarkCommit: spawnSync('git', ['-C', clone, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), benchmarkDirty: spawnSync('git', ['-C', clone, 'status', '--porcelain'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean), kernelCommit: spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), node: process.version, startedAt: new Date().toISOString(), runs: [] };
+const summary = { label, retrieval, metadata, extendedHarness, harnessPatch: extendedHarness ? 'benchmarks/precisionmembench/patches/pmb-extended-metadata.patch' : null, wrapperFilter: 'none', noWrapperFilter: true, kernel: { requireNamedMatch: named === 'auto' ? 'auto' : named === 'true', fuzzy, minScores: minScores ? JSON.parse(minScores) : null }, rerank: flag('rerank'), lexicalScoring: lexical ?? null, benchmarkCommit: spawnSync('git', ['-C', clone, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), benchmarkDirty: spawnSync('git', ['-C', clone, 'status', '--porcelain'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean), kernelCommit: spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), node: process.version, startedAt: new Date().toISOString(), runs: [] };
 
 for (const test of tests) {
   const isSession = test.includes('session');
