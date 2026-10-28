@@ -1,6 +1,6 @@
 # Engineering review and open gaps
 
-This ledger records implemented behavior, reproducible evidence and remaining work for the 2.0.0-rc.8 source candidate. It complements [release status](UPGRADE-STATUS.md) and the executable protocols; it is not an independent security certification or a claim of comparative product superiority.
+This ledger records implemented behavior, reproducible evidence and remaining work for the 2.0.0-rc.8 source candidate. It is kept as a historical record and has not been re-audited for 2.0.0 or the 3.0.0-rc.2 pre-release; the 3.0.0-rc.2 evidence and its limits are in [Benchmarks and trust evidence](BENCHMARKS-TRUST.md). It complements [release status](UPGRADE-STATUS.md) and the executable protocols; it is not an independent security certification or a claim of comparative product superiority.
 
 ## Findings and disposition
 

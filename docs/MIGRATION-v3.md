@@ -1,5 +1,7 @@
 # Migration to Mnemosyne 3.0
 
+The first 3.0 release on npm is the pre-release **3.0.0-rc.2** on the `next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.2`); rc.1 was not published. The `latest` channel stays on 2.0.0, so an unpinned `npm install mnemosy-ai` and an existing `^2` range are not affected until 3.0.0 is promoted.
+
 Version 3.0.0 makes `mnemosy-ai` the local kernel only. The 1.x/2.x Qdrant engine — `createMnemosyne`, its vector, graph, broadcast, cache, pipeline and cognitive layers, and the framework-agnostic `tools` built on them — moved out of the public package into a separate package, `mnemosy-ai-legacy`, kept in this repository under [`packages/legacy`](../packages/legacy/README.md). Applications that use only `createLocalMemory`, the runtime, MCP, HTTP, CLI or other kernel subpaths need no code changes.
 
 `mnemosy-ai-legacy` is **not published to npm yet** (`"private": true`). Until it is, install it from a checkout of this repository (see [keep using the legacy engine](#keep-using-the-legacy-engine)). Upgrading from 1.x? Read [the 2.0 migration notes](MIGRATION-v2.md) first; they still describe the legacy engine's behavior.

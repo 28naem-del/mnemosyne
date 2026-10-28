@@ -1,6 +1,6 @@
 # Runtime, retrieval and local service
 
-This guide describes **Mnemosyne 2.0.0**. Follow the [quickstart](quickstart.md) to install the npm package or build the matching source tag. TypeScript package imports work from this repository after building, or from an installed package. With npm, replace `node dist/cli/index.js` in the source examples with `npx --no-install mnemosy`. Node >=22.16 is required; the bundled Python client requires Python >=3.10 and its PyPI publication remains separate.
+This guide describes **Mnemosyne 3.0.0-rc.2** (the newest pre-release, npm `next`) and applies to the stable **2.0.0** (npm `latest`) except where a section says otherwise. Follow the [quickstart](quickstart.md) to install the npm package or build the matching source tag. TypeScript package imports work from this repository after building, or from an installed package. With npm, replace `node dist/cli/index.js` in the source examples with `npx --no-install mnemosy`. Node >=22.16 is required; the bundled Python client requires Python >=3.10 and its PyPI publication remains separate.
 
 The local engine, vectors, sources, models, skills, entity relations and branch state share one SQLite database. Workspace/agent identity comes from trusted host configuration. A source reference is provenance supplied by the caller, not remote authentication or permission to execute an action.
 

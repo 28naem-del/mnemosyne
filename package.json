@@ -1,6 +1,6 @@
 {
   "name": "mnemosy-ai",
-  "version": "2.0.0",
+  "version": "3.0.0-rc.2",
   "description": "Local-first long-term memory for AI agents: an evidence-backed SQLite store with hybrid recall, cross-encoder reranking, corrections that retire stale guidance and temporal history, served over TypeScript, MCP, CLI and HTTP",
   "type": "module",
   "main": "./dist/index.js",

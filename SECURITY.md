@@ -1,6 +1,6 @@
 # Security policy
 
-Mnemosyne 2.0.0 is the stable release of the version 2 line. Review [migration notes](docs/MIGRATION-v2.md) before upgrading existing applications. Report security issues affecting this release or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
+Mnemosyne 2.0.0 is the stable release of the version 2 line (npm `latest`); 3.0.0-rc.2 is the newest pre-release (npm `next`) and a breaking release. Review the [version 2](docs/MIGRATION-v2.md) and [version 3](docs/MIGRATION-v3.md) migration notes before upgrading existing applications. Report security issues affecting this release or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
 
 ## Report a vulnerability privately
 

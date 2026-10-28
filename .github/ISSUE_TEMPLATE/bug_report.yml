@@ -27,7 +27,7 @@ body:
     attributes:
       label: Mnemosyne version or commit
       description: Include the release tag or full commit SHA and how you installed it.
-      placeholder: "2.0.0-rc.8, installed from the GitHub release tarball"
+      placeholder: "3.0.0-rc.2 from npm (mnemosy-ai@next), or 2.0.0 from npm (latest)"
     validations:
       required: true
 

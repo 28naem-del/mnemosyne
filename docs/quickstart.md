@@ -4,24 +4,25 @@ Run Mnemosyne locally, see a correction retire old advice, then connect your age
 
 ## Choose your engine
 
-Version **2.0.0 includes both engines**:
+The stable version **2.0.0 includes both engines**:
 
 - **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` 2.x (from 3.0, the separate `mnemosy-ai-legacy` package) with configured external services. Start with the [existing backend example](../packages/legacy/examples/basic-usage.ts) and review the [version 2](MIGRATION-v2.md) and [version 3](MIGRATION-v3.md) migration notes.
 - **Local Engine:** use `createLocalMemory` from `mnemosy-ai/local` for a SQLite store. The demonstrations below and the [local API](api.md) use this engine. The [MemoryAgent adapter](AGENT.md) runs on its local runtime.
 
-They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. From 27 October 2026 the npm `latest` channel is 2.0.0 with both engines; the older 1.x line stays installable as `mnemosy-ai@1`.
+They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. From 27 October 2026 the npm `latest` channel is 2.0.0 with both engines; the older 1.x line stays installable as `mnemosy-ai@1`. The newest pre-release, 3.0.0-rc.2 on the `next` channel, ships the Local Engine only; the Vector Engine moves to `mnemosy-ai-legacy`, which is not on npm yet ([version 3 migration notes](MIGRATION-v3.md)).
 
 ## Install the package
 
 In your Node.js project:
 
 ```sh
-npm install mnemosy-ai
+npm install mnemosy-ai           # stable: latest = 2.0.0
+npm install mnemosy-ai@next      # newest pre-release: 3.0.0-rc.2
 npx --no-install mnemosy demo
 npx --no-install mnemosy learning-demo
 ```
 
-Unqualified installation follows `latest`, which is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install. Upgrading an existing 1.x application is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
+Unqualified installation follows `latest`, which is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install. `mnemosy-ai@next` installs the 3.0.0-rc.2 pre-release; pin `mnemosy-ai@3.0.0-rc.2` to reproduce it, and read the [version 3 migration notes](MIGRATION-v3.md) before moving an application that uses `createMnemosyne`. Upgrading an existing 1.x application is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
 
 ## Build the tagged source release
 
@@ -38,7 +39,7 @@ These commands build **2.0.0**, the 2.0.0-rc.10 candidate promoted to stable wit
 
 The first demo exercises handoff, scoped sharing, correction propagation and forgetting. The learning demo adds original evidence, a scripted observation job, a controller skill trial and retirement after correction. Both use synthetic temporary databases, clean up their own data, and make no external model calls. Passing these fixtures establishes the demonstrated behavior, not general agent intelligence.
 
-In a checkout of the current source tree, which is the 3.0.0 draft and is not yet on npm, `mnemosy demo` runs the [five-moment demo](DEMO.md) instead:
+From 3.0.0-rc.2 (`mnemosy-ai@next`, or a checkout of the `v3.0.0-rc.2` tag), `mnemosy demo` runs the [five-moment demo](DEMO.md) instead:
 
 1. replay of a past belief;
 2. a correction that reaches dependents nobody linked;
@@ -60,7 +61,7 @@ To keep a receipt, choose a new output filename:
 node dist/cli/index.js demo --record demo-evidence.json
 ```
 
-Recording refuses to overwrite an existing file. In the 3.0.0 source tree, `demo --record` saves the five-moment report; to record the 2.0.0 report shape, use `demo --classic --record`. Contributor validation is a separate step: run `npm run check` for typechecking, tests and example typechecking. See [contributing](../CONTRIBUTING.md) for the current documentation and release checks.
+Recording refuses to overwrite an existing file. From 3.0.0-rc.2, `demo --record` saves the five-moment report; to record the 2.0.0 report shape, use `demo --classic --record`. Contributor validation is a separate step: run `npm run check` for typechecking, tests and example typechecking. See [contributing](../CONTRIBUTING.md) for the current documentation and release checks.
 
 ## Store and recall shared evidence
 

@@ -2,7 +2,7 @@
 
 Mnemosyne 2 has two storage paths. The local engine, MCP server and authenticated HTTP service use SQLite and BM25 retrieval by default. The existing `createMnemosyne()` API uses a separately configured vector service and embedding endpoint. Starting a local service does not connect optional legacy databases. It makes no model-provider calls by default; an explicit `--provider-config` enables hybrid queries that send query text to the configured embedding endpoint. See [semantic indexing and hybrid recall](RUNTIME.md#hybrid-retrieval) for provider setup and data flow.
 
-This guide describes **2.0.0**. Use the [quickstart](quickstart.md) for the npm installation or a fresh clone of the matching tag. With the npm package installed, replace `node dist/cli/index.js` below with `npx --no-install mnemosy`; the remaining flags are identical. Python registry publication remains separate.
+This guide describes the stable **2.0.0** (npm `latest`) and the **3.0.0-rc.2** pre-release (npm `next`); where they differ, it says so. Use the [quickstart](quickstart.md) for the npm installation or a fresh clone of the matching tag. With the npm package installed, replace `node dist/cli/index.js` below with `npx --no-install mnemosy`; the remaining flags are identical. Python registry publication remains separate.
 
 ## Build and run locally
 
@@ -15,7 +15,7 @@ npm run demo
 npm run demo:learning
 ```
 
-The demos use isolated temporary databases and check handoffs, privacy, correction propagation, evidence, runtime learning fixtures and forgetting. They do not call an LLM or measure agent intelligence. In the 3.0.0 source tree, `npm run demo` runs the [five-moment demo](DEMO.md). It prints live-measured proofs for replay, downstream correction, bisect, poisoning and consolidation on synthetic data, and `node dist/cli/index.js demo --classic` runs the 2.0.0 demo. Run `npm run check` separately for the full contributor checks.
+The demos use isolated temporary databases and check handoffs, privacy, correction propagation, evidence, runtime learning fixtures and forgetting. They do not call an LLM or measure agent intelligence. From 3.0.0-rc.2, `npm run demo` runs the [five-moment demo](DEMO.md). It prints live-measured proofs for replay, downstream correction, bisect, poisoning and consolidation on synthetic data, and `node dist/cli/index.js demo --classic` runs the 2.0.0 demo. Run `npm run check` separately for the full contributor checks.
 
 Start an MCP server with an explicit persistent path and identity:
 

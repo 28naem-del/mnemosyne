@@ -1,12 +1,13 @@
-# Benchmarks and trust evidence (draft for 3.0.0-rc.2)
+# Benchmarks and trust evidence (3.0.0-rc.2)
 
-**Status: draft.** The rc.2 numbers on this page were produced on 2026-10-28 on branch
-`feat/breakthrough`, which merges the precision, consolidation, dependency and demo work (merge
+**Status: released with 3.0.0-rc.2** (pre-release, npm `next`, 2026-10-28; npm `latest` stays 2.0.0).
+The rc.2 numbers on this page were produced on 2026-10-28 on the tree that merges the precision,
+consolidation, dependency and demo work (merge
 commit `16cd9c0`, which also carries the verifier-driven fixes; the PrecisionMemBench reports were
 re-run at that commit without the wrapper `kinds` predicate). They were run
 offline, with no API key, no paid model and no LLM judge, and each one comes with the command
-that reproduces it from a fresh clone. The rc.1 numbers (branch `feat/unit1-proof-sprint`, commit
-range `e0bbb47..c97270c`, based on 2.0.0) are kept in their own subsections and marked as
+that reproduces it from a fresh clone. The rc.1 numbers (commit
+range `e0bbb47..c97270c`, based on 2.0.0; rc.1 was not published) are kept in their own subsections and marked as
 history. Losses are listed next to wins. Nothing here compares Mnemosyne with another product
 unless that product was run through the same harness commit by us, and so far none has been.
 
@@ -158,10 +159,17 @@ record is superseded.
     predicate is passed, so open questions are returned when they match (session turn 5).
 - **The cross-encoder neither helped nor hurt.** The reranked run ties the unreranked one at
   70/77.
-- **The latency effect is not established.** The runs were made on a machine at load average
-  16–26. An interleaved before/after sample on 100 LongMemEval questions showed about +10–25 % p50
-  recall latency, and a synthetic micro-benchmark was mixed. Rerun on an idle machine before
-  quoting latency.
+- **Latency was measured only on a loaded machine.** On a synthetic store (2,000 writes and 400
+  corrections, so 2,400 rows with 400 superseded), with controls OFF and ON interleaved per query in
+  the same process, 4 lexical and 3 hybrid rounds, on a 10-core host at 1-minute load 5.12–11.32:
+  the opt-in controls (`requireNamedMatch: 'auto'`, `fuzzy: true`) added +18.2 % p50 to BM25 recall
+  (per-round range +10.4 to +21.6 %) and no resolvable change to hybrid recall (stub embedder,
+  reranker off). The always-on lifecycle prefilter showed no p50 cost on BM25 or hybrid, but it
+  makes the non-default `lexicalScoring: 'overlap'` scorer about +458 % slower at p50 (26.6 ms
+  against 4.8 ms with the prefilter disabled; 2.0.0: 4.6 ms). An earlier loaded-machine
+  before/after sample on 100 LongMemEval questions showed about +10–25 % p50. Idle-machine latency,
+  the real embedder and reranker, and stores larger than 2,400 rows are not measured. Do not quote
+  these as idle-machine numbers.
 
 ### 1.2 rc.1 results (history: kernel `e0bbb47`, wrapper-side filters)
 
@@ -494,7 +502,8 @@ retrieval coverage against a local scorer, not generated-answer accuracy.
 - **No improvement-from-experience number exists yet.** The consolidation gate keeps only passes
   that do not regress recorded outcomes. Measured lift on held-out task families, with memory-off
   and shuffled-ledger controls, is future work, and no such lift is claimed.
-- **Recall latency under the precision controls has not been measured on an idle machine.**
+- **Recall latency has not been measured on an idle machine.** The loaded-machine figures in
+  section 1.1, including the slowdown of the non-default `overlap` scorer, are indications only.
 
 ## 8. MemSecBench — not scored
 

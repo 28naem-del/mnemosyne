@@ -8,7 +8,7 @@ Instructions for coding agents (Claude Code, Cursor, Codex, Copilot and others) 
 
 ## Use it as memory for your own agent
 
-- Install: `npm install mnemosy-ai` (`latest` is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install; the older 1.x engine stays installable as `mnemosy-ai@1`).
+- Install: `npm install mnemosy-ai` (`latest` is the stable 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install; the older 1.x engine stays installable as `mnemosy-ai@1`). The newest pre-release is 3.0.0-rc.2 on the `next` channel: `npm install mnemosy-ai@next` (or pin `mnemosy-ai@3.0.0-rc.2`); it is a breaking release, see [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md).
 - MCP: see the server entry in the [README](README.md#install-and-connect-an-agent). Tools are named `memory_*`; `--read-only` removes mutation tools; `--allow-destructive` is required for forgetting.
 - SDK: `createLocalMemory` from `mnemosy-ai/local`; contracts in [docs/api.md](docs/api.md) and [docs/CONTEXT.md](docs/CONTEXT.md).
 - Trust and scope are controller assertions. A model talking to the MCP server cannot change its workspace, raise its own trust or record its own skill trials.
@@ -30,7 +30,7 @@ Instructions for coding agents (Claude Code, Cursor, Codex, Copilot and others) 
   - Describe consolidation as outcome-gated and reversible. Never call it safe without qualification.
   - Label synthetic corpora and ledgers synthetic.
   - Do not describe recorded experience as weight-level learning or as general intelligence.
-- The 3.0.0 source tree's `mnemosy demo` is the five-moment demo ([docs/DEMO.md](docs/DEMO.md)), and its PROOF lines are measured live. `scripts/verify-package.mjs` runs `demo --classic`, because it parses the 2.0.0 JSON report.
+- From 3.0.0-rc.2, `mnemosy demo` is the five-moment demo ([docs/DEMO.md](docs/DEMO.md)), and its PROOF lines are measured live. `scripts/verify-package.mjs` runs `demo --classic`, because it parses the 2.0.0 JSON report.
 - Benchmark corpora (`benchmarks/data/`) are downloaded by `npm run benchmark:fetch` and are not committed.
 
 ## Do not

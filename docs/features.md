@@ -1,6 +1,6 @@
 # Features and boundaries
 
-Mnemosyne combines persistent evidence, current context and explicit controller feedback. This is the feature map for the **2.0.0-rc.8 source release**. Start with the [quickstart](quickstart.md) or choose a task in the [documentation index](README.md).
+Mnemosyne combines persistent evidence, current context and explicit controller feedback. This is the feature map of the version 2 line: it was written for the 2.0.0-rc.8 source release and describes behaviour that the stable **2.0.0** and the **3.0.0-rc.2** pre-release still carry. The 3.0.0-rc.2 additions (opt-in precision controls with native abstention, the outcome-gated consolidation gate, inferred dependencies and the five-moment demo) are listed in the [changelog](../CHANGELOG.md) and measured in [Benchmarks and trust evidence](BENCHMARKS-TRUST.md). Start with the [quickstart](quickstart.md) or choose a task in the [documentation index](README.md).
 
 ## Persistent local evidence
 
