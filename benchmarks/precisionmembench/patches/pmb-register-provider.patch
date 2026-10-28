@@ -1,0 +1,18 @@
+diff --git a/providers.config.json b/providers.config.json
+index 7ea1d49..99b0002 100644
+--- a/providers.config.json
++++ b/providers.config.json
+@@ -77,5 +77,13 @@
+     "seedDelayMs": 2000,
+     "beliefToText": "canonical_name_aliases",
+     "supportsUpdate": false
++  },
++  "mnemosyne": {
++    "envVar": "MNEMOSYNE_URL",
++    "defaultUrl": "http://localhost:8089",
++    "seedDelayMs": 0,
++    "beliefToText": "canonical_name_aliases",
++    "supportsUpdate": true,
++    "supportsMultiScope": true
+   }
+ }

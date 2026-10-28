@@ -1,0 +1,24 @@
+diff --git a/src/adapters/baseAdapter.ts b/src/adapters/baseAdapter.ts
+index 74a4f30..55fc15a 100644
+--- a/src/adapters/baseAdapter.ts
++++ b/src/adapters/baseAdapter.ts
+@@ -182,7 +182,18 @@ export class BaseAdapter {
+    * UniversalSessionAdapter overrides this to include extra fields.
+    */
+   protected seedMetadata(belief: Belief): Record<string, unknown> {
+-    return { beliefId: belief._id, scope: belief.scope[0] };
++    // Mnemosyne "extended metadata" configuration (disclosed harness change):
++    // forward the belief's lifecycle fields so a provider with native
++    // supersession and validity windows can act on them during seeding.
++    return {
++      beliefId: belief._id,
++      scope: belief.scope[0],
++      type: belief.type,
++      pinned: belief.pinned,
++      superseded_by: belief.superseded_by ?? null,
++      created_at: belief.created_at ?? null,
++      resolved_at: belief.resolved_at ?? null,
++    };
+   }
+ 
+   async buildContext(

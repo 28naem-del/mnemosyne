@@ -1,0 +1,77 @@
+{
+  "label": "B-lexical --retrieval lexical --metadata extended --min-score 3 --cutoff 0.5 --extended-harness",
+  "retrieval": "lexical",
+  "metadata": "protocol",
+  "extendedHarness": false,
+  "harnessPatch": null,
+  "cutoff": null,
+  "minSimilarity": null,
+  "minScore": null,
+  "rerank": false,
+  "lexicalScoring": null,
+  "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
+  "benchmarkDirty": [
+    "M providers.config.json",
+    "?? test-results/retrieval-report-mnemosyne.json",
+    "?? test-results/session-retrieval-report-mnemosyne.json"
+  ],
+  "kernelCommit": "e0bbb47c022a45d79c096c5dfe2e53eb7479dd13",
+  "node": "v26.12.1",
+  "startedAt": "2026-10-28T07:07:19.239Z",
+  "runs": [
+    {
+      "test": "src/retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 0.844,
+      "report": "retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 22,
+        "cases": 77,
+        "passRate": 0.2857,
+        "meanPrecision": 0.2616,
+        "meanRecall": 0.9535,
+        "activeRetrievalPasses": 7,
+        "passTypes": {
+          "activeRetrieval": 7,
+          "structural": 10,
+          "triviallyEmpty": 5
+        },
+        "p50LatencyMs": 1.66
+      },
+      "serverCounters": {
+        "add": 35,
+        "update": 0,
+        "search": 72,
+        "corrections": 0,
+        "windows": 0
+      }
+    },
+    {
+      "test": "src/session-retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 0.704,
+      "report": "session-retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 0,
+        "cases": 12,
+        "passRate": 0,
+        "meanPrecision": 0.0778,
+        "meanRecall": 1,
+        "activeRetrievalPasses": 0,
+        "passTypes": {
+          "activeRetrieval": 0,
+          "structural": 0,
+          "triviallyEmpty": 0
+        },
+        "p50LatencyMs": 3.39
+      },
+      "serverCounters": {
+        "add": 36,
+        "update": 1,
+        "search": 12,
+        "corrections": 0,
+        "windows": 0
+      }
+    }
+  ]
+}

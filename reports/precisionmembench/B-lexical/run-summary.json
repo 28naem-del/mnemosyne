@@ -1,0 +1,78 @@
+{
+  "label": "B-lexical",
+  "retrieval": "lexical",
+  "metadata": "extended",
+  "extendedHarness": true,
+  "harnessPatch": "benchmarks/precisionmembench/patches/pmb-extended-metadata.patch",
+  "cutoff": "0.5",
+  "minSimilarity": null,
+  "minScore": "3",
+  "rerank": false,
+  "lexicalScoring": null,
+  "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
+  "benchmarkDirty": [
+    "M providers.config.json",
+    " M src/adapters/baseAdapter.ts",
+    "?? test-results/retrieval-report-mnemosyne.json",
+    "?? test-results/session-retrieval-report-mnemosyne.json"
+  ],
+  "kernelCommit": "e0bbb47c022a45d79c096c5dfe2e53eb7479dd13",
+  "node": "v26.12.1",
+  "startedAt": "2026-10-28T07:07:46.653Z",
+  "runs": [
+    {
+      "test": "src/retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 1.042,
+      "report": "retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 50,
+        "cases": 77,
+        "passRate": 0.6494,
+        "meanPrecision": 0.6307,
+        "meanRecall": 0.7863,
+        "activeRetrievalPasses": 24,
+        "passTypes": {
+          "activeRetrieval": 24,
+          "structural": 19,
+          "triviallyEmpty": 7
+        },
+        "p50LatencyMs": 1.56
+      },
+      "serverCounters": {
+        "add": 35,
+        "update": 0,
+        "search": 72,
+        "corrections": 4,
+        "windows": 2
+      }
+    },
+    {
+      "test": "src/session-retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 1.004,
+      "report": "session-retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 5,
+        "cases": 12,
+        "passRate": 0.4167,
+        "meanPrecision": 0.7348,
+        "meanRecall": 0.8485,
+        "activeRetrievalPasses": 4,
+        "passTypes": {
+          "activeRetrieval": 4,
+          "structural": 0,
+          "triviallyEmpty": 1
+        },
+        "p50LatencyMs": 3.78
+      },
+      "serverCounters": {
+        "add": 36,
+        "update": 1,
+        "search": 12,
+        "corrections": 4,
+        "windows": 0
+      }
+    }
+  ]
+}

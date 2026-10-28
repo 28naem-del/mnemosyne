@@ -1,0 +1,35 @@
+{
+  "label": "sweep-hybrid-protocol/sim55",
+  "retrieval": "hybrid",
+  "metadata": "protocol",
+  "cutoff": null,
+  "minSimilarity": "0.55",
+  "minScore": null,
+  "rerank": false,
+  "lexicalScoring": null,
+  "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
+  "benchmarkDirty": [
+    "M providers.config.json",
+    "?? providers.config.json.bak-unit1-20261028095936",
+    "?? test-results/retrieval-report-mnemosyne.json"
+  ],
+  "kernelCommit": "e0bbb47c022a45d79c096c5dfe2e53eb7479dd13",
+  "node": "v26.12.1",
+  "startedAt": "2026-10-28T07:03:17.222Z",
+  "runs": [
+    {
+      "test": "src/retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 1.307,
+      "report": "retrieval-report-mnemosyne.json",
+      "summary": null
+    }
+  ],
+  "serverCounters": {
+    "add": 35,
+    "update": 0,
+    "search": 72,
+    "corrections": 0,
+    "windows": 0
+  }
+}

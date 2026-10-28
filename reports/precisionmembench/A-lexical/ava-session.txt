@@ -1,0 +1,67 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ✘ [fail]: [mnemosyne-session] session-drift-noise-10-turns-implicit-redis turn 1: unexpected relevant belief: b-hosting-resolved | turn 1: unexpected relevant belief: b-pinned-resolved-interaction | turn 1: unexpected relevant belief: b-dead-letter-queue | turn 1: unexpected relevant belief: b-redis-code | turn 2: unexpected relevant belief: b-redis-code | turn 3: missing expected belief: b-ts-pref | turn 3: missing expected belief: b-fastify-pref | turn 5: unexpected relevant belief: b-auth-open-q | turn 5: missing expected belief: b-auth-depends-redis | turn 5: missing expected belief: b-redis-code | turn 6: missing expected belief: b-mongo-raw-driver | turn 7: unexpected relevant belief: b-dead-letter-queue | turn 7: unexpected relevant belief: b-linting-v1 | turn 7: missing expected belief: b-error-handling | turn 8: unexpected relevant belief: b-kubernetes-entity | turn 8: unexpected relevant belief: b-ci-gha-entity | turn 8: unexpected relevant belief: b-dead-letter-queue
+  ✔ [mnemosyne-session] cross-session-formative-turn-surfaces-via-belief-join
+  ─
+
+  [mnemosyne-session] session-drift-noise-10-turns-implicit-redis
+
+  src/session-retrieval.external.eval.test.ts:390
+
+   389:         .flatMap((r) => r.failures);                       
+   390:       t.is(0, allFailures.length, allFailures.join(" | "));
+   391:     } else {                                               
+
+  turn 1: unexpected relevant belief: b-hosting-resolved | turn 1: unexpected relevant belief: b-pinned-resolved-interaction | turn 1: unexpected relevant belief: b-dead-letter-queue | turn 1: unexpected relevant belief: b-redis-code | turn 2: unexpected relevant belief: b-redis-code | turn 3: missing expected belief: b-ts-pref | turn 3: missing expected belief: b-fastify-pref | turn 5: unexpected relevant belief: b-auth-open-q | turn 5: missing expected belief: b-auth-depends-redis | turn 5: missing expected belief: b-redis-code | turn 6: missing expected belief: b-mongo-raw-driver | turn 7: unexpected relevant belief: b-dead-letter-queue | turn 7: unexpected relevant belief: b-linting-v1 | turn 7: missing expected belief: b-error-handling | turn 8: unexpected relevant belief: b-kubernetes-entity | turn 8: unexpected relevant belief: b-ci-gha-entity | turn 8: unexpected relevant belief: b-dead-letter-queue
+
+  Difference (- actual, + expected):
+
+  - 0
+  + 17
+
+  › <anonymous> (src/session-retrieval.external.eval.test.ts:390:9)
+
+  ─
+
+  1 test failed
+
+⏳ Seeding 35 beliefs to mnemosyne...
+
+  [1/35] 3% — b-comm-response-length (11.65ms)  [2/35] 6% — b-comm-pushback (2.2ms)  [3/35] 9% — b-comm-recommendation (1.92ms)  [4/35] 11% — b-authorship-mode (1.74ms)  [5/35] 14% — b-ts-pref (1.75ms)  [6/35] 17% — b-fastify-pref (1.84ms)  [7/35] 20% — b-mongo-raw-driver (1.99ms)  [8/35] 23% — b-composition-inheritance (2.09ms)  [9/35] 26% — b-error-handling (2.24ms)  [10/35] 29% — b-db-decision (1.92ms)  [11/35] 31% — b-sqlalchemy-superseded (2.32ms)  [12/35] 34% — b-kubernetes-entity (1.61ms)  [13/35] 37% — b-react-entity (1.44ms)  [14/35] 40% — b-auth-open-q (1.46ms)  [15/35] 43% — b-narrator-voice (1.3ms)  [16/35] 46% — b-narrator-superseded (1.48ms)  [17/35] 49% — b-protagonist-entity (1.51ms)  [18/35] 51% — b-redis-writing (1.44ms)  [19/35] 54% — b-redis-code (1.33ms)  [20/35] 57% — b-chapter-structure-q (1.57ms)  [21/35] 60% — b-other-user-leak-check (2.8ms)  [22/35] 63% — b-ci-gha-entity (1.58ms)  [23/35] 66% — b-pov-shift-entity (1.62ms)  [24/35] 69% — b-hosting-resolved (1.46ms)  [25/35] 71% — b-prose-style-user-edited (1.2ms)  [26/35] 74% — b-functional-pipeline (1.28ms)  [27/35] 77% — b-linting-v0 (1.25ms)  [28/35] 80% — b-linting-v1 (1.41ms)  [29/35] 83% — b-linting-current (1.29ms)  [30/35] 86% — b-vitest-pref (1.06ms)  [31/35] 89% — b-dead-letter-queue (1.54ms)  [32/35] 91% — b-react-expertise (2.55ms)  [33/35] 94% — b-auth-depends-redis (1.26ms)  [34/35] 97% — b-pinned-resolved-interaction (1.19ms)  [35/35] 100% — b-zero-reinforcement-fresh (1ms)
+
+✅ Seeded 35 beliefs in 0.1s
+
