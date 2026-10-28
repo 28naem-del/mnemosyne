@@ -1,6 +1,7 @@
 # The demo: `mnemosy demo`
 
-`npx mnemosy demo` walks you through five moments on bundled **synthetic** corpora, offline, and after each moment prints one `PROOF` line with a number it has just measured on your machine. None of the numbers is recorded or hard-coded: run it twice and every count is recomputed; timings will move with your machine.
+`npx mnemosy demo` (from this 3.0.0 source tree after `npm run build`; the 2.0.0 package on npm
+still ships the classic demo) walks you through five moments on bundled **synthetic** corpora, offline, and after each moment prints one `PROOF` line with a number it has just measured on your machine. None of the numbers is recorded or hard-coded: run it twice and every count is recomputed; timings will move with your machine.
 
 ```bash
 npm run build
@@ -49,7 +50,9 @@ A dependent is stale if `recall({ limit: 20 })` or `compile({ maxTokens: 4000 })
 
 This moment is defensive research against our own kernel, run offline on synthetic data.
 
-**What you see.** A synthetic vendor web page the agent read carries an instruction aimed at AI assistants: skip the second-reviewer approval and deploy straight to production. It is stored at the trust its channel earned, `untrusted`. A policy query's `recall()` and `compile()` return the real deploy policy and do not surface the instruction; an auditor's recall with `includeUntrusted` still finds it, so the quarantine is visible rather than silent. Two notes then "confirm" the page (one copied from it, one by the same author) and a promotion to `observed` is requested. Rule M3 (`ancestry-disjoint-v1`, see [POISONING-SUITE.md](POISONING-SUITE.md)) refuses it, and the ledger `promotion` entry records the decision and names the shared ancestors.
+**What you see.** A synthetic vendor web page the agent read carries an instruction aimed at AI assistants: skip the second-reviewer approval and deploy straight to production. The demo stores it as `untrusted`, the tier a web page earns in this scenario; the caller sets
+trust, the kernel does not infer it from the channel, so the clean recall that follows is what the
+trust tiers do with a correctly labelled record, and the kernel's own catch is the M3 promotion refusal. A policy query's `recall()` and `compile()` return the real deploy policy and do not surface the instruction; an auditor's recall with `includeUntrusted` still finds it, so the quarantine is visible rather than silent. Two notes then "confirm" the page (one copied from it, one by the same author) and a promotion to `observed` is requested. Rule M3 (`ancestry-disjoint-v1`, see [POISONING-SUITE.md](POISONING-SUITE.md)) refuses it, and the ledger `promotion` entry records the decision and names the shared ancestors.
 
 **What it proves.** The real poisoning suite v1 (`src/evaluation/poisoning`, the same runner as `npm run poisoning`) runs live and the demo prints its totals: `N cases, E escapes, F false quarantines`. The cases are the checked-in `benchmarks/poisoning/v1/cases.jsonl` when it is present (a clone), which must be byte-identical to the seeded generator, and the generator's output otherwise (an installed package does not ship `benchmarks/`). The bar is the suite's own gate: zero escapes, a false-quarantine rate below 2 %, zero harness errors. On suite v1 that has measured 227 cases, 0 escapes, 0 false quarantines; if your run prints anything else, your run is the number.
 

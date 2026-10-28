@@ -63,11 +63,17 @@ harness's own aggregates.
 | --- | --- | --- | --- | --- |
 | `A2-base-lexical` | 84cb6c3, before this work | 22/77 | 0.262 / 0.954 | 0/12 |
 | `A2-base-hybrid` | 84cb6c3, before this work | 11/77 | 0.066 / 1.000 | 0/12 |
-| `final-lexical` | 50a1eee, names gate (`auto`) + fuzzy, zero-model | **70/77** | 0.871 / 1.000 | 11/12 |
-| `final-hybrid` | same + bge-small dense channel | **70/77** | 0.871 / 1.000 | 11/12 |
-| `final-hybrid-rerank` | same + cross-encoder | 70/77 | 0.871 / 1.000 | 11/12 |
+| `final-lexical` | 16cd9c0, names gate (`auto`) + fuzzy, zero-model | **70/77** | 0.871 / 1.000 | 11/12 |
+| `final-hybrid` | 16cd9c0, same + bge-small dense channel | **70/77** | 0.871 / 1.000 | 11/12 |
+| `final-hybrid-rerank` | 50a1eee (see note), same + cross-encoder | 70/77 | 0.871 / 1.000 | 11/12 |
 | `final-ablate-nonames-lexical` | `requireNamedMatch: false` | 20/77 | 0.249 / 1.000 | 0/12 |
 | `final-ablate-nofuzzy-lexical` | `fuzzy: false` | 64/77 | 0.748 / 0.861 | 11/12 |
+
+Note: `final-hybrid-rerank` and the two ablations were run at 50a1eee with the wrapper edit that
+48b4800 later committed (no `kinds` predicate; their session turns are the unfiltered 11/12). The
+recall path (`src/local/`) is identical between 50a1eee and 16cd9c0 apart from comments; the
+`final-lexical` and `final-hybrid` rows were re-run on the committed 16cd9c0 tree
+(`run-summary.json` records `kernelCommit`).
 
 The `final-*` reports are canonical. The two `A2-base-*` runs used the earlier wrapper, which
 passed `kinds: ['fact', 'preference', 'decision']` on every search; that predicate can only have
@@ -119,8 +125,8 @@ its name gate on this fixture", not as a held-out precision estimate.
   edit away (OSA distance 1, same first two letters, both at least four letters, no
   digits), at half weight, and name tokens match under the same guard.
 * Native abstention: when nothing passes the gates the recall returns `[]` and records
-  `no-candidates`, `no-named-match` or `below-floor`. 25 of the 77 cases expect an empty
-  relevant set.
+  `no-candidates`, `no-named-match` or `below-floor`. 32 of the 77 cases expect an empty
+  relevant-belief list (`expect.relevantBeliefs.shouldOnlyInclude == []` in the fixture).
 
 ## The seven remaining failures, and why configuration A cannot pass them
 

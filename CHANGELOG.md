@@ -18,20 +18,22 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
 
 ### Added
 
-- **Precision controls in `recall()`.** All of them are opt-in, set either per call or as a
-  `createLocalMemory` default, and all of them are model-free on the lexical path.
-  - **`requireNamedMatch: true | 'auto'` (names gate).** A record's `metadata.names` (a canonical
+- **Precision controls in `recall()`.** The names gate, fuzzy matching, the metadata predicate and
+  the score floors are opt-in, set either per call or as a `createLocalMemory` default; the
+  lifecycle prefilter is always on. All of them are model-free on the lexical path.
+  - **`requireNamedMatch: boolean | 'auto'` (names gate).** A record's `metadata.names` (a canonical
     name and its aliases) must occur in the query as a whole token phrase. With `'auto'` this
     applies only to records that declare names. The names stage is also a fused candidate
     channel, and `RETRIEVAL_STAGES` gains `'names'`.
-  - **`fuzzy: true`.** Guarded single-edit typo tolerance: OSA distance 1, the same first two
+  - **`fuzzy: boolean` (default `false`).** Guarded single-edit typo tolerance: OSA distance 1, the same first two
     letters, at least four letters, no digits, and half weight. It lives in `src/local/fuzzy.ts`.
   - **`metadata` predicate.** A string or string-array equality on metadata keys, evaluated in the
     SQL of every channel before ranking. It is capped at 32 keys and 64 values per key, and it is a
     scope selector, not an authentication boundary.
-  - **Lifecycle prefilter.** Superseded and expired records are dropped in SQL before ranking on
-    the overlap scorer and the dense channel. This is a strict subset of what the as-of filter
-    already withheld.
+  - **Lifecycle prefilter (always on).** Every recall without an explicit `asOf`/`knownAt` drops
+    superseded and expired records in SQL before ranking on the overlap scorer and the dense
+    channel. This is a strict subset of what the as-of filter already withheld, so no recall
+    returns a record it would have withheld before; see "Changed (behaviour)" below.
   - **Score floors.** `minScores: { keyword, semantic, reranker, final, finalRelative }`
     (`RecallScoreFloors`). Floors exclude results and never reorder them.
   - **Native abstention.** When nothing passes the gates, recall returns `[]`. The ledger's
@@ -72,8 +74,8 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
     and an acceptance goes through `correct(id, { dependencies })`.
   - **`createPremiseGuard`.** A read-only filter that holds a dependent whose co-used premise
     changed before anyone reviewed the pair.
-  - **CLI.** `mnemosy dependencies [scope] --infer [--min-support N]` and `--review DIGEST
-    --accept|--reject --reviewer NAME`.
+  - **CLI.** `mnemosy dependencies [scope] --infer [--min-support N] [--json JSON]` and
+    `--review DIGEST --accept|--reject --reviewer NAME [--reason TEXT]`.
 - **Premise-linked skills (M6).** `MemoryRuntime.linkPremise(skillId, memoryId, receiptId)` links
   a skill to a premise named by an accepted `dependency` receipt. When that premise is corrected,
   `getSkill` reports the skill `retired`, and `trialSkill` refuses it. `RuntimeSkill.premises` and
@@ -119,11 +121,19 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
   - Command: `node dist/evaluation/dependencies/cli.js --corpus benchmarks/dependencies/v1/corpus.json
     --out reports/dependencies/v1 --seeds 1,2,3,4,5,11,12,13,14,15`.
 - **The default retrieval path did not move.** Before and after this work:
-  - LoCoMo zero-model recall@10: 40.49 (overlap) and 52.47 (BM25);
-  - LongMemEval-S lexical mean recall 89.72, BM25 95.08.
+  - LoCoMo zero-model recall@10, full set (1,986 questions, 1,531 annotated): 40.49 (overlap)
+    and 52.47 (BM25);
+  - LongMemEval-S cleaned, 470 annotated of 500, recall@20: lexical mean recall 89.72, BM25 95.08.
+  - Summary committed at `reports/retrieval-regression/2026-10-28/summary.json`.
 
 ### Changed (behaviour)
 
+- **The lifecycle prefilter is always on.** A recall without an explicit `asOf`/`knownAt` drops
+  superseded and expired versions in SQL before ranking, so they no longer take candidate budget.
+  No record that was withheld before is returned now, but a current record can enter the candidate
+  budget where a superseded version used to crowd it out, so default results can differ when the
+  candidate limits bind. LoCoMo and LongMemEval-S, which have no superseded records, are identical
+  before and after (section 6 of `docs/BENCHMARKS-TRUST.md`).
 - **`mnemosy demo` (and `npm run demo`) now runs the five-moment demo.** It streams text and exits
   1 if an implemented proof fails. The previous single-scenario JSON demo is `mnemosy demo
   --classic`, and `scripts/verify-package.mjs` now calls it that way. `demo --record FILE` saves
@@ -134,7 +144,7 @@ Measured on the merged tree `16cd9c0` (PrecisionMemBench reports re-run at that 
 - **New package exports:** `./consolidation` and `./dependencies`. The root also re-exports
   `consolidate`, `createConsolidationSigner`, `gateConsolidation`, `proposeConsolidation`,
   `rollbackConsolidation`, `verifyConsolidationChain`, `inferDependencies`, `reviewDependency` and
-  `createPremiseGuard`.
+  `createPremiseGuard`, plus the types `ConsolidationDiff` and `ConsolidationReceipt`.
 - **New ledger `retrieval.config` keys.** `requireNamedMatch`, `fuzzy`, `minScores`, `kinds` and
   `metadataFilter` are written only when they are set. A recall that passes `kinds` therefore gets
   a different configuration hash, while calls without the new options keep their old hash.

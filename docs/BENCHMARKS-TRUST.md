@@ -27,7 +27,7 @@ The page follows the project's wording rules:
 | Poisoning suite v1, default mode | 0/167 escapes, 0/60 false quarantines (unchanged from rc.1) | `npm run poisoning` | `reports/poisoning/v1/` |
 | Dependency suite v1 (synthetic) | invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), **0** stale-procedure executions with the premise guard (inference alone: 7/248; guard false-hold rate 92.78 %) | seed 20261028, accept-all eval reviewer, guarded executor, lexical path | `reports/dependencies/v1/` |
 | `mnemosy demo` | five moments, each with a PROOF line measured live | offline, synthetic corpora, zero-model lexical path | printed per run ([DEMO.md](DEMO.md)) |
-| LoCoMo and LongMemEval-S retrieval | unchanged before vs after (largest delta: LoCoMo MRR +0.0014) | zero-model and hybrid, same commands before and after | section 6 |
+| LoCoMo and LongMemEval-S retrieval | recall identical before vs after in every row; the largest MRR delta is +0.0014 (overlap MRR on LoCoMo conversations 0–2) | zero-model and hybrid, same commands before and after | section 6; `reports/retrieval-regression/2026-10-28/` |
 | Full test suite | 93 files, 1,557 tests passed | `npm run check` on the merged tree (`16cd9c0`) | — |
 
 ## 1. PrecisionMemBench (retrieval mode, no LLM judge)
@@ -83,7 +83,7 @@ earlier wrapper that still passed `kinds` (that predicate can only have helped t
 | `final-ablate-nonames-lexical` | `requireNamedMatch: false` | **20/77** | 0.249 / 1.000 | 0/12 |
 | `final-ablate-nofuzzy-lexical` | `fuzzy: false` | **64/77** | 0.748 / 0.861 | 11/12 |
 
-**The kernel controls that carry the number.** All of them are opt-in and off by default.
+**The kernel controls that carry the number.** The names gate, fuzzy matching, the metadata predicate and the score floors are opt-in and off by default. The lifecycle prefilter is always on for recalls without an explicit `asOf`/`knownAt`.
 
 - **`requireNamedMatch: 'auto'` (names gate).** A record that declares `metadata.names` is
   returned only when one of its names occurs in the query as a whole token phrase. The names
@@ -94,9 +94,12 @@ earlier wrapper that still passed `kinds` (that predicate can only have helped t
   both sides, no digits, and half weight. Turning it off costs 6 cases (64/77).
 - **Metadata predicate and lifecycle prefilter before ranking.** The metadata predicate (here
   the PMB `scope`) is evaluated in the SQL of every channel. Records out of scope, superseded or
-  expired therefore never take candidate budget from records that qualify.
+  expired therefore never take candidate budget from records that qualify. The lifecycle
+  prefilter is not opt-in: every recall without an explicit `asOf`/`knownAt` drops superseded and
+  expired versions in SQL, a strict subset of what the as-of filter already withheld.
 - **Native abstention.** When nothing passes the gates, recall returns `[]` and the ledger records
-  `no-candidates`, `no-named-match` or `below-floor`. 25 of the 77 cases expect an empty set.
+  `no-candidates`, `no-named-match` or `below-floor`. 32 of the 77 cases expect an empty
+  relevant-belief list (`expect.relevantBeliefs.shouldOnlyInclude == []` in the fixture).
 - **Score floors.** `minScores: { keyword, semantic, reranker, final, finalRelative }` is
   available. The rc.2 runs set none.
 
@@ -404,8 +407,9 @@ What these numbers rest on, stated plainly:
   which is reviewer load, not invalidation.
 - **Stale 0 with the premise guard; inference alone 7/248; guard false-hold rate 92.78 %.** The
   guard is a blanket hold on any dependent with one judged successful co-use with a changed
-  premise, and it gives 0 on its own with zero accepted edges (84.54–93.14 % false holds across
-  the robustness seeds). Inference adds the kernel-side links (170 of 177 pairs invalidated
+  premise, and it gives 0 on its own with zero accepted edges (34.19 % false holds, 93 of 272,
+  on the gate seed). After inference and accept-all the guard's false-hold rate is 92.78 % on
+  the gate seed and 84.54–93.14 % across the ten robustness seeds. Inference adds the kernel-side links (170 of 177 pairs invalidated
   without the guard) and cuts guard holds from 272 to 97.
 - **Stale = 0 also rests on the generator's observability floor.** Every true edge is forced into
   at least one judged successful task; without it (`--seed N --no-floor`) stale is 1 on the gate
@@ -436,20 +440,27 @@ not show is in [DEMO.md](DEMO.md).
 | 2. A correction fixes what nobody linked | Inferred dependencies accepted through `correct()`, then the premise is corrected | undeclared dependents invalidated X/X, accepted edges true Y/Y, 0 stale | measured live in each run |
 | 3. It found the belief that made it wrong | `bisect` over a 2000-record synthetic store with one seeded false record | blame set equals the seeded record, under 60 s | precision 1.00, 1.53 s |
 | 4. Someone tried to poison it, and it caught it | M3 refusal shown in the ledger, then suite v1 run live | 0 escapes, false quarantines below 2 %, 0 errors | 227 cases, 0 escapes, 0 false quarantines, 0 errors |
-| 5. It got better on its own, and handed me the receipt | One consolidation pass kept, one rolled back, the kept one undone to the identical hash, chain verified | kept 1, rolled back 1, identical hash, chain ok | measured live in each run |
+| 5. It got better on its own, and handed me the receipt | One consolidation pass kept, one rolled back, the kept one undone to the identical hash, chain verified | kept ≥ 1 with outcome delta ≥ 0, rolled back ≥ 1, identical hash, chain ok | measured live in each run (the 2026-10-28 run: kept 1 at delta +2, rolled back 2, chain 4 receipts) |
 
 Counts are recomputed on every run, and times move with the machine. The demo's poisoning moment
 is the same runner as `npm run poisoning`.
 
 ## 6. Retrieval regression check: LoCoMo and LongMemEval-S, before and after
 
-The precision controls are opt-in. These runs confirm that the default retrieval path did not
-move. Each was run before (`84cb6c3`) and after the precision work, with the same command.
+The opt-in precision controls are off in these runs, and neither corpus contains superseded or
+expired records, so the always-on lifecycle prefilter has nothing to drop. These runs confirm
+that the default retrieval path did not move. Each was run before (`84cb6c3`) and after the
+precision work, with the same command. The summary with run settings and the per-condition
+values is committed at `reports/retrieval-regression/2026-10-28/summary.json` (see its
+[README](../reports/retrieval-regression/2026-10-28/README.md)); the full per-question outputs
+are 0.8–11 MB each and are not committed.
 
 | Benchmark | Condition | Before | After |
 |---|---|---|---|
 | LoCoMo, full set, zero-model | overlap recall@10 / MRR | 40.49 / 0.2899 | 40.49 / 0.2899 |
 | LoCoMo, full set, zero-model | BM25 recall@10 / MRR | 52.47 / 0.3696 | 52.47 / 0.3696 |
+| LoCoMo, conversations 0–2 (382 annotated) | overlap recall@10 / MRR | 40.68 / 0.2827 | 40.68 / 0.2841 |
+| LoCoMo, conversations 0–2 (382 annotated) | BM25 recall@10 / MRR | 53.38 / 0.3697 | 53.38 / 0.3697 |
 | LoCoMo, conversations 0–2 (382 annotated) | hybrid recall@10 / MRR | 75.29 / 0.6325 | 75.29 / 0.6327 |
 | LongMemEval-S cleaned, 470 annotated of 500 | lexical mean recall / MRR | 89.72 / 78.72 | 89.72 / 78.72 |
 | LongMemEval-S cleaned, 470 annotated of 500 | BM25 mean recall / MRR | 95.08 / 89.57 | 95.08 / 89.57 |

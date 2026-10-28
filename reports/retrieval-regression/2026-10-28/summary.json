@@ -1,0 +1,263 @@
+{
+  "generatedFrom": "before/after runs of the commands recorded below, on the base commit 84cb6c3 and on the final build of the precision-controls branch (3619a5c); full per-question outputs are 0.8-11 MB each and are not committed",
+  "before": {
+    "kernel": "84cb6c3",
+    "note": "base of this work"
+  },
+  "after": {
+    "kernel": "3619a5c dist (final build of the precision-controls branch, an ancestor of 16cd9c0; recall path identical to 16cd9c0 except comments)"
+  },
+  "locomo_full_zero_model": {
+    "command": "node dist/evaluation/locomo-benchmark.js --lexical --out <file>",
+    "before": {
+      "dataset": {
+        "dataset": "locomo10",
+        "revision": "snap-research/locomo main",
+        "license": "CC BY-NC 4.0",
+        "sourceUrl": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
+        "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+        "sourceBytes": 2805274,
+        "verification": "caller-supplied",
+        "adapter": "locomo-original-dialogue-v1",
+        "normalizedSha256": "e38ed6bfc9692209a67261c51f5e90cb6fe3cc6c7dedddd556f83b2a6fc8e3e3",
+        "questions": 1986,
+        "corpora": 10
+      },
+      "topK": 10,
+      "implementationSha256": "3c5e48ffb43f36ce60dae5d14670ced93b0b58d7e5a03301724511c3f4029494",
+      "node": "v26.12.1",
+      "durationMs": 81846.817708,
+      "conditions": {
+        "lexical": {
+          "questions": 1986,
+          "completed": 1986,
+          "annotatedQuestions": 1531,
+          "meanRecall": 0.4049393012950088,
+          "anyHitRate": 0.4519921619856303,
+          "allHitRate": 0.37099934683213587,
+          "mrr": 0.2898761572994098,
+          "p50RetrievalMs": 6.529833000000508,
+          "p95RetrievalMs": 15.190875000000233
+        },
+        "bm25": {
+          "questions": 1986,
+          "completed": 1986,
+          "annotatedQuestions": 1531,
+          "meanRecall": 0.5246772845670147,
+          "anyHitRate": 0.5826257348138472,
+          "allHitRate": 0.47811887655127366,
+          "mrr": 0.36959788705379815,
+          "p50RetrievalMs": 28.593999999997322,
+          "p95RetrievalMs": 56.015833000001294
+        }
+      }
+    },
+    "after": {
+      "dataset": {
+        "dataset": "locomo10",
+        "revision": "snap-research/locomo main",
+        "license": "CC BY-NC 4.0",
+        "sourceUrl": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
+        "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+        "sourceBytes": 2805274,
+        "verification": "caller-supplied",
+        "adapter": "locomo-original-dialogue-v1",
+        "normalizedSha256": "e38ed6bfc9692209a67261c51f5e90cb6fe3cc6c7dedddd556f83b2a6fc8e3e3",
+        "questions": 1986,
+        "corpora": 10
+      },
+      "topK": 10,
+      "implementationSha256": "95f6b9b9c09529960e2d999cf05b05db0d964f5f75d8e158f818a0287637d870",
+      "node": "v26.12.1",
+      "durationMs": 120748.07225,
+      "conditions": {
+        "lexical": {
+          "questions": 1986,
+          "completed": 1986,
+          "annotatedQuestions": 1531,
+          "meanRecall": 0.4049393012950088,
+          "anyHitRate": 0.4519921619856303,
+          "allHitRate": 0.37099934683213587,
+          "mrr": 0.2898761572994098,
+          "p50RetrievalMs": 9.115458000000217,
+          "p95RetrievalMs": 27.109459000001152
+        },
+        "bm25": {
+          "questions": 1986,
+          "completed": 1986,
+          "annotatedQuestions": 1531,
+          "meanRecall": 0.5246772845670147,
+          "anyHitRate": 0.5826257348138472,
+          "allHitRate": 0.47811887655127366,
+          "mrr": 0.36959788705379815,
+          "p50RetrievalMs": 42.87649999999849,
+          "p95RetrievalMs": 83.38591599999927
+        }
+      }
+    }
+  },
+  "locomo_conv0_2_hybrid": {
+    "command": "node dist/evaluation/locomo-benchmark.js --file locomo-subset-c0-2.json --out <file> (final: run per conversation c0,c1,c2 and aggregated per annotated question)",
+    "before": {
+      "dataset": {
+        "dataset": "locomo10",
+        "revision": "snap-research/locomo main",
+        "license": "CC BY-NC 4.0",
+        "sourceUrl": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
+        "sourceSha256": "de876af10bb7ca651fa567673fbb86c40096ab4efc6cd5a29cba356517c4489a",
+        "sourceBytes": 552545,
+        "verification": "caller-supplied",
+        "adapter": "locomo-original-dialogue-v1",
+        "normalizedSha256": "8b16cdb7c2014448c3c4be344554d944541df2ae20f46133be4ba3980004f5b8",
+        "questions": 497,
+        "corpora": 3
+      },
+      "topK": 10,
+      "implementationSha256": "3c5e48ffb43f36ce60dae5d14670ced93b0b58d7e5a03301724511c3f4029494",
+      "node": "v26.12.1",
+      "durationMs": 584611.355,
+      "conditions": {
+        "lexical": {
+          "annotatedQuestions": 382,
+          "meanRecall": 0.406806282722513,
+          "anyHitRate": 0.44502617801047123,
+          "allHitRate": 0.3769633507853403,
+          "mrr": 0.28268407712125
+        },
+        "bm25": {
+          "annotatedQuestions": 382,
+          "meanRecall": 0.5337696335078532,
+          "anyHitRate": 0.5890052356020943,
+          "allHitRate": 0.4869109947643979,
+          "mrr": 0.36968233192055167
+        },
+        "hybrid": {
+          "annotatedQuestions": 382,
+          "meanRecall": 0.7528795811518325,
+          "anyHitRate": 0.7984293193717278,
+          "allHitRate": 0.7120418848167539,
+          "mrr": 0.6325137122911991
+        }
+      }
+    },
+    "after": {
+      "files": [
+        "locomo-final-hybrid-c0.json",
+        "locomo-final-hybrid-c1.json",
+        "locomo-final-hybrid-c2.json"
+      ],
+      "conditions": {
+        "lexical": {
+          "annotatedQuestions": 382,
+          "meanRecall": 0.406806282722513,
+          "anyHitRate": 0.44502617801047123,
+          "allHitRate": 0.3769633507853403,
+          "mrr": 0.2841238676971662
+        },
+        "bm25": {
+          "annotatedQuestions": 382,
+          "meanRecall": 0.5337696335078532,
+          "anyHitRate": 0.5890052356020943,
+          "allHitRate": 0.4869109947643979,
+          "mrr": 0.36968233192055167
+        },
+        "hybrid": {
+          "annotatedQuestions": 382,
+          "meanRecall": 0.7528795811518325,
+          "anyHitRate": 0.7984293193717278,
+          "allHitRate": 0.7120418848167539,
+          "mrr": 0.6326633009224631
+        }
+      }
+    }
+  },
+  "longmemeval_s_cleaned_full500": {
+    "command": "node --max-old-space-size=6144 dist/evaluation/corpus-cli.js --format longmemeval --file longmemeval_s_cleaned.json --dataset-label LongMemEval-S-cleaned-full500 --dataset-revision 98d7416c24c778c2fee6e6f3006e7a073259d48f --license MIT --timestamp-policy question-day --json {\"topK\":20,...,\"includeBm25\":true} --out <file>",
+    "before": {
+      "dataset": {
+        "dataset": "LongMemEval-S-cleaned-full500",
+        "revision": "98d7416c24c778c2fee6e6f3006e7a073259d48f",
+        "license": "MIT",
+        "sourceSha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+        "sourceBytes": 277383467,
+        "sourceUrl": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json",
+        "verification": "caller-supplied",
+        "adapter": "longmemeval-cleaned-v1",
+        "normalizedSha256": "62058b94ccabac4dccc64ca5873d578e98ff83d31588036eb8191aee7850f270",
+        "questions": 500,
+        "corpora": 500
+      },
+      "topK": 20,
+      "implementationSha256": "3c5e48ffb43f36ce60dae5d14670ced93b0b58d7e5a03301724511c3f4029494",
+      "node": "v26.12.1",
+      "durationMs": 83330.87070799999,
+      "conditions": {
+        "lexical": {
+          "questions": 500,
+          "completed": 500,
+          "annotatedQuestions": 470,
+          "meanRecall": 0.897163120567376,
+          "anyHitRate": 0.9553191489361702,
+          "allHitRate": 0.8212765957446808,
+          "mrr": 0.7872069170701507,
+          "p50RetrievalMs": 2.8706249999959255,
+          "p95RetrievalMs": 4.418416000000434
+        },
+        "bm25": {
+          "questions": 500,
+          "completed": 500,
+          "annotatedQuestions": 470,
+          "meanRecall": 0.9508156028368795,
+          "anyHitRate": 0.9787234042553191,
+          "allHitRate": 0.9042553191489362,
+          "mrr": 0.8956727846621462,
+          "p50RetrievalMs": 10.87225000000035,
+          "p95RetrievalMs": 16.930707999999868
+        }
+      }
+    },
+    "after": {
+      "dataset": {
+        "dataset": "LongMemEval-S-cleaned-full500",
+        "revision": "98d7416c24c778c2fee6e6f3006e7a073259d48f",
+        "license": "MIT",
+        "sourceSha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+        "sourceBytes": 277383467,
+        "sourceUrl": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json",
+        "verification": "caller-supplied",
+        "adapter": "longmemeval-cleaned-v1",
+        "normalizedSha256": "62058b94ccabac4dccc64ca5873d578e98ff83d31588036eb8191aee7850f270",
+        "questions": 500,
+        "corpora": 500
+      },
+      "topK": 20,
+      "implementationSha256": "95f6b9b9c09529960e2d999cf05b05db0d964f5f75d8e158f818a0287637d870",
+      "node": "v26.12.1",
+      "durationMs": 374473.850958,
+      "conditions": {
+        "lexical": {
+          "questions": 500,
+          "completed": 500,
+          "annotatedQuestions": 470,
+          "meanRecall": 0.897163120567376,
+          "anyHitRate": 0.9553191489361702,
+          "allHitRate": 0.8212765957446808,
+          "mrr": 0.7872069170701507,
+          "p50RetrievalMs": 8.69829099997878,
+          "p95RetrievalMs": 28.619665999955032
+        },
+        "bm25": {
+          "questions": 500,
+          "completed": 500,
+          "annotatedQuestions": 470,
+          "meanRecall": 0.9508156028368795,
+          "anyHitRate": 0.9787234042553191,
+          "allHitRate": 0.9042553191489362,
+          "mrr": 0.8956727846621462,
+          "p50RetrievalMs": 43.04645899999741,
+          "p95RetrievalMs": 101.20174999994924
+        }
+      }
+    }
+  }
+}
