@@ -2441,9 +2441,18 @@ export class LocalMemory {
     return records;
   }
 
-  correct(id: string, input: { text: string; source: MemoryRecord['source']; reason: string; validFrom?: string; validUntil?: string; metadata?: MemoryRecord['metadata'] }): MemoryRecord {
+  /**
+   * `dependencies`, when given, are ADDED to the successor's declared dependencies
+   * (the previous record's dependencies are always inherited). This is the only
+   * path by which a dependency can be declared after the fact, and it is a
+   * correction: it supersedes the record and lands in the ledger with its reason,
+   * so an inferred dependency that a reviewer accepts is never a silent mutation.
+   */
+  correct(id: string, input: { text: string; source: MemoryRecord['source']; reason: string; validFrom?: string; validUntil?: string; metadata?: MemoryRecord['metadata']; dependencies?: string[] }): MemoryRecord {
     const correction = v.object(input, 'correction');
-    v.keys(correction, ['text', 'source', 'reason', 'validFrom', 'validUntil', 'metadata'], 'correction');
+    v.keys(correction, ['text', 'source', 'reason', 'validFrom', 'validUntil', 'metadata', 'dependencies'], 'correction');
+    const addedDependencies = input.dependencies === undefined ? [] : v.strings(input.dependencies, 'dependencies', 64, 160);
+    if (new Set(addedDependencies).size !== addedDependencies.length) throw new TypeError('Duplicate dependency');
     const text = v.string(input.text, 'text', 65536);
     const source = v.source(input.source);
     const reason = v.string(input.reason, 'reason', 4096);
@@ -2469,6 +2478,7 @@ export class LocalMemory {
         // validation. Only its controller may explicitly reissue artifact metadata.
         ...(input.metadata === undefined && ['skill', 'model'].includes(String(previous.metadata.runtimeType)) ? { advisory: false } : {}), correctionReason: reason });
       const record: MemoryRecord = { ...old, validFrom, ...(validUntil === undefined ? {} : { validUntil }), id: correctionId, text, source, trust: previous.trust === 'untrusted' ? 'untrusted' : 'observed', status: 'active', supersedes: id, createdAt: now, updatedAt: now, metadata };
+      if (addedDependencies.length) record.dependencies = [...new Set([...previous.dependencies, ...addedDependencies])];
       if (record.dependencies.some((dependency) => this.get(dependency)?.trust === 'untrusted')) record.trust = 'untrusted';
       this.#validateDependencies(record);
       this.#insert(record, 'correction', now);
