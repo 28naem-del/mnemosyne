@@ -108,6 +108,8 @@ Measured on the merged tree `64ec27c` (PrecisionMemBench reports in `c87b17c`): 
 - **Dependency suite v1 (synthetic, seed 20261028).**
   - Invalidation recall **96.05 %** (170/177), precision **98.06 %** (152/155), and **0**
     stale-procedure executions through the premise guard (248 checks, 120 corrections).
+  - Stale 0 is produced by the premise guard (0 also with zero accepted edges); inference alone
+    leaves 7/248 stale, and the guard's false-hold rate is 92.78 % (90 of 97 holds).
   - Ten robustness seeds: recall 92.4–96.8 %, precision 95.1–99.4 %, stale 0.
   - Command: `node dist/evaluation/dependencies/cli.js --corpus benchmarks/dependencies/v1/corpus.json
     --out reports/dependencies/v1 --seeds 1,2,3,4,5,11,12,13,14,15`.
@@ -150,6 +152,10 @@ Measured on the merged tree `64ec27c` (PrecisionMemBench reports in `c87b17c`): 
 - **Dependencies.**
   - Stale = 0 holds only when the executor uses the premise guard. The kernel alone runs 7 stale
     procedures on the gate seed.
+  - Stale = 0 also rests on the generator's observability floor (every true edge appears in at
+    least one judged successful task); without it (`--no-floor`) stale is 1 on the gate seed and 2
+    on seed 11. Precision is tested by the hub and incidental decoys only (295 of 405 decoys
+    cannot count as support by construction).
   - The eval reviewer accepts everything, so precision on real controller traces is unmeasured.
   - Some thresholds and one corpus parameter were chosen after seeing results; all of these
     choices are disclosed.
