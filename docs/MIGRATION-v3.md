@@ -35,13 +35,14 @@ Importing data *from* a legacy Qdrant export still works without the legacy pack
 
 ## Removed outright: blind `dream()` / `consolidate()` consolidation
 
-`mnemosy-ai` 3.0 has no counterpart to the legacy `memory.dream()`, `memory.consolidate()`, `runDreamConsolidation`, `runConsolidation`, `maintainMemory` or the `consolidate`/`dream`/`patterns` tools. Those rewrite stored memories on a schedule from similarity and heuristics alone: they merge, demote or strengthen records without any observed task outcome showing the change was right, and without a record-level way to undo it. That is incompatible with the kernel's guarantee that advice only changes on evidence.
+`mnemosy-ai` 3.0 has no drop-in counterpart to the legacy `memory.dream()`, `memory.consolidate()`, `runDreamConsolidation`, `runConsolidation`, `maintainMemory` or the `consolidate`/`dream`/`patterns` tools. Those rewrite stored memories on a schedule from similarity and heuristics alone: they merge, demote or strengthen records without any observed task outcome showing the change was right, and without a record-level way to undo it. That is incompatible with the kernel's guarantee that advice only changes on evidence.
 
 The kernel replaces it with an outcome-gated, reversible path:
 
 - **Proposals, not rewrites.** [`reflect`](api.md#reflection) asks your model adapter for candidate lessons over cited memories; nothing is stored until a controller validates a proposal with an actual test and calls `commitVerifiedLesson`.
 - **Outcome-gated promotion.** Procedures start as non-advisory candidates and are promoted only after successful [skill trials](RUNTIME.md#project-models-skill-trials-and-traces) across distinct tasks and verifiers; `recordOutcome` and traces record what actually worked, and failed outcomes or changed evidence retire advice.
 - **Corrections instead of merges.** `correct` supersedes a stale source and invalidates everything that depended on it, keeping history; [maintenance checks](MAINTENANCE.md) detect stale evidence before it is used.
+- **Gated consolidation instead of blind dreaming (3.0.0-rc.2).** [`mnemosy-ai/consolidation`](CONSOLIDATION.md) proposes merges as a signed diff and replays it against the agent's own recorded outcomes. The diff is kept only when nothing regresses and no invariant breaks, and one call undoes it, back to the identical state hash. Its `consolidate()` shares the legacy name but not the signature or the semantics: it takes a `LocalMemory` and a signer, and it never applies a pass that the gate did not keep.
 - **Reversible by construction.** Staged [branches](RUNTIME.md#time-entities-and-branches) preview and merge with receipts, imports have a guarded undo ([migration](MIGRATION.md)), and backups/restore are covered in [operations](OPERATIONS.md).
 
 If you relied on `dream()` to keep a Qdrant store small, keep using it through `mnemosy-ai-legacy`; its 2.x safeguards (scoped `QdrantDB`, `dryRun` previews, URL-only destructive helpers rejected) are unchanged.

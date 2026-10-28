@@ -25,6 +25,12 @@ Instructions for coding agents (Claude Code, Cursor, Codex, Copilot and others) 
 
 - Every number in the README, CHANGELOG, [COMPARISON.md](COMPARISON.md) and `docs/evaluation/` traces to a report under `docs/evaluation/reports/` or `reports/`. Do not round, restate or extrapolate a measurement without the command that produced it.
 - Unmet gates stay disclosed where the feature is described. Removing a disclosure is a regression.
+- Use the wording in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md):
+  - State a poisoning result as "zero escapes on suite vN (M cases, reproducible)". Never present it as resistance to every attack.
+  - Describe consolidation as outcome-gated and reversible. Never call it safe without qualification.
+  - Label synthetic corpora and ledgers synthetic.
+  - Do not describe recorded experience as weight-level learning or as general intelligence.
+- The 3.0.0 source tree's `mnemosy demo` is the five-moment demo ([docs/DEMO.md](docs/DEMO.md)), and its PROOF lines are measured live. `scripts/verify-package.mjs` runs `demo --classic`, because it parses the 2.0.0 JSON report.
 - Benchmark corpora (`benchmarks/data/`) are downloaded by `npm run benchmark:fetch` and are not committed.
 
 ## Do not

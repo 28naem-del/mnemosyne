@@ -15,7 +15,7 @@ npm run demo
 npm run demo:learning
 ```
 
-The demos use isolated temporary databases and check handoffs, privacy, correction propagation, evidence, runtime learning fixtures and forgetting. They do not call an LLM or measure agent intelligence. Run `npm run check` separately for the full contributor checks.
+The demos use isolated temporary databases and check handoffs, privacy, correction propagation, evidence, runtime learning fixtures and forgetting. They do not call an LLM or measure agent intelligence. In the 3.0.0 source tree, `npm run demo` runs the [five-moment demo](DEMO.md). It prints live-measured proofs for replay, downstream correction, bisect, poisoning and consolidation on synthetic data, and `node dist/cli/index.js demo --classic` runs the 2.0.0 demo. Run `npm run check` separately for the full contributor checks.
 
 Start an MCP server with an explicit persistent path and identity:
 
