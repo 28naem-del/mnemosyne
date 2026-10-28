@@ -21,7 +21,7 @@ import { inferDependencies, reviewDependency, type InferDependenciesOptions } fr
 
 const HELP = `Mnemosyne ${VERSION} — portable agent memory
 
-  mnemosy demo                     Run a verified, isolated memory-engine demo
+  mnemosy demo [--classic]         Five-moment demo, offline, each proof measured live (--classic: the old demo)
   mnemosy learning-demo            Run isolated capture-to-skill replay checks
   mnemosy evaluate --file FILE [--out FILE] [--limit 20] [--json JSON]
                    [--provider-config FILE]  Evaluate supplied LongMemEval v1 retrieval
@@ -349,6 +349,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     tokens: { type: 'string' }, out: { type: 'string' }, file: { type: 'string' },
     share: { type: 'boolean' }, confirm: { type: 'boolean' }, history: { type: 'boolean' },
     record: { type: 'string' }, 'read-only': { type: 'boolean' },
+    classic: { type: 'boolean' },
     'as-of': { type: 'string' }, 'known-at': { type: 'string' }, diff: { type: 'string' },
     hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' },
     propose: { type: 'boolean' }, apply: { type: 'boolean' }, rollback: { type: 'string' }, 'verify-chain': { type: 'boolean' }, demo: { type: 'boolean' },
@@ -423,6 +424,20 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     return;
   }
   if (command === 'demo' || command === 'learning-demo') {
+    if (command === 'demo' && !values.classic) {
+      // The breakthrough demo streams each moment as it runs, then exits 1 if any implemented proof failed.
+      const record = values.record ? resolve(values.record) : undefined;
+      // Refuse an existing --record file before minutes of work, not after.
+      if (record && (await import('node:fs')).existsSync(record)) throw new Error(`Refusing to overwrite existing file: ${record}`);
+      const { runBreakthroughDemo } = await import('../evaluation/breakthrough-demo.js');
+      const report = await runBreakthroughDemo({ out: line => { process.stdout.write(`${line}\n`); } });
+      if (report.passed !== report.total) process.exitCode = 1;
+      if (record) {
+        writeFileSync(record, `${JSON.stringify({ ...report, mode: 'recorded' }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+        process.stdout.write(`Report saved to ${record}\n`);
+      }
+      return;
+    }
     const report = command === 'demo' ? runMemoryDemo() : await (await import('../evaluation/learning-demo.js')).runLearningDemo();
     if ('passed' in report && !report.passed) process.exitCode = 1;
     if (values.record) {

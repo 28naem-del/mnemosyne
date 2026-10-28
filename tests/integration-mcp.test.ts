@@ -157,7 +157,7 @@ describe('CLI workflow', () => {
   it('records an actual verified demo, without a network or external database', () => {
     const { directory } = fixture();
     const file = join(directory, 'demo.json');
-    execFileSync(process.execPath, [cli, 'demo', '--record', file], { timeout: 10_000, stdio: 'pipe' });
+    execFileSync(process.execPath, [cli, 'demo', '--classic', '--record', file], { timeout: 10_000, stdio: 'pipe' });
     const report = JSON.parse(readFileSync(file, 'utf8'));
     expect(report.mode).toBe('recorded');
     expect(report.steps).toHaveLength(6);
