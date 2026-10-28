@@ -671,9 +671,11 @@ export class LocalMemory {
       maxCandidates: v.limit(input.maxCandidates, 1000, 10000),
       rerankTopN: reranked ? this.#rerankTopN : null,
       minSimilarity: this.#similarity(input.minSimilarity, this.#minSimilarity),
-      // Each precision control is recorded only when it is in force, so a recall
-      // that uses none of them keeps exactly the configuration hash it had before
-      // they existed.
+      // Each precision control, and `kinds`, is recorded only when it is passed or
+      // in force, so the configuration hash is unchanged only for a recall that
+      // passes none of them; passing `kinds` changes it. The results themselves can
+      // differ from before even then: the lifecycle prefilter is always on, so
+      // superseded or expired versions no longer take candidate budget.
       ...this.#precisionConfig(input),
     };
     // Each stage is truncated to the configured bound, and the bound is disclosed:
@@ -1443,8 +1445,9 @@ export class LocalMemory {
     return { floors, named, fuzzy, filter, active: named !== false || hasFloors(floors) };
   }
 
-  /** The ledger's view of the precision controls. Each is recorded only when it
-   * is in force, so a recall that uses none keeps its old configuration hash. */
+  /** The ledger's view of the precision controls and `kinds`. Each is recorded
+   * only when it is in force (or, for `kinds`, passed), so only a recall that
+   * passes none of them keeps its old configuration hash. */
   #precisionConfig(input: RecallInput): Partial<LedgerRetrievalConfig> {
     const precision = this.#precision(input);
     return {
