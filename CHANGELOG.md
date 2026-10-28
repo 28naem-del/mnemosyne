@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.1] — draft, not released
+
+Draft entry for the first 3.0.0 release candidate. The root package version in this tree is still
+2.0.0; nothing in this section has been published. Numbers below reproduce from a fresh clone of
+the branch with the commands in [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
+
+### Removed (breaking)
+
+- **The legacy Qdrant/graph/broadcast/cognitive engine no longer ships in `mnemosy-ai`.** The
+  `createMnemosyne` factory and default export, the `./core`, `./cognitive`, `./graph`,
+  `./broadcast`, `./pipeline`, `./cache` and `./tools` subpaths, and with them the blind
+  `dream()`/`consolidate()` consolidation, `runConsolidation`, `maintainMemory`,
+  `runDreamConsolidation` and the Qdrant/FalkorDB/Redis clients, moved unchanged to
+  `packages/legacy` as the private package `mnemosy-ai-legacy`. The root export is the kernel
+  only. Read [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md) for the import table and how to keep
+  running the legacy engine. `src/connectors` stays (it never used Qdrant).
+
+### Added
+
+- **`LocalMemory.promote(id, { to, corroboration, reason })`** — raises a record's trust only
+  when at least two active corroborators share no provenance ancestor with the candidate or
+  with each other (rule `ancestry-disjoint-v1`). Every decision, granted or quarantined, is a
+  `promotion` ledger event with a readable verdict; `ledger({ event: 'promotion' })` reads
+  them. A grant supersedes rather than edits in place.
+- **Adversarial poisoning suite v1** (`npm run poisoning`): 227 deterministic synthetic cases
+  (167 attacks, 60 benign controls) across content, evidence, scope-leak, selection, path
+  (consolidation order) and erasure-return; offline, about 2 s. Result on this tree: zero
+  escapes, zero false quarantines. That is a statement about these 227 cases, not a claim of
+  immunity. [docs/POISONING-SUITE.md](docs/POISONING-SUITE.md).
+- **PrecisionMemBench wrapper and scores** (`benchmarks/precisionmembench/`, retrieval mode,
+  no LLM judge): comparable configuration 48/77 single-turn cases (precision 0.611, recall
+  0.913), unfiltered kernel 22/77; losses and the disclosed wrapper-side filters are in
+  [docs/BENCHMARKS-TRUST.md](docs/BENCHMARKS-TRUST.md).
+- **Memory bisect on the default hybrid retrieval path**: Oracle B rebuilds the exact retriever
+  and carries stored vectors over via the new `exportEmbeddings()`/`importEmbeddings()`; the
+  snapshot format is unchanged. `RetrievalStatus` exposes `rrfK` and `minSimilarity` on the
+  hybrid path.
+- `benchmarks/memsecbench/` (adapter and cost estimate; MemSecBench is not scored) and
+  `benchmarks/consolidationbench/BLOCKER.md`.
+- `npm run test:legacy` runs the legacy package's own suite.
+
+### Changed
+
+- **Issue #37**: proposer and `runJobs` `timeoutMs` ceiling 60 000 → 300 000 ms (default 30 s
+  unchanged), `leaseMs` ceiling 300 000 → 600 000 ms, lease must still exceed the timeout. The
+  CLI provider file accepts `timeoutMs` (1–300000). Slow local models can now be given the time
+  they need.
+- `tsconfig.json` now lists `types: ["node"]` explicitly (the legacy `ioredis` import used to
+  supply Node's types implicitly).
+
+### Known gaps carried into 3.0.0
+
+- `recall()`/`compile()` have no native abstention threshold; the PrecisionMemBench wrapper
+  applies disclosed filters on its side. Fixing this in the kernel is the first 3.x item.
+- The poisoning suite exercises the lexical path only and tests the trust-label gate, not
+  content inspection.
+- `site/docs/index.html` still describes both engines; CI does not yet run `test:legacy`.
+
 ## [2.0.0] — stable release, 2026-10-27
 
 The 2.0.0-rc.10 candidate promoted to stable **with no source change**: the tree is the rc.10 tree
