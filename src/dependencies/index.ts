@@ -30,7 +30,7 @@ export type * from './types.js';
 export const DEPENDENCY_RULE: DependencyRule = 'co-use-success-v1';
 /** Defaults chosen on development seeds of the synthetic corpus, never on the gate
  * seed; see docs/DEPENDENCIES.md. */
-export const DEFAULT_INFERENCE_THRESHOLDS: Readonly<InferenceThresholds> = Object.freeze({ minSupport: 2, minReliance: 0.5, minLift: 1.5, minConfidence: 0.3, z: 1 });
+export const DEFAULT_INFERENCE_THRESHOLDS: Readonly<InferenceThresholds> = Object.freeze({ minSupport: 2, minReliance: 0.4, minLift: 1.5, minConfidence: 0.25, z: 1 });
 const DEFAULT_HOLD_RELIANCE = 0.34;
 const DEFAULT_DEPENDENT_KINDS: readonly MemoryKind[] = ['procedure'];
 const DEFAULT_PREMISE_KINDS: readonly MemoryKind[] = ['decision', 'fact', 'preference'];
