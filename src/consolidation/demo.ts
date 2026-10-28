@@ -18,6 +18,9 @@ import type { ConsolidationDiff, ConsolidationProposal } from './types.js';
 export const DEMO_CLOCK_BASE = Date.UTC(2026, 0, 1);
 /** Fixed demo key: reproducible receipts, never a key to sign real stores with. */
 export const DEMO_SEED = new Uint8Array(32).fill(0x5a);
+/** The demo store's scope, so a file-backed demo can be continued with `mnemosy consolidate`. */
+export const DEMO_WORKSPACE = 'demo';
+export const DEMO_AGENT = 'ops-agent';
 
 export interface DemoPass { label: string; verdict: string; reason: string; passId: string; digest: string; delta: number | null; holdoutDelta: number | null; perProposal: number[]; receipt: ConsolidationResult['receipt'] }
 
@@ -123,7 +126,8 @@ export function runConsolidationDemo(options: ConsolidationDemoOptions = {}): Co
   const signer = options.signer ?? createConsolidationSigner({ seed: DEMO_SEED });
   let tick = DEMO_CLOCK_BASE;
   const clock = () => new Date(tick += 1000);
-  const memory = createLocalMemory({ path: options.path ?? ':memory:', workspaceId: 'demo', agentId: 'ops-agent', retrieval: 'lexical', ledger: { queries: 'text' }, now: clock });
+  const memory = createLocalMemory({ path: options.path ?? ':memory:', workspaceId: DEMO_WORKSPACE, agentId: DEMO_AGENT, retrieval: 'lexical', ledger: { queries: 'text' }, now: clock });
+  const scope = options.path === undefined ? '[scope]' : `--db ${options.path} --workspace ${DEMO_WORKSPACE} --agent ${DEMO_AGENT}`;
   try {
     log(`Mnemosyne consolidation gate demo (${SYNTHETIC}; offline; lexical replay)`);
     log(`signing key: ed25519 keyId ${signer.keyId} (${signer.origin})`);
@@ -146,14 +150,14 @@ export function runConsolidationDemo(options: ConsolidationDemoOptions = {}): Co
     log('\n== rollback of the kept pass (one call)');
     if (kept.verdict !== 'kept') throw new Error(`demo expected pass 2 to be kept, got ${kept.verdict}: ${kept.receipt.reason}`);
     const undone = rollbackConsolidation(memory, kept.receipt.passId, { signer });
-    log(`command: mnemosy consolidate --rollback ${kept.receipt.passId}`);
+    log(`same call from the CLI: mnemosy consolidate ${scope} --rollback ${kept.receipt.passId}`);
     log(`stateSha256 before pass 2 applied: ${undone.stateBefore}`);
     log(`stateSha256 after pass 2 applied:  ${stateAfterApply}`);
     log(`stateSha256 after rollback:        ${undone.stateAfter}`);
     log(`identical: ${undone.restored} (${undone.deletedIds.length} created record(s) removed); receipt ${undone.receipt.digest}`);
 
     log('\n== a store with no recorded outcomes');
-    const empty = createLocalMemory({ path: ':memory:', workspaceId: 'demo', agentId: 'ops-agent', retrieval: 'lexical', ledger: { queries: 'text' }, now: clock });
+    const empty = createLocalMemory({ path: ':memory:', workspaceId: DEMO_WORKSPACE, agentId: DEMO_AGENT, retrieval: 'lexical', ledger: { queries: 'text' }, now: clock });
     try {
       for (const seed of SEEDS.slice(0, 2)) empty.store({ text: seed.text, kind: seed.kind, trust: seed.trust, source: { uri: seed.uri }, metadata: { demo: SYNTHETIC } });
       const result = consolidate(empty, { signer })!;
@@ -162,6 +166,7 @@ export function runConsolidationDemo(options: ConsolidationDemoOptions = {}): Co
 
     const chain = verifyConsolidationChain(memory);
     log(`\n== verdict chain: ${chain.ok ? 'verifies' : 'BROKEN'}; ${chain.receipts} receipt(s); head ${chain.head}`);
+    log(`verify again from the CLI: mnemosy consolidate ${scope} --verify-chain`);
     return {
       replayTasks: tasks, passes, chain, keyId: signer.keyId,
       rollback: { passId: kept.receipt.passId, stateBefore: undone.stateBefore, stateAfterApply, stateAfterRollback: undone.stateAfter, restored: undone.restored, deletedIds: undone.deletedIds.length, digest: undone.receipt.digest },
