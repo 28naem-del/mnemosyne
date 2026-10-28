@@ -104,6 +104,14 @@ function wilsonLower(successes: number, trials: number, z: number): number {
   return Math.max(0, (p + z2 / (2 * trials) - z * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials))) / (1 + z2 / trials));
 }
 
+/** Wilson score upper bound: the most reliance the evidence still allows. The
+ * guard releases a co-used premise only when even this bound is low. */
+function wilsonUpper(successes: number, trials: number, z: number): number {
+  if (trials <= 0) return 1;
+  const p = successes / trials, z2 = z * z;
+  return Math.min(1, (p + z2 / (2 * trials) + z * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials))) / (1 + z2 / trials));
+}
+
 /** The review handle: sha256 over the canonical proposal without its digest. */
 export function proposalDigest(proposal: Omit<InferredDependency, 'digest'> | Record<string, unknown>): string {
   const { digest: _digest, ...body } = proposal as Record<string, unknown>;
@@ -558,9 +566,10 @@ export function reviewDependency(memory: LocalMemory, proposal: InferredDependen
  * `PremiseGuard`). Premise state is read live on every check, so one guard built
  * before a correction reflects it; rebuild after new tasks to see their co-use.
  * A held pair is released by a review receipt, by a declared edge (the kernel
- * then handles it), by evidence of independence (reliance below `holdReliance`
- * with at least `minSupport` successful runs without the premise), or by a
- * dependent version created after the premise changed.
+ * then handles it), by evidence of independence (the Wilson upper bound on
+ * reliance, at `z`, below `holdReliance`: the dependent ran successfully often
+ * enough without the premise), or by a dependent version created after the
+ * premise changed. One co-use in a few runs is not evidence of independence.
  */
 export function createPremiseGuard(memory: LocalMemory, options: PremiseGuardOptions = {}): PremiseGuard {
   const settings = parseSettings(options, true);
@@ -571,7 +580,7 @@ export function createPremiseGuard(memory: LocalMemory, options: PremiseGuardOpt
     const head = index.headOf(pair.premise);
     if (!head) continue;
     const runs = index.runs.get(pair.dependent) ?? 0, reliance = pair.support / runs;
-    if (reliance < settings.holdReliance && runs - pair.support >= settings.thresholds.minSupport) continue;
+    if (wilsonUpper(pair.support, runs, settings.thresholds.z) < settings.holdReliance) continue;
     watched.set(pair.dependent, [...(watched.get(pair.dependent) ?? []), { premise: pair.premise, premiseId: head.id, support: pair.support, runs, reliance: round(reliance) }]);
   }
   const holds = (input: MemoryRecord | string): PremiseHold[] => {

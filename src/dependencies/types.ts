@@ -142,9 +142,9 @@ export interface PremiseHold {
 }
 
 export interface PremiseGuardOptions extends InferDependenciesOptions {
-  /** A co-used premise whose reliance is below this AND whose dependent has at
-   * least `minSupport` successful runs without it is treated as independent and
-   * never holds. Default 0.34. */
+  /** A co-used premise is treated as independent, and never holds, only when the
+   * Wilson upper bound (at `z`) on the dependent's reliance on it is below this:
+   * the dependent ran successfully often enough without it. Default 0.34. */
   holdReliance?: number;
 }
 

@@ -8,7 +8,7 @@ afterEach(() => { opened.splice(0).forEach(db => db.close()); });
 function setup() {
   let tick = Date.parse('2026-10-28T00:00:00.000Z');
   const now = () => new Date(tick += 1000);
-  const db = createLocalMemory({ path: ':memory:', agentId: 'alice', workspaceId: 'project', now }); opened.push(db);
+  const db = createLocalMemory({ path: ':memory:', agentId: 'alice', workspaceId: 'project', now, retrieval: 'lexical' }); opened.push(db);
   const runtime = new MemoryRuntime(db, { now });
   const evidence = runtime.capture({ sessionId: 'session', trust: 'observed', messages: [{ id: 'm1', role: 'user', text: 'Deploy with the release checklist after tests pass.' }] }).records[0];
   const premise = db.store({ text: 'Releases ship from the main branch.', kind: 'fact', trust: 'observed', source: { uri: 'test:branch-policy' } });

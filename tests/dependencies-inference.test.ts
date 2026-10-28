@@ -238,9 +238,13 @@ describe('skill dependents and the premise guard', () => {
     const tip = w.fact('The deploy dashboard has a dark mode.');
     background(w);
     w.task([deploy, tip], [deploy, tip], true);
-    for (let index = 0; index < 3; index++) w.task([deploy, tip], [deploy], true);
+    for (let index = 0; index < 2; index++) w.task([deploy, tip], [deploy], true);
+    const early = createPremiseGuard(w.db);
+    for (let index = 0; index < 7; index++) w.task([deploy, tip], [deploy], true);
     const guard = createPremiseGuard(w.db);
     w.db.correct(tip.id, { text: 'The deploy dashboard has no dark mode.', source: { uri: 'test:tip-v2' }, reason: 'Changed.' });
+    // One co-use in three runs does not bound reliance yet; one in ten does.
+    expect(early.allows(deploy.id)).toBe(false);
     expect(guard.allows(deploy.id)).toBe(true);
     expect(() => createPremiseGuard(w.db, { holdReliance: 2 })).toThrow('holdReliance');
   });
