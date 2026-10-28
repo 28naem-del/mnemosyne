@@ -1,0 +1,1206 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ✘ [fail]: [mnemosyne] happy-stack-repository-layer: Repository layer query: pinned DB decision surfaces; scoped open question surfaces; relevant beliefs depend on query token overlap unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh
+  ✘ [fail]: [mnemosyne] happy-alias-match-kubernetes: Alias 'k8s' resolves to Kubernetes entity unexpected belief in relevantBeliefs: b-ci-gha-entity
+  ✘ [fail]: [mnemosyne] alias-kube-resolves: Alias 'kube' drives text search retrieval unexpected belief in relevantBeliefs: b-redis-code
+  ✔ [mnemosyne] alias-gha-resolves: Alias 'GHA' (short form) drives text-search retrieval of b-ci-gha-entity
+  ✘ [fail]: [mnemosyne] long-query-rambling-kubernetes: Verbose 400+ char query. unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-functional-pipeline
+  ✔ [mnemosyne] out-of-scope-coin-collecting: Query in a domain the user has no beliefs about: personaPrelude only, no scope/relevant leakage
+  ✘ [fail]: [mnemosyne] happy-writing-scope: Writing query surfaces writing beliefs only; no code leakage unexpected belief in relevantBeliefs: b-pov-shift-entity | unexpected belief in relevantBeliefs: b-redis-writing | unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-narrator-superseded
+  ✘ [fail]: [mnemosyne] conflict-scope-disambiguation-redis-writing: 'Redis' in writing scope returns character, not datastore unexpected belief in relevantBeliefs: b-pov-shift-entity | unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-narrator-superseded
+  ✘ [fail]: [mnemosyne] conflict-scope-disambiguation-redis-code: 'Redis' in code scope returns datastore, not character unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved
+  ✘ [fail]: [mnemosyne] multi-scope-redis-both-surfaces: With scope=['code','writing'], both Redis beliefs should surface — one per scope unexpected belief in relevantBeliefs: b-auth-depends-redis
+  ✘ [fail]: [mnemosyne] conflict-mongodb-supersedes-sqlalchemy: Superseded SQLAlchemy belief never surfaces unexpected belief in relevantBeliefs: b-sqlalchemy-superseded
+  ✔ [mnemosyne] edge-empty-query: Empty query: persona + scope prelude + pinned facts injected, no relevant beliefs
+  ✔ [mnemosyne] edge-short-query-raw-passthrough: Short query 'fastify?' passes raw to text search. Belief is pinned so verified in pinnedFacts.
+  ✔ [mnemosyne] isolation-user-scoping: Other-user beliefs never leak
+  ✘ [fail]: [mnemosyne] questions-pinned-active-only: listPinnedOpenQuestions returns only pinned+active questions for the given scope unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] alias-ts-resolves: Alias 'TS' drives text-search retrieval. unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] alias-mongo-resolves: Alias 'Mongo' drives text-search retrieval. unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling
+  ✘ [fail]: [mnemosyne] alias-reactjs-resolves: Alias 'ReactJS' resolves to b-react-entity via text search — genuine retrieval proof unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh
+  ✘ [fail]: [mnemosyne] alias-protagonist-resolves: Alias 'protagonist' retrieves b-protagonist-entity (pinned). b-pov-shift-entity (non-pinned) proves text search fired. unexpected belief in relevantBeliefs: b-redis-writing | unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-narrator-superseded
+  ✘ [fail]: [mnemosyne] canonical-name-match-mara: Direct canonical_name 'Mara' retrieves protagonist. b-protagonist-entity is pinned. unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-redis-writing
+  ✘ [fail]: [mnemosyne] alias-pov-shift-resolves: Alias 'POV' drives text-search retrieval of b-pov-shift-entity (non-pinned, writing scope) unexpected belief in relevantBeliefs: b-chapter-structure-q
+  ✘ [fail]: [mnemosyne] alias-base-class-retrieves-composition: Natural-language proxy 'base class' retrieves b-composition-inheritance (non-pinned) via alias unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-auth-depends-redis
+  ✔ [mnemosyne] alias-exceptions-retrieves-error-handling: Natural-language proxy 'exceptions' retrieves b-error-handling (non-pinned) via alias
+  ✘ [fail]: [mnemosyne] filter-resolved-at-excluded: b-hosting-resolved has resolved_at set — query matching its aliases must not surface it unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-ci-gha-entity
+  ✘ [fail]: [mnemosyne] scope-bleed-questions-code-excludes-writing: Code-scope query must not surface writing-scope open questions unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] persona-prelude-content-present: Persona prelude contains substantive content tokens derived from universal preferences unexpected belief in relevantBeliefs: b-sqlalchemy-superseded
+  ✔ [mnemosyne] edge-short-query-score-clears: Short query 'k8s'
+  ✔ [mnemosyne] edge-whitespace-query: Whitespace-only query is treated as empty by queryExpander — no relevant beliefs
+  ✘ [fail]: [mnemosyne] score-boundary-weak-match-filtered: Weakly-related in-scope query does not surface tangential beliefs below minScore unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-error-handling
+  ✔ [mnemosyne] user-edited-cross-scope-surfaces: user_edited belief scoped to domain:writing does NOT surface in domain:code — scope isolation takes precedence over user_edited flag
+  ✘ [fail]: [mnemosyne] user-edited-absent-without-flag: Non-user-edited writing belief does NOT cross into code scope pinnedFacts unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] ranking-canonical-name-over-content: canonical_name match (weight 10) outranks content-only match (weight 1) in relevantBeliefs ordering unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling
+  ✘ [fail]: [mnemosyne] messy-typo-blind-spot: Typo 'typscript' does NOT match 'TypeScript' — documents text search limitation unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] messy-all-caps-case-insensitive: ALL-CAPS 'REACTJS' still resolves via case-insensitive text index unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling
+  ✘ [fail]: [mnemosyne] messy-filler-heavy-extraction: Filler-heavy query — NLP extraction must cut through noise to find 'error handling' unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-ts-pref
+  ✘ [fail]: [mnemosyne] messy-negation-surfaces-topic: Negation 'I don't want class hierarchies' still surfaces the composition belief — text search has no semantic negation unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded
+  ✘ [fail]: [mnemosyne] messy-compound-surfaces-two-beliefs: Single query spanning two topics surfaces both non-pinned beliefs unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-composition-inheritance | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue
+  ✘ [fail]: [mnemosyne] cap-stress-compound-six-entities: Compound query mentions 6 entities — tests whether 12-token cap in buildSearchQuery drops non-pinned targets unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-functional-pipeline
+  ✘ [fail]: [mnemosyne] cap-stress-kitchen-sink-exceeds-twelve: Dense 8+ entity query that deliberately exceeds the 12-token cap — tests which non-pinned beliefs survive extraction truncation unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-composition-inheritance | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh
+  ✘ [fail]: [mnemosyne] cap-stress-late-position-entity-at-risk: Critical alias 'exceptions' appears after 6+ proper nouns — tests whether extraction order causes late-position tokens to fall past the 12-token cap unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-vitest-pref
+  ✘ [fail]: [mnemosyne] fuzzy-single-edit-fires-non-pinned: 1-edit deletion 'eror' fuzzy-matches alias 'error' — prefix 'er' passes unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue
+  ✘ [fail]: [mnemosyne] fuzzy-scope-filter-discriminates-after-fuzzy-fires: Typo 'Reedis' fuzzy-matches alias 'Redis' in both scopes — scope filter returns only code belief unexpected belief in relevantBeliefs: b-auth-depends-redis
+  ✔ [mnemosyne] fuzzy-prefix-blocks-transitive-match: 1-edit distance but prefix guard blocks — 'mango' shares edit distance 1 with 'mongo' but 'ma' ≠ 'mo'
+  ✔ [mnemosyne] fuzzy-abbreviation-prefix-blind-spot: Alias 'k8s' — typo 'k9s' fails because prefix 'k9' ≠ 'k8' — single-char substitution in short aliases hits prefix guard
+  ✘ [fail]: [mnemosyne] fuzzy-two-edit-transposition-blocked: Transposition 'typsecript' IS matched by Atlas (Damerau-Levenshtein, 1 edit) unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-linting-v0
+  ✘ [fail]: [mnemosyne] fuzzy-single-term-only-signal: Query is a single misspelled term — 'mongod' is the only token, 1 edit from alias 'Mongo', prefix 'mo' passes unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-dead-letter-queue
+  ✔ [mnemosyne] universal-scope-belief-content-in-persona-prelude: user:universal belief content appears in personaPrelude for a domain with no per-scope description
+  ✘ [fail]: [mnemosyne] type-isolation-open-question-not-in-relevant: open_question belief with directly matched aliases must appear in openQuestions only — not in pinnedFacts or relevantBeliefs unexpected belief in relevantBeliefs: b-auth-open-q
+  ✘ [fail]: [mnemosyne] multi-hop-supersession-chain-all-excluded: Three-hop chain: TSLint (b-linting-v0) → ESLint (b-linting-v1) → Biome (b-linting-current). Query terms matching both superseded hops must surface neither; only the active terminal belief surfaces via pinnedFacts unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-error-handling
+  ✘ [fail]: [mnemosyne] cross-scope-one-empty-domain-does-not-degrade: Multi-scope query where one scope (domain:hobby) has zero beliefs — code-scope retrieval must be unaffected and no empty-scope error must occur unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved
+  ✘ [fail]: [mnemosyne] ranking-orderedbefore-alias-beats-content: Rare alias 'pipe' (high IDF, short field) outranks common alias 'error' — documents Atlas Search BM25 IDF weighting behavior unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-hosting-resolved
+  ✔ [mnemosyne] cold-start-user-no-beliefs: User with zero seeded beliefs returns fully empty context at every output tier without error
+  ✔ [mnemosyne] narrator-voice-pinned-in-own-scope: Empty query against domain:writing surfaces all three pinned writing-scope beliefs in pinnedFacts and the writing open question in openQuestions
+  ✘ [fail]: [mnemosyne] multi-scope-prelude-uses-primary-scope-only: With scope=['code','writing'], personaPrelude is universal only — documents that scope-specific content is not injected unexpected belief in relevantBeliefs: b-pov-shift-entity | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-redis-writing | unexpected belief in relevantBeliefs: b-functional-pipeline
+  ✘ [fail]: [mnemosyne] why-it-matters-not-indexed-blind-spot: 'Vue' appears only in b-react-entity.why_it_matters — not in canonical_name, aliases, or content. The query must not surface the belief. unexpected belief in relevantBeliefs: b-react-entity
+  ✔ [mnemosyne] budget-ceiling-evicts-relevant-beliefs: maxBeliefs set to exact pinned count — no slots remain for relevantBeliefs
+  ✘ [fail]: [mnemosyne] negative-guidance-mongoose: Query for Mongoose schema surfaces b-mongo-raw-driver — the raw-driver preference is the counter-signal unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved
+  ✔ [mnemosyne] recency-tiebreak-reinforcement: Among equally-scored pinned beliefs, higher last_reinforced_at sorts first in pinnedFacts
+  ✔ [mnemosyne] preference-flood-relevant-entity-survives: Query about a specific entity is not drowned out by high-reinforcement preferences at budget ceiling
+  ✔ [mnemosyne] cross-scope-non-user-edited-blocked: Writing-scope entity with strong name match does not surface in code-scope query
+  ✘ [fail]: [mnemosyne] alias-two-word-shingle-dead-letter: Two-word alias 'dead letter' fires via the shingle analyzer path on aliases.shingle multi-field unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] alias-dlq-abbreviation-resolves: Alias 'DLQ' (abbreviation) drives text-search retrieval unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-composition-inheritance | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-kubernetes-entity
+  ✘ [fail]: [mnemosyne] counter-signal-jest-surfaces-vitest: Counter-signal alias 'jest' on b-vitest-pref surfaces when user queries about Jest unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] relation-type-expands-participants: Relation belief 'auth depends on redis' surfaces via alias match AND pulls its participants (b-redis-code) into relevantBeliefs via one-hop join. b-auth-open-q goes to openQuestions since it's an open_question type. unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-error-handling
+  ✘ [fail]: [mnemosyne] relation-participant-open-question-routes-correctly: Participant b-auth-open-q is type=open_question and pinned. Even though it's pulled in via relation expansion, it must appear in openQuestions, not relevantBeliefs. unexpected belief in relevantBeliefs: b-auth-open-q
+  ✘ [fail]: [mnemosyne] relation-expansion-respects-scope-filter: If a relation's participant is out of scope, it must NOT be pulled in by expansion. Hypothetical: b-auth-depends-redis has participant b-redis-writing (wrong scope). Scope filter in expandRelationParticipants blocks it. unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ts-pref
+  ✘ [fail]: [mnemosyne] subtype-expertise-retrieval: Subtype 'expertise' belief surfaces on a query about React skill calibration unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved
+  ✘ [fail]: [mnemosyne] pinned-plus-resolved-excluded-from-questions: A belief that is both pinned AND has resolved_at set must NOT appear in openQuestions or pinnedFacts unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code
+  ✘ [fail]: [mnemosyne] zero-reinforcement-fresh-belief-surfaces: Brand new belief with reinforcement_count: 0 still surfaces via alias match — recency/reinforcement must not suppress it unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity
+  ✔ [mnemosyne] budget-zero-graceful-empty: maxBeliefs: 0 returns empty arrays without throwing
+  ✔ [mnemosyne] budget-one-pinned-wins-over-relevant: maxBeliefs: 1 with a query matching both a pinned belief and a non-pinned belief — pinned belief gets the slot
+  ✘ [fail]: [mnemosyne] multi-scope-code-writing-dedup-no-double-surface: With scope=['domain:code','domain:writing'], a belief scoped to both does not appear twice unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-linting-v1
+  ✘ [fail]: [mnemosyne] empty-alias-belief-content-path-only: b-comm-recommendation has aliases: [] — can only be retrieved via content path. Since content is not a scored search path, it should NOT surface. unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-mongo-raw-driver
+  ✘ [fail]: [mnemosyne] universal-scope-explicit-query-no-relevant: Query scoped explicitly to user:universal — universal beliefs appear in personaPrelude only, not in relevantBeliefs unexpected belief in relevantBeliefs: b-comm-recommendation | unexpected belief in relevantBeliefs: b-react-expertise | unexpected belief in relevantBeliefs: b-authorship-mode
+  ✘ [fail]: [mnemosyne] negation-query-still-surfaces-rejected-tool: Query 'I do NOT want to use Express' still surfaces b-fastify-pref because text search has no negation awareness unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-react-entity
+  ✘ [fail]: [mnemosyne] superseded-chain-query-terminal-only: Query 'TSLint' matches b-linting-v0 (superseded by v1, which is superseded by b-linting-current). Only terminal active belief surfaces. unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-linting-v1
+  ✘ [fail]: [mnemosyne] relation-does-not-appear-as-entity: Relation-type belief does not bleed into pinnedFacts despite alias overlap with pinned beliefs unexpected belief in relevantBeliefs: b-auth-open-q
+  ─
+
+  [mnemosyne] happy-stack-repository-layer: Repository layer query: pinned DB decision surfaces; scoped open question surfaces; relevant beliefs depend on query token overlap
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] happy-alias-match-kubernetes: Alias 'k8s' resolves to Kubernetes entity
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-ci-gha-entity
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-kube-resolves: Alias 'kube' drives text search retrieval
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] long-query-rambling-kubernetes: Verbose 400+ char query.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-functional-pipeline
+
+  Difference (- actual, + expected):
+
+  - 17
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] happy-writing-scope: Writing query surfaces writing beliefs only; no code leakage
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-pov-shift-entity | unexpected belief in relevantBeliefs: b-redis-writing | unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-narrator-superseded
+
+  Difference (- actual, + expected):
+
+  - 4
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] conflict-scope-disambiguation-redis-writing: 'Redis' in writing scope returns character, not datastore
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-pov-shift-entity | unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-narrator-superseded
+
+  Difference (- actual, + expected):
+
+  - 3
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] conflict-scope-disambiguation-redis-code: 'Redis' in code scope returns datastore, not character
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved
+
+  Difference (- actual, + expected):
+
+  - 7
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] multi-scope-redis-both-surfaces: With scope=['code','writing'], both Redis beliefs should surface — one per scope
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-depends-redis
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] conflict-mongodb-supersedes-sqlalchemy: Superseded SQLAlchemy belief never surfaces
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-sqlalchemy-superseded
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] questions-pinned-active-only: listPinnedOpenQuestions returns only pinned+active questions for the given scope
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 4
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-ts-resolves: Alias 'TS' drives text-search retrieval.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 5
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-mongo-resolves: Alias 'Mongo' drives text-search retrieval.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling
+
+  Difference (- actual, + expected):
+
+  - 12
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-reactjs-resolves: Alias 'ReactJS' resolves to b-react-entity via text search — genuine retrieval proof
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-protagonist-resolves: Alias 'protagonist' retrieves b-protagonist-entity (pinned). b-pov-shift-entity (non-pinned) proves text search fired.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-redis-writing | unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-narrator-superseded
+
+  Difference (- actual, + expected):
+
+  - 3
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] canonical-name-match-mara: Direct canonical_name 'Mara' retrieves protagonist. b-protagonist-entity is pinned.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-chapter-structure-q | unexpected belief in relevantBeliefs: b-redis-writing
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-pov-shift-resolves: Alias 'POV' drives text-search retrieval of b-pov-shift-entity (non-pinned, writing scope)
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-chapter-structure-q
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-base-class-retrieves-composition: Natural-language proxy 'base class' retrieves b-composition-inheritance (non-pinned) via alias
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-auth-depends-redis
+
+  Difference (- actual, + expected):
+
+  - 11
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] filter-resolved-at-excluded: b-hosting-resolved has resolved_at set — query matching its aliases must not surface it
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-ci-gha-entity
+
+  Difference (- actual, + expected):
+
+  - 15
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] scope-bleed-questions-code-excludes-writing: Code-scope query must not surface writing-scope open questions
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 6
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] persona-prelude-content-present: Persona prelude contains substantive content tokens derived from universal preferences
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-sqlalchemy-superseded
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] score-boundary-weak-match-filtered: Weakly-related in-scope query does not surface tangential beliefs below minScore
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-error-handling
+
+  Difference (- actual, + expected):
+
+  - 15
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] user-edited-absent-without-flag: Non-user-edited writing belief does NOT cross into code scope pinnedFacts
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] ranking-canonical-name-over-content: canonical_name match (weight 10) outranks content-only match (weight 1) in relevantBeliefs ordering
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] messy-typo-blind-spot: Typo 'typscript' does NOT match 'TypeScript' — documents text search limitation
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 4
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] messy-all-caps-case-insensitive: ALL-CAPS 'REACTJS' still resolves via case-insensitive text index
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] messy-filler-heavy-extraction: Filler-heavy query — NLP extraction must cut through noise to find 'error handling'
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-ts-pref
+
+  Difference (- actual, + expected):
+
+  - 17
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] messy-negation-surfaces-topic: Negation 'I don't want class hierarchies' still surfaces the composition belief — text search has no semantic negation
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded
+
+  Difference (- actual, + expected):
+
+  - 8
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] messy-compound-surfaces-two-beliefs: Single query spanning two topics surfaces both non-pinned beliefs
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-composition-inheritance | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue
+
+  Difference (- actual, + expected):
+
+  - 5
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] cap-stress-compound-six-entities: Compound query mentions 6 entities — tests whether 12-token cap in buildSearchQuery drops non-pinned targets
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-functional-pipeline
+
+  Difference (- actual, + expected):
+
+  - 11
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] cap-stress-kitchen-sink-exceeds-twelve: Dense 8+ entity query that deliberately exceeds the 12-token cap — tests which non-pinned beliefs survive extraction truncation
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-composition-inheritance | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh
+
+  Difference (- actual, + expected):
+
+  - 10
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] cap-stress-late-position-entity-at-risk: Critical alias 'exceptions' appears after 6+ proper nouns — tests whether extraction order causes late-position tokens to fall past the 12-token cap
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-vitest-pref
+
+  Difference (- actual, + expected):
+
+  - 12
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] fuzzy-single-edit-fires-non-pinned: 1-edit deletion 'eror' fuzzy-matches alias 'error' — prefix 'er' passes
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] fuzzy-scope-filter-discriminates-after-fuzzy-fires: Typo 'Reedis' fuzzy-matches alias 'Redis' in both scopes — scope filter returns only code belief
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-depends-redis
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] fuzzy-two-edit-transposition-blocked: Transposition 'typsecript' IS matched by Atlas (Damerau-Levenshtein, 1 edit)
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-linting-v0
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] fuzzy-single-term-only-signal: Query is a single misspelled term — 'mongod' is the only token, 1 edit from alias 'Mongo', prefix 'mo' passes
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-dead-letter-queue
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] type-isolation-open-question-not-in-relevant: open_question belief with directly matched aliases must appear in openQuestions only — not in pinnedFacts or relevantBeliefs
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-open-q
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] multi-hop-supersession-chain-all-excluded: Three-hop chain: TSLint (b-linting-v0) → ESLint (b-linting-v1) → Biome (b-linting-current). Query terms matching both superseded hops must surface neither; only the active terminal belief surfaces via pinnedFacts
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-error-handling
+
+  Difference (- actual, + expected):
+
+  - 17
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] cross-scope-one-empty-domain-does-not-degrade: Multi-scope query where one scope (domain:hobby) has zero beliefs — code-scope retrieval must be unaffected and no empty-scope error must occur
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved
+
+  Difference (- actual, + expected):
+
+  - 7
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] ranking-orderedbefore-alias-beats-content: Rare alias 'pipe' (high IDF, short field) outranks common alias 'error' — documents Atlas Search BM25 IDF weighting behavior
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-hosting-resolved
+
+  Difference (- actual, + expected):
+
+  - 8
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] multi-scope-prelude-uses-primary-scope-only: With scope=['code','writing'], personaPrelude is universal only — documents that scope-specific content is not injected
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-pov-shift-entity | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-redis-writing | unexpected belief in relevantBeliefs: b-functional-pipeline
+
+  Difference (- actual, + expected):
+
+  - 10
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] why-it-matters-not-indexed-blind-spot: 'Vue' appears only in b-react-entity.why_it_matters — not in canonical_name, aliases, or content. The query must not surface the belief.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-react-entity
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] negative-guidance-mongoose: Query for Mongoose schema surfaces b-mongo-raw-driver — the raw-driver preference is the counter-signal
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved
+
+  Difference (- actual, + expected):
+
+  - 12
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-two-word-shingle-dead-letter: Two-word alias 'dead letter' fires via the shingle analyzer path on aliases.shingle multi-field
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 9
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] alias-dlq-abbreviation-resolves: Alias 'DLQ' (abbreviation) drives text-search retrieval
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-composition-inheritance | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-kubernetes-entity
+
+  Difference (- actual, + expected):
+
+  - 10
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] counter-signal-jest-surfaces-vitest: Counter-signal alias 'jest' on b-vitest-pref surfaces when user queries about Jest
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 7
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] relation-type-expands-participants: Relation belief 'auth depends on redis' surfaces via alias match AND pulls its participants (b-redis-code) into relevantBeliefs via one-hop join. b-auth-open-q goes to openQuestions since it's an open_question type.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ts-pref | unexpected belief in relevantBeliefs: b-mongo-raw-driver | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-sqlalchemy-superseded | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-error-handling
+
+  Difference (- actual, + expected):
+
+  - 16
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] relation-participant-open-question-routes-correctly: Participant b-auth-open-q is type=open_question and pinned. Even though it's pulled in via relation expansion, it must appear in openQuestions, not relevantBeliefs.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-open-q
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] relation-expansion-respects-scope-filter: If a relation's participant is out of scope, it must NOT be pulled in by expansion. Hypothetical: b-auth-depends-redis has participant b-redis-writing (wrong scope). Scope filter in expandRelationParticipants blocks it.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ts-pref
+
+  Difference (- actual, + expected):
+
+  - 3
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] subtype-expertise-retrieval: Subtype 'expertise' belief surfaces on a query about React skill calibration
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved
+
+  Difference (- actual, + expected):
+
+  - 7
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] pinned-plus-resolved-excluded-from-questions: A belief that is both pinned AND has resolved_at set must NOT appear in openQuestions or pinnedFacts
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-fastify-pref | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-redis-code
+
+  Difference (- actual, + expected):
+
+  - 8
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] zero-reinforcement-fresh-belief-surfaces: Brand new belief with reinforcement_count: 0 still surfaces via alias match — recency/reinforcement must not suppress it
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-depends-redis | unexpected belief in relevantBeliefs: b-ci-gha-entity
+
+  Difference (- actual, + expected):
+
+  - 5
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] multi-scope-code-writing-dedup-no-double-surface: With scope=['domain:code','domain:writing'], a belief scoped to both does not appear twice
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-linting-v1
+
+  Difference (- actual, + expected):
+
+  - 2
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] empty-alias-belief-content-path-only: b-comm-recommendation has aliases: [] — can only be retrieved via content path. Since content is not a scored search path, it should NOT surface.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-error-handling | unexpected belief in relevantBeliefs: b-vitest-pref | unexpected belief in relevantBeliefs: b-react-entity | unexpected belief in relevantBeliefs: b-mongo-raw-driver
+
+  Difference (- actual, + expected):
+
+  - 11
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] universal-scope-explicit-query-no-relevant: Query scoped explicitly to user:universal — universal beliefs appear in personaPrelude only, not in relevantBeliefs
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-comm-recommendation | unexpected belief in relevantBeliefs: b-react-expertise | unexpected belief in relevantBeliefs: b-authorship-mode
+
+  Difference (- actual, + expected):
+
+  - 3
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] negation-query-still-surfaces-rejected-tool: Query 'I do NOT want to use Express' still surfaces b-fastify-pref because text search has no negation awareness
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-functional-pipeline | unexpected belief in relevantBeliefs: b-hosting-resolved | unexpected belief in relevantBeliefs: b-redis-code | unexpected belief in relevantBeliefs: b-auth-open-q | unexpected belief in relevantBeliefs: b-ci-gha-entity | unexpected belief in relevantBeliefs: b-kubernetes-entity | unexpected belief in relevantBeliefs: b-dead-letter-queue | unexpected belief in relevantBeliefs: b-zero-reinforcement-fresh | unexpected belief in relevantBeliefs: b-linting-v1 | unexpected belief in relevantBeliefs: b-react-entity
+
+  Difference (- actual, + expected):
+
+  - 10
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] superseded-chain-query-terminal-only: Query 'TSLint' matches b-linting-v0 (superseded by v1, which is superseded by b-linting-current). Only terminal active belief surfaces.
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-pinned-resolved-interaction | unexpected belief in relevantBeliefs: b-linting-v0 | unexpected belief in relevantBeliefs: b-linting-v1
+
+  Difference (- actual, + expected):
+
+  - 3
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+
+
+  [mnemosyne] relation-does-not-appear-as-entity: Relation-type belief does not bleed into pinnedFacts despite alias overlap with pinned beliefs
+
+  src/retrieval.external.eval.test.ts:378
+
+   377:                                                    
+   378:     t.is(failures.length, 0, failures.join(" | "));
+   379:   });                                              
+
+  unexpected belief in relevantBeliefs: b-auth-open-q
+
+  Difference (- actual, + expected):
+
+  - 1
+  + 0
+
+  › <anonymous> (src/retrieval.external.eval.test.ts:378:7)
+
+  ─
+
+  57 tests failed
+
+⏳ Seeding 35 beliefs to mnemosyne...
+
+  [1/35] 3% — b-comm-response-length (9.39ms)  [2/35] 6% — b-comm-pushback (1.36ms)  [3/35] 9% — b-comm-recommendation (2.36ms)  [4/35] 11% — b-authorship-mode (1.03ms)  [5/35] 14% — b-ts-pref (1ms)  [6/35] 17% — b-fastify-pref (0.9ms)  [7/35] 20% — b-mongo-raw-driver (1ms)  [8/35] 23% — b-composition-inheritance (0.95ms)  [9/35] 26% — b-error-handling (0.96ms)  [10/35] 29% — b-db-decision (0.8ms)  [11/35] 31% — b-sqlalchemy-superseded (0.86ms)  [12/35] 34% — b-kubernetes-entity (0.74ms)  [13/35] 37% — b-react-entity (0.72ms)  [14/35] 40% — b-auth-open-q (0.71ms)  [15/35] 43% — b-narrator-voice (0.67ms)  [16/35] 46% — b-narrator-superseded (0.85ms)  [17/35] 49% — b-protagonist-entity (0.85ms)  [18/35] 51% — b-redis-writing (0.7ms)  [19/35] 54% — b-redis-code (0.77ms)  [20/35] 57% — b-chapter-structure-q (0.76ms)  [21/35] 60% — b-other-user-leak-check (1.76ms)  [22/35] 63% — b-ci-gha-entity (0.75ms)  [23/35] 66% — b-pov-shift-entity (0.78ms)  [24/35] 69% — b-hosting-resolved (0.76ms)  [25/35] 71% — b-prose-style-user-edited (0.72ms)  [26/35] 74% — b-functional-pipeline (0.73ms)  [27/35] 77% — b-linting-v0 (0.64ms)  [28/35] 80% — b-linting-v1 (0.73ms)  [29/35] 83% — b-linting-current (0.68ms)  [30/35] 86% — b-vitest-pref (0.69ms)  [31/35] 89% — b-dead-letter-queue (0.88ms)  [32/35] 91% — b-react-expertise (1.4ms)  [33/35] 94% — b-auth-depends-redis (0.73ms)  [34/35] 97% — b-pinned-resolved-interaction (0.65ms)  [35/35] 100% — b-zero-reinforcement-fresh (0.68ms)
+
+✅ Seeded 35 beliefs in 0.0s
+

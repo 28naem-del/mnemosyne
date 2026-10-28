@@ -1,0 +1,432 @@
+{
+  "provider": "mnemosyne",
+  "retrieval": {
+    "meanLatencyMs": 2.29,
+    "p50LatencyMs": 2.05,
+    "p95LatencyMs": 4.14,
+    "caseCount": 2,
+    "meanPrecision": 1,
+    "meanRecall": 1,
+    "totalPassed": 12,
+    "totalCases": 12,
+    "passRate": 1,
+    "activeRetrievalPasses": 11,
+    "passTypes": {
+      "activeRetrieval": 11,
+      "structural": 0,
+      "triviallyEmpty": 1
+    },
+    "categories": [
+      {
+        "category": "Session-level noise isolation",
+        "caseCount": 12,
+        "passed": 12,
+        "failed": 0,
+        "meanPrecision": 1,
+        "meanRecall": 1
+      }
+    ],
+    "turnCount": 12
+  },
+  "cases": [
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 0,
+      "label": "establishes_topic",
+      "retrievedBeliefIds": [
+        "b-redis-code"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 2.92,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 1,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-kubernetes-entity"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 1.99,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 2,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-react-entity"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 2.05,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 3,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-error-handling",
+        "b-fastify-pref",
+        "b-ts-pref"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 2.16,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 4,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-ci-gha-entity"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 1.96,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 5,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-auth-depends-redis",
+        "b-redis-code"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 2.12,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 6,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-functional-pipeline",
+        "b-mongo-raw-driver"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 1.67,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 7,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-ts-pref",
+        "b-error-handling"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 4.14,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 8,
+      "label": "drift",
+      "retrievedBeliefIds": [
+        "b-composition-inheritance"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 2.05,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 9,
+      "label": "implicit_continuation",
+      "retrievedBeliefIds": [],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 1.22,
+      "retrievalPrecision": null,
+      "retrievalRecall": null
+    },
+    {
+      "caseId": "session-drift-noise-10-turns-implicit-redis",
+      "category": "Session-level noise isolation",
+      "turnIndex": 10,
+      "label": "re_entry",
+      "retrievedBeliefIds": [
+        "b-redis-code"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 3.7,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    },
+    {
+      "caseId": "cross-session-formative-turn-surfaces-via-belief-join",
+      "category": "Session-level noise isolation",
+      "turnIndex": 0,
+      "label": "implicit_continuation",
+      "retrievedBeliefIds": [
+        "b-redis-code"
+      ],
+      "pinnedBeliefIds": [
+        "b-db-decision",
+        "b-linting-current"
+      ],
+      "noiseBeliefIds": [],
+      "driftScore": 0,
+      "passed": true,
+      "failures": [],
+      "retrievalLatencyMs": 1.45,
+      "retrievalPrecision": 1,
+      "retrievalRecall": 1
+    }
+  ],
+  "ingestion": {
+    "beliefCount": 35,
+    "totalMs": 41.24,
+    "meanPerBeliefMs": 1.18,
+    "perBelief": [
+      {
+        "beliefId": "b-comm-response-length",
+        "latencyMs": 7.89
+      },
+      {
+        "beliefId": "b-comm-pushback",
+        "latencyMs": 1.63
+      },
+      {
+        "beliefId": "b-comm-recommendation",
+        "latencyMs": 1.26
+      },
+      {
+        "beliefId": "b-authorship-mode",
+        "latencyMs": 1.07
+      },
+      {
+        "beliefId": "b-ts-pref",
+        "latencyMs": 0.99
+      },
+      {
+        "beliefId": "b-fastify-pref",
+        "latencyMs": 0.97
+      },
+      {
+        "beliefId": "b-mongo-raw-driver",
+        "latencyMs": 1.02
+      },
+      {
+        "beliefId": "b-composition-inheritance",
+        "latencyMs": 1.33
+      },
+      {
+        "beliefId": "b-error-handling",
+        "latencyMs": 1.2
+      },
+      {
+        "beliefId": "b-db-decision",
+        "latencyMs": 0.96
+      },
+      {
+        "beliefId": "b-sqlalchemy-superseded",
+        "latencyMs": 0.94
+      },
+      {
+        "beliefId": "b-kubernetes-entity",
+        "latencyMs": 0.76
+      },
+      {
+        "beliefId": "b-react-entity",
+        "latencyMs": 0.75
+      },
+      {
+        "beliefId": "b-auth-open-q",
+        "latencyMs": 0.82
+      },
+      {
+        "beliefId": "b-narrator-voice",
+        "latencyMs": 0.76
+      },
+      {
+        "beliefId": "b-narrator-superseded",
+        "latencyMs": 1
+      },
+      {
+        "beliefId": "b-protagonist-entity",
+        "latencyMs": 0.73
+      },
+      {
+        "beliefId": "b-redis-writing",
+        "latencyMs": 0.66
+      },
+      {
+        "beliefId": "b-redis-code",
+        "latencyMs": 0.7
+      },
+      {
+        "beliefId": "b-chapter-structure-q",
+        "latencyMs": 0.78
+      },
+      {
+        "beliefId": "b-other-user-leak-check",
+        "latencyMs": 1.96
+      },
+      {
+        "beliefId": "b-ci-gha-entity",
+        "latencyMs": 0.97
+      },
+      {
+        "beliefId": "b-pov-shift-entity",
+        "latencyMs": 0.99
+      },
+      {
+        "beliefId": "b-hosting-resolved",
+        "latencyMs": 0.87
+      },
+      {
+        "beliefId": "b-prose-style-user-edited",
+        "latencyMs": 0.77
+      },
+      {
+        "beliefId": "b-functional-pipeline",
+        "latencyMs": 1.15
+      },
+      {
+        "beliefId": "b-linting-v0",
+        "latencyMs": 1.87
+      },
+      {
+        "beliefId": "b-linting-v1",
+        "latencyMs": 0.81
+      },
+      {
+        "beliefId": "b-linting-current",
+        "latencyMs": 0.76
+      },
+      {
+        "beliefId": "b-vitest-pref",
+        "latencyMs": 0.67
+      },
+      {
+        "beliefId": "b-dead-letter-queue",
+        "latencyMs": 0.86
+      },
+      {
+        "beliefId": "b-react-expertise",
+        "latencyMs": 1.24
+      },
+      {
+        "beliefId": "b-auth-depends-redis",
+        "latencyMs": 0.67
+      },
+      {
+        "beliefId": "b-pinned-resolved-interaction",
+        "latencyMs": 0.68
+      },
+      {
+        "beliefId": "b-zero-reinforcement-fresh",
+        "latencyMs": 0.75
+      }
+    ]
+  },
+  "provenance": {
+    "provider": "mnemosyne",
+    "generatedAt": "2026-10-28T11:18:47.393Z",
+    "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
+    "workingTreeClean": false,
+    "composeFile": null,
+    "resolvedComposeSha256": null,
+    "composeImages": []
+  }
+}

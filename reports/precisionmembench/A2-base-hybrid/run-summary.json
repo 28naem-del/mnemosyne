@@ -1,0 +1,71 @@
+{
+  "label": "A2-base-hybrid",
+  "retrieval": "hybrid",
+  "metadata": "protocol",
+  "extendedHarness": false,
+  "harnessPatch": null,
+  "cutoff": null,
+  "minSimilarity": null,
+  "minScore": null,
+  "rerank": false,
+  "lexicalScoring": null,
+  "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
+  "benchmarkDirty": [
+    "M providers.config.json",
+    "?? test-results/retrieval-report-mnemosyne.json",
+    "?? test-results/session-retrieval-report-mnemosyne.json"
+  ],
+  "kernelCommit": "84cb6c37e24287a2084185f4ac1b47541a9fdba0",
+  "node": "v26.12.1",
+  "startedAt": "2026-10-28T10:34:00.503Z",
+  "runs": [
+    {
+      "test": "src/retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 5.022,
+      "report": "retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 11,
+        "cases": 77,
+        "passRate": 0.1429,
+        "meanPrecision": 0.0663,
+        "meanRecall": 1,
+        "activeRetrievalPasses": 0,
+        "passTypes": {
+          "activeRetrieval": 0,
+          "structural": 8,
+          "triviallyEmpty": 3
+        },
+        "p50LatencyMs": 21.6
+      },
+      "serverCounters": {
+        "add": 35,
+        "update": 0,
+        "search": 72,
+        "corrections": 0,
+        "windows": 0
+      }
+    },
+    {
+      "test": "src/session-retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 1.807,
+      "report": "session-retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 0,
+        "cases": 12,
+        "passRate": 0,
+        "meanPrecision": 0.0741,
+        "meanRecall": 1,
+        "activeRetrievalPasses": 0,
+        "passTypes": {
+          "activeRetrieval": 0,
+          "structural": 0,
+          "triviallyEmpty": 0
+        },
+        "p50LatencyMs": 44.28
+      },
+      "serverCounters": null
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "label": "A2-base-lexical",
+  "retrieval": "lexical",
+  "metadata": "protocol",
+  "extendedHarness": false,
+  "harnessPatch": null,
+  "cutoff": null,
+  "minSimilarity": null,
+  "minScore": null,
+  "rerank": false,
+  "lexicalScoring": null,
+  "benchmarkCommit": "61a712a1754e7d27b6dee42da32a2c214b003ece",
+  "benchmarkDirty": [
+    "M providers.config.json"
+  ],
+  "kernelCommit": "84cb6c37e24287a2084185f4ac1b47541a9fdba0",
+  "node": "v26.12.1",
+  "startedAt": "2026-10-28T10:33:42.358Z",
+  "runs": [
+    {
+      "test": "src/retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 2.004,
+      "report": "retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 22,
+        "cases": 77,
+        "passRate": 0.2857,
+        "meanPrecision": 0.2616,
+        "meanRecall": 0.9535,
+        "activeRetrievalPasses": 7,
+        "passTypes": {
+          "activeRetrieval": 7,
+          "structural": 10,
+          "triviallyEmpty": 5
+        },
+        "p50LatencyMs": 1.56
+      },
+      "serverCounters": {
+        "add": 35,
+        "update": 0,
+        "search": 72,
+        "corrections": 0,
+        "windows": 0
+      }
+    },
+    {
+      "test": "src/session-retrieval.external.eval.test.ts",
+      "avaExit": 1,
+      "seconds": 0.75,
+      "report": "session-retrieval-report-mnemosyne.json",
+      "scores": {
+        "passed": 0,
+        "cases": 12,
+        "passRate": 0,
+        "meanPrecision": 0.0778,
+        "meanRecall": 1,
+        "activeRetrievalPasses": 0,
+        "passTypes": {
+          "activeRetrieval": 0,
+          "structural": 0,
+          "triviallyEmpty": 0
+        },
+        "p50LatencyMs": 3.11
+      },
+      "serverCounters": {
+        "add": 36,
+        "update": 1,
+        "search": 12,
+        "corrections": 0,
+        "windows": 0
+      }
+    }
+  ]
+}
