@@ -8,9 +8,8 @@ import { generatePoisoningCases } from '../src/evaluation/poisoning/generator.js
 import { buildTimelinePlan, expectedVersionAt } from '../src/evaluation/breakthrough/corpus.js';
 
 /**
- * The §11.7 WOW contract, as a gate: moments 1, 3 and 4 prove their numbers live,
- * moments 2 and 5 are registered as pending, and the whole run is well inside the
- * five-minute budget. The assertions read the structured details behind each PROOF
+ * The §11.7 WOW contract, as a gate: all five moments prove their numbers live,
+ * none is pending, and the whole run is well inside the five-minute budget. The assertions read the structured details behind each PROOF
  * line, so a moment that printed a plausible constant would fail here.
  */
 
@@ -24,19 +23,14 @@ beforeAll(async () => {
 }, BUDGET);
 
 describe('breakthrough demo', () => {
-  it('registers five moments in order and proves the three implemented ones', () => {
+  it('registers five moments in order and proves every one of them', () => {
     expect(report.moments.map(entry => entry.id)).toEqual([1, 2, 3, 4, 5]);
     expect(BREAKTHROUGH_MOMENTS.map(entry => entry.id)).toEqual([1, 2, 3, 4, 5]);
-    for (const id of [1, 3, 4]) expect(moment(id).proof.passed, `moment ${id}: ${moment(id).lines.join('\n')}`).toBe(true);
-    for (const id of [2, 5]) {
-      expect(moment(id).proof.passed).toBe('pending');
-      expect(moment(id).proof.measured).toBe('pending');
-    }
-    expect(report.passed).toBe(3);
-    expect(report.total).toBe(3);
-    expect(report.pending).toHaveLength(2);
-    expect(report.pending[0]).toMatch(/unit C/);
-    expect(report.pending[1]).toMatch(/unit B/);
+    expect(BREAKTHROUGH_MOMENTS.every(entry => typeof entry.run === 'function' && entry.pendingNote === undefined)).toBe(true);
+    for (const id of [1, 2, 3, 4, 5]) expect(moment(id).proof.passed, `moment ${id}: ${moment(id).lines.join('\n')}`).toBe(true);
+    expect(report.passed).toBe(5);
+    expect(report.total).toBe(5);
+    expect(report.pending).toEqual([]);
     expect(report.durationMs).toBeLessThan(BUDGET);
     expect(report.limitations.join(' ')).toMatch(/synthetic/);
   });
@@ -88,6 +82,44 @@ describe('breakthrough demo', () => {
     expect(moment(4).lines.join('\n')).toMatch(/quarantined by rule ancestry-disjoint-v1/);
   });
 
+  it('moment 2 repaired everything downstream, inferred edges included, and left the decoy alone', () => {
+    const details = moment(2).details as { undeclared: number; undeclaredInvalidated: number; declared: number; declaredInvalidated: number; accepted: number; truePositives: number; stale: number; probes: number; liveBefore: number; decoySurvived: boolean; decoyProposed: boolean; receipts: number; published: { recall: string; precision: string; stale: string } | null };
+    expect(details).toMatchObject({ undeclared: 3, undeclaredInvalidated: 3, declared: 2, declaredInvalidated: 2, accepted: 3, truePositives: 3, stale: 0, decoySurvived: true, decoyProposed: false, receipts: 3 });
+    // The stale probes found every dependent before the correction, so the zero after it is not vacuous.
+    expect(details.liveBefore).toBe(5);
+    expect(details.probes).toBe(11);
+    expect(details.published).toEqual({ recall: '96.05%', precision: '98.06%', stale: '0' });
+    expect(moment(2).proof.measured).toBe('undeclared invalidated 3/3, accepted edges true 3/3, stale after correction 0 (11 probes)');
+    const text = moment(2).lines.join('\n');
+    expect(text).toMatch(/proposal: refunds \(never linked\) relies on the premise {3}support 3\/3 runs/);
+    expect(text.match(/accepted: receipt [0-9a-f-]{36} /g)).toHaveLength(3);
+    expect(text).toContain('skill retired: Linked premise was corrected or is no longer eligible.');
+    expect(text).toMatch(/survived {5}key rotation \(decoy\)/);
+    expect(text).toContain('recall 96.05%, precision 98.06%, stale 0');
+  });
+
+  it('moment 5 kept a dream that helped, rolled back the ones that did not, and undid the kept one exactly', () => {
+    const details = moment(5).details as { replayTasks: number; kept: number; rolledBack: number; keptDelta: number; restored: boolean; chain: { ok: boolean; receipts: number; head: string }; passes: { verdict: string; reason: string; digest: string; prevDigest: string | null; delta: number | null; holdoutDelta: number | null }[] };
+    expect(details.replayTasks).toBe(10);
+    expect(details.passes.map(pass => pass.verdict)).toEqual(['rolled_back', 'kept', 'rolled_back']);
+    expect(details.passes[0].reason).toMatch(/^regression:/);
+    expect(details.passes[2].reason).toMatch(/^invariant violated: .*no-untrusted-to-policy/);
+    expect(details.kept).toBe(1);
+    expect(details.keptDelta).toBeGreaterThanOrEqual(0);
+    expect(details.passes[1].holdoutDelta).toBeGreaterThanOrEqual(0);
+    expect(details.rolledBack).toBe(2);
+    expect(details.restored).toBe(true);
+    // Three gate receipts plus the rollback receipt, chained by digest.
+    expect(details.chain).toMatchObject({ ok: true, receipts: 4 });
+    expect(details.passes[0].prevDigest).toBeNull();
+    expect(details.passes[1].prevDigest).toBe(details.passes[0].digest);
+    expect(details.passes[2].prevDigest).toBe(details.passes[1].digest);
+    expect(moment(5).proof.measured).toBe(`kept 1 (delta +${details.keptDelta}), rolled back 2 (regression, invariant violated), rollback identical hash true, chain verified 4 receipts`);
+    const text = moment(5).lines.join('\n');
+    expect(text).toMatch(/identical: true; [1-9]\d* created record\(s\) removed/);
+    expect(text.match(/signature verifies/g)).toHaveLength(3);
+  });
+
   it('ground truth comes from the plan: a late-learned version is invisible before it was known', () => {
     const plan = buildTimelinePlan(20261028);
     const fact = plan.facts.find(entry => entry.versions.some(version => version.knownFrom > version.validFrom))!;
@@ -113,10 +145,11 @@ describe('mnemosy demo (CLI)', () => {
       const run = spawnSync(process.execPath, [cli, 'demo', '--record', file], { encoding: 'utf8', timeout: BUDGET });
       expect(run.status, run.stderr).toBe(0);
       expect(run.stdout).toMatch(/\[1\/5\] It remembers/);
-      expect(run.stdout.match(/^PROOF {2}.*\[PASS;/gm)).toHaveLength(3);
-      expect(run.stdout.match(/^PROOF {2}.*\[PENDING;/gm)).toHaveLength(2);
+      expect(run.stdout.match(/^PROOF {2}.*\[PASS;/gm)).toHaveLength(5);
+      expect(run.stdout).not.toMatch(/PENDING|FAIL;/);
+      expect(run.stdout).toMatch(/5\/5 moments proved\. Total \d+\.\d s\./);
       const saved = JSON.parse(readFileSync(file, 'utf8'));
-      expect(saved).toMatchObject({ mode: 'recorded', passed: 3, total: 3 });
+      expect(saved).toMatchObject({ mode: 'recorded', passed: 5, total: 5, pending: [] });
       expect(saved.moments).toHaveLength(5);
       writeFileSync(join(directory, 'keep.json'), 'keep this');
       const refused = spawnSync(process.execPath, [cli, 'demo', '--record', join(directory, 'keep.json')], { encoding: 'utf8', timeout: 10_000 });
