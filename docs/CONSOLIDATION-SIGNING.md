@@ -1,12 +1,12 @@
 # Consolidation signing and the verdict chain (design note)
 
-Status: design for the 3.0 consolidation gate (user guide: `docs/CONSOLIDATION.md`). Scope: what a consolidation diff is signed with, what the signature claims, and how gate receipts link into a verifiable chain.
+Status: design for the 3.0 consolidation gate, implemented in `src/consolidation/` (user guide: [CONSOLIDATION.md](CONSOLIDATION.md)). Scope: what a consolidation diff is signed with, what the signature claims, and how gate receipts link into a verifiable chain.
 
 ## Objects
 
-- **Diff.** Canonical JSON (code-unit key order, no whitespace) of `{ schema, stateBefore, candidateSet, proposals }`. `stateBefore` is `replayState(memory, { knownAt }).stateSha256` at the gate cut. `candidateSet` is the sorted list of `{ id, fingerprint }` the proposer was allowed to read, each `fingerprint` from `getRecordFingerprint(id)`. `proposals` are the closed-menu operations (`merge | supersede | split | delete | abstract`).
-- **candidateDiffSha256.** SHA-256 over `mnemosyne-consolidation-diff-v1\n` + the canonical diff. This digest is what is signed.
-- **Receipt.** One `consolidation` ledger event per gate decision or rollback, written with `appendLedgerReceipt` inside the same transaction as the apply or the rollback. `digest` = SHA-256 over the canonical receipt without `digest`; `prevDigest` = the previous receipt's `digest` in the same workspace and agent scope (`null` for the first).
+- **Diff.** Canonical JSON (code-unit key order, no whitespace) of `{ schema, workspaceId, agentId, cut, stateBefore, candidateSet, proposals, proposer }`. `stateBefore` is `replayState(memory, { knownAt: cut }).stateSha256`. `candidateSet` is the sorted list of `{ id, fingerprint }` the proposer was allowed to read, each `fingerprint` from `getRecordFingerprint(id)`. `proposals` are the closed-menu operations (`merge | supersede | split | delete | abstract`). The scope fields stop a diff signed for one agent from being applied to another.
+- **candidateDiffSha256.** SHA-256 over `mnemosyne-consolidation-diff-v1\n` + the canonical diff without `digest` and `signature`. The diff signature is over `mnemosyne-consolidation-diff-signature-v1\n` + this digest.
+- **Receipt.** One `consolidation` ledger event per gate decision or rollback, written with `appendLedgerReceipt` inside the same transaction as the apply or the rollback. `digest` = SHA-256 over `mnemosyne-consolidation-receipt-v1\n` + the canonical receipt without `digest` and `receiptSignature`; `prevDigest` = the previous receipt's `digest` in the same workspace and agent scope (`null` for the first). `receiptSignature` is the store key's signature over `mnemosyne-consolidation-receipt-signature-v1\n` + `digest`, so a receipt is attributable even when it carries no diff (`invalid_run`, `rollback`). The receipt also carries `scores` (`tasks`, `before`, `after`, `delta`, `holdout`, `noMemory`, `unreplayable`, `perProposal`), the invariant results, each proposal's `proposalSha256` with a `fault` flag the proposer's backoff reads, and the created ids with fingerprints.
 
 ## Where the key lives
 
@@ -57,4 +57,4 @@ receipt_n.prevDigest = receipt_{n-1}.digest
 receipt_n.digest     = sha256("mnemosyne-consolidation-receipt-v1\n" + canonical(receipt_n without digest))
 ```
 
-`verifyConsolidationChain(memory)` pages through `ledger({ events: ['consolidation'] })` in sequence order and checks, for each receipt: the schema, the recomputed digest, the link to the previous digest, the signature over `candidateDiffSha256` (when the receipt has one), and that every `rollback` receipt names a kept pass that was not already rolled back. It returns `{ ok, receipts, head, keyChanges, errors }`. Erasure of a record does not remove consolidation receipts (they are appended without `memoryId`) and receipts hold record ids and fingerprints but never record text.
+`verifyConsolidationChain(memory)` pages through `ledger({ events: ['consolidation'] })` in sequence order and checks, for each receipt: the schema, the recomputed digest, the receipt signature (against `pinnedKeyIds` when given), the link to the previous digest, the signature over `candidateDiffSha256` (when the receipt has one), and that every `rollback` receipt names a kept pass that was not already rolled back. It returns `{ ok, receipts, head, keyChanges, errors }`. Erasure of a record does not remove consolidation receipts (they are appended without `memoryId`) and receipts hold record ids and fingerprints but never record text.
