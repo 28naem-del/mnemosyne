@@ -45,8 +45,12 @@ node benchmarks/precisionmembench/run.mjs --label B-hybrid  --retrieval hybrid  
 
 Raw output per label: `reports/precisionmembench/<label>/` (harness JSON reports, ava transcripts,
 server log, `run-summary.json` with the harness and kernel commits). The sweeps that chose the
-filter values: `reports/precisionmembench/sweep-*/sweep.json`, 29 configurations. Every run was
-executed twice with identical results.
+filter values: `reports/precisionmembench/sweep-*/sweep.json`, 29 configurations. The raw, A-lexical
+and A-hybrid configurations were executed twice (sweep entry and labelled run) with identical
+per-case results, and A-hybrid a third time by an independent verifier at commit `593cbae`; the
+B configurations were run once. The `kernelCommit` recorded in the run summaries is `e0bbb47`
+because the wrapper was uncommitted when the runs were made; the verifier's re-run at HEAD
+reproduced 48/77 exactly.
 
 Where Mnemosyne loses, and what it means:
 
@@ -56,11 +60,14 @@ Where Mnemosyne loses, and what it means:
   dense similarity floor, plus a relative cutoff against the top in-scope score) were chosen by
   sweeping the public fixture, which is the only data this benchmark has. That is a product gap
   to fix in the kernel, not a benchmark artefact, and it is on the 3.x roadmap.
-- **Fuzzy and typo queries: 4 of 7 fail.** There is no fuzzy matching.
+- **Fuzzy and typo queries: 4 of 7 fail on the lexical path, 2 of 7 in the quoted A-hybrid run.**
+  The lexical path has no fuzzy matching; the dense path catches some misspellings.
 - **Compound queries naming 6–8 entities** lose lower-ranked true hits to the relative cutoff.
 - **"Nothing relevant" queries** keep noise when the top hit is itself noise.
-- **The bundled cross-encoder reranker made every configuration worse** (best 35/77 with
-  reranking against 48/77 without). It is off in the quoted run.
+- **The bundled cross-encoder reranker never helped**: in the 5 sweep pairs tried it tied its
+  non-reranked twin 3 times and lost twice (20/77 and 35/77 against 44/77 at the same settings);
+  the best reranked result was 35/77. No reranked run exists at the exact A-hybrid setting. It is
+  off in the quoted run.
 - **Session mode is weak**: 6/12 turns in the comparable configuration.
 
 ## 2. Adversarial poisoning suite v1 (ours, synthetic, offline)
@@ -121,7 +128,8 @@ hashes stay stable. Tests: `tests/local-promotion.test.ts` (13), `tests/poisonin
 with judge-model calls. `benchmarks/memsecbench/` holds a four-operation backend adapter over the
 kernel, an offline self-test on **three synthetic cases of ours (6/6 checks; not a score)** and
 the exact cost arithmetic: about US$31 for a local-agent run with one Sonnet-class judge pass,
-about US$590 for a paid-agent run with three judge passes, under the assumptions written there.
+about US$258 for one paid-agent run with three judge passes, and about US$590 for three full
+paid-agent runs each with a judge pass, under the assumptions written there.
 Blocked on the authors' 310 cases and judge configuration.
 
 ## 4. ConsolidationBench — not attempted

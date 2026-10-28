@@ -54,7 +54,8 @@ Sonnet-class US$3 / US$15 per million input/output tokens; Haiku-class US$1 / US
 | Agent, local model (Ollama/llama.cpp) | n/a | **US$0** | **US$0** |
 | Agent, paid model, one configuration | 39.06 M in, 3.255 M out | 39.06×3 + 3.255×15 = **US$166.01** | 39.06×1 + 3.255×5 = **US$55.34** |
 | Minimum credible run: local agent + 1 judge pass | | **≈ US$31** | **≈ US$10** |
-| Full-fidelity run: paid agent + 3 judge passes | | **≈ US$590** (3 × 166.01 + 92.07) | **≈ US$197** |
+| One paid-agent run + 3 judge passes | | **US$258.08** (166.01 + 92.07) | **US$86.03** (55.34 + 30.69) |
+| Three full paid-agent runs, each with a judge pass | | **≈ US$590** (3 × 166.01 + 92.07) | **≈ US$197** (3 × 55.34 + 30.69) |
 
 Wall-clock at one judge call per 4 s: 1,860 calls ≈ 2.1 h per pass. The agent side on a local
 7–14 B model at ~25 tok/s: 310 × 10,500 output tokens ≈ 36 h, which is the real bottleneck.
