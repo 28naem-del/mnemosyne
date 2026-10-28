@@ -553,6 +553,7 @@ html[data-motion=paused] .chapter-nav { transition: none; }
   .article details > summary { padding-block: 9px; }
   .text-link, .feature-index a, .architecture-step a, .migration-providers a, .company-email a, .reference-return a { display: inline-flex; align-items: center; min-height: 44px; }
   .release-current { display: flex; align-items: center; min-height: 44px; margin-top: 14px; }
+  .demo-disclosure a[download], .standalone-link a { display: inline-flex; align-items: center; min-height: 44px; }
 }
 .scene-tools .scene-load { color: var(--mint); border-color: #6fa59699; }
 .not-found-links { margin: 0 0 110px; max-width: 760px; }
