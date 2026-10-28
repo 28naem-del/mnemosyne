@@ -27,7 +27,7 @@ export const CONSOLIDATION_VERIFIER_SHA256 = createHash('sha256').update([
   'score: per task, gold ids covered by the lexical top-k minus harmful ids covered; a derived record covers a source whose tokens it contains',
   'replay: export -> fresh :memory: lexical store -> import -> (apply diff); recorded query, limit and lexical scoring',
   'holdout: 20% by sha256(holdout\\n<sequence>\\n<taskId>) when at least 10 tasks; must not regress',
-  'keep: invariants hold, at least 2 replayable tasks, delta >= 0, holdout delta >= 0',
+  'keep: invariants hold, at least 2 replayable tasks, delta >= 0, holdout delta >= 0, every proposal alone delta >= 0 over all tasks',
 ].join('\n')).digest('hex');
 
 export const MIN_REPLAY_TASKS = 2;
@@ -112,12 +112,18 @@ export function proposeConsolidation(memory: LocalMemory, options: ProposeConsol
   for (const proposal of proposals) for (const id of referenced(proposal)) {
     if (allowed.has(id) && !fingerprints.has(id)) fingerprints.set(id, memory.getRecordFingerprint(id)!);
   }
+  const receipts = consolidationReceipts(memory);
+  // A kept proposal still in force is not proposed again; after its rollback it may be.
+  const undone = new Set(receipts.filter(({ receipt }) => receipt.action === 'rollback' && receipt.verdict === 'rolled_back').map(({ receipt }) => receipt.rollbackOf));
+  const applied = new Set(receipts.filter(({ receipt }) => receipt.action === 'gate' && receipt.verdict === 'kept' && !undone.has(receipt.passId)).flatMap(({ receipt }) => receipt.proposals.map((proposal) => proposal.proposalSha256)));
+  proposals = proposals.filter((proposal) => !applied.has(proposalSha256(proposal, fingerprints)));
   if (backoff) {
     const tasks = buildReplaySet(memory).tasks.length;
     const blocked = new Map<string, number>();
-    for (const { receipt } of consolidationReceipts(memory)) {
+    for (const { receipt } of receipts) {
       if (receipt.action !== 'gate' || receipt.verdict !== 'rolled_back') continue;
-      for (const proposal of receipt.proposals) blocked.set(proposal.proposalSha256, Math.max(blocked.get(proposal.proposalSha256) ?? 0, receipt.scores?.tasks ?? 0));
+      const evidence = (receipt.scores?.tasks ?? 0) + (receipt.scores?.holdout?.tasks ?? 0);
+      for (const proposal of receipt.proposals) if (proposal.fault !== false) blocked.set(proposal.proposalSha256, Math.max(blocked.get(proposal.proposalSha256) ?? 0, evidence));
     }
     proposals = proposals.filter((proposal) => {
       const at = blocked.get(proposalSha256(proposal, fingerprints));
@@ -190,26 +196,49 @@ function scoreTask(store: LocalMemory, task: ReplayTask): number {
 }
 
 const total = (store: LocalMemory, tasks: readonly ReplayTask[]): number => tasks.reduce((sum, task) => sum + scoreTask(store, task), 0);
+const tasksTotal = (scores: ConsolidationScores): number => scores.tasks + (scores.holdout?.tasks ?? 0);
 
 interface Replay { scores: ConsolidationScores | null; error?: string; applyError?: string }
 
-/** Scores S and S+D on one scratch copy; the no-memory control runs on it before the import. */
-function replay(memory: LocalMemory, snapshot: ReturnType<LocalMemory['export']>, cut: string, diff: ConsolidationDiff, passId: string, tasks: ReplayTask[], unreplayable: number): Replay {
+type Snapshot = ReturnType<LocalMemory['export']>;
+
+/** A fresh lexical store frozen at the cut, with the snapshot imported unless `empty`. */
+function scratchStore(memory: LocalMemory, snapshot: Snapshot, cut: string, empty = false): LocalMemory {
+  const scratch = createLocalMemory({ path: ':memory:', workspaceId: memory.workspaceId, agentId: memory.agentId, retrieval: 'lexical', ledger: false, now: () => new Date(cut) });
+  try { if (!empty) scratch.import(structuredClone(snapshot)); return scratch; } catch (error) { scratch.close(); throw error; }
+}
+
+function withScratch<T>(memory: LocalMemory, snapshot: Snapshot, cut: string, empty: boolean, work: (scratch: LocalMemory) => T): T {
+  const scratch = scratchStore(memory, snapshot, cut, empty);
+  try { return work(scratch); } finally { scratch.close(); }
+}
+
+class ScratchApplyError extends Error {}
+
+/**
+ * Scores S and S+D on scratch copies, plus the no-memory control on an empty
+ * store, plus each proposal alone when there is more than one, so a
+ * regressing proposal cannot ride on an improving one.
+ */
+function replay(memory: LocalMemory, snapshot: Snapshot, cut: string, diff: ConsolidationDiff, passId: string, tasks: ReplayTask[], unreplayable: number): Replay {
   const { main, holdout } = splitHoldout(tasks);
-  let scratch: LocalMemory | undefined;
+  const apply = (scratch: LocalMemory, proposals: ConsolidationProposal[]): void => {
+    try { applyDiff(scratch, { ...diff, proposals }, passId, true); } catch (error) { throw new ScratchApplyError(error instanceof Error ? error.message : String(error)); }
+  };
   try {
-    scratch = createLocalMemory({ path: ':memory:', workspaceId: memory.workspaceId, agentId: memory.agentId, retrieval: 'lexical', ledger: false, now: () => new Date(cut) });
-    const noMemory = total(scratch, tasks);
-    scratch.import(structuredClone(snapshot));
-    const before = total(scratch, main), heldBefore = total(scratch, holdout);
-    try { applyDiff(scratch, diff, passId, true); } catch (error) { return { scores: null, applyError: error instanceof Error ? error.message : String(error) }; }
-    const after = total(scratch, main), heldAfter = total(scratch, holdout);
+    const noMemory = withScratch(memory, snapshot, cut, true, (scratch) => total(scratch, tasks));
+    const [before, heldBefore, after, heldAfter] = withScratch(memory, snapshot, cut, false, (scratch) => {
+      const scored = [total(scratch, main), total(scratch, holdout)];
+      apply(scratch, diff.proposals);
+      return [...scored, total(scratch, main), total(scratch, holdout)];
+    });
+    const perProposal = diff.proposals.length === 1 ? [after + heldAfter - before - heldBefore]
+      : diff.proposals.map((proposal) => withScratch(memory, snapshot, cut, false, (scratch) => { apply(scratch, [proposal]); return total(scratch, tasks); }) - before - heldBefore);
     const held: ConsolidationTaskScores | null = holdout.length ? { tasks: holdout.length, before: heldBefore, after: heldAfter, delta: heldAfter - heldBefore } : null;
-    return { scores: { tasks: main.length, before, after, delta: after - before, holdout: held, noMemory, unreplayable } };
+    return { scores: { tasks: main.length, before, after, delta: after - before, holdout: held, noMemory, unreplayable, perProposal } };
   } catch (error) {
+    if (error instanceof ScratchApplyError) return { scores: null, applyError: error.message };
     return { scores: null, error: error instanceof Error ? error.message : String(error) };
-  } finally {
-    scratch?.close();
   }
 }
 
@@ -276,6 +305,7 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
   let verdict: ConsolidationVerdict, reason: string;
   let invariants: ConsolidationInvariant[] = [];
   let scores: ConsolidationScores | null = null;
+  let faults: boolean[] = [];
   const invalid = verifyDiff(memory, diff, trusted);
   const scoringHead = chainHead(memory);
   const provisional = passIdFor(scoringHead, typeof diff?.digest === 'string' ? diff.digest : 'invalid');
@@ -285,21 +315,34 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
   else {
     const untrustedTokens = new Set<string>();
     for (const record of snapshot.memories) if (record.trust === 'untrusted') for (const token of tokenSet(record.text)) untrustedTokens.add(token);
-    invariants = checkInvariants(memory, diff, caps, untrustedTokens);
+    const report = checkInvariants(memory, diff, caps, untrustedTokens);
+    invariants = report.invariants;
+    faults = report.faults;
     const broken = invariants.filter((invariant) => !invariant.ok);
     const result = replay(memory, snapshot, cut, diff, provisional, replaySet.tasks, replaySet.unreplayable);
     scores = result.scores;
-    const evidence = scores ? scores.tasks + (scores.holdout?.tasks ?? 0) : replaySet.tasks.length;
+    const evidence = scores ? tasksTotal(scores) : replaySet.tasks.length;
     if (broken.length) { verdict = 'rolled_back'; reason = `invariant violated: ${broken.map((invariant) => invariant.name).join(', ')}`; }
     else if (result.error) { verdict = 'invalid_run'; reason = `scorer failed: ${result.error}`; }
     else if (result.applyError || !scores) { verdict = 'invalid_run'; reason = `scratch apply failed: ${result.applyError ?? 'no scores'}`; }
     else if (evidence < MIN_REPLAY_TASKS) { verdict = 'no_evidence'; reason = `${evidence} replayable task(s); at least ${MIN_REPLAY_TASKS} are required, and no evidence is not a keep`; }
     else if (scores.delta < 0) { verdict = 'rolled_back'; reason = `regression: outcome delta ${scores.delta} over ${scores.tasks} replayed task(s)`; }
     else if (scores.holdout && scores.holdout.delta < 0) { verdict = 'rolled_back'; reason = `hold-out regression: delta ${scores.holdout.delta} over ${scores.holdout.tasks} held-out task(s)`; }
+    else if (scores.perProposal.some((delta) => delta < 0)) {
+      const worst = scores.perProposal.map((delta, index) => ({ delta, index })).filter(({ delta }) => delta < 0);
+      verdict = 'rolled_back';
+      reason = `regression: ${worst.map(({ index, delta }) => `proposal ${index} alone delta ${delta}`).join(', ')} over ${tasksTotal(scores)} task(s)`;
+    }
     else { verdict = 'kept'; reason = `outcome delta ${scores.delta} >= 0 over ${scores.tasks} replayed task(s)${scores.holdout ? `, hold-out delta ${scores.holdout.delta}` : ''}; all invariants hold`; }
   }
   const fingerprints = new Map(Array.isArray(diff?.candidateSet) ? diff.candidateSet.map((candidate) => [candidate.id, candidate.fingerprint] as const) : []);
-  const proposals = !invalid ? diff.proposals.map((proposal) => ({ kind: proposal.kind, proposalSha256: proposalSha256(proposal, fingerprints) })) : [];
+  const regressed = (index: number): boolean => verdict === 'rolled_back' && scores !== null && (scores.perProposal[index] ?? 0) < 0;
+  const anyAttributed = faults.some(Boolean) || (scores?.perProposal.some((delta) => delta < 0) ?? false);
+  // A rollback no single proposal explains (an interaction, a hold-out veto) faults them all.
+  const proposals = !invalid ? diff.proposals.map((proposal, index) => ({
+    kind: proposal.kind, proposalSha256: proposalSha256(proposal, fingerprints),
+    fault: verdict === 'rolled_back' ? (anyAttributed ? (faults[index] ?? false) || regressed(index) : true) : false,
+  })) : [];
   return memory.atomic(() => {
     const head = chainHead(memory);
     const passId = passIdFor(head, typeof diff?.digest === 'string' ? diff.digest : 'invalid');

@@ -85,6 +85,8 @@ export interface ConsolidationScores extends ConsolidationTaskScores {
   noMemory: number;
   /** Recorded retrievals that had a verifier outcome but could not be replayed (no query text or no labelled ids). */
   unreplayable: number;
+  /** Each proposal applied alone, scored over every replayable task (main and hold-out): a pass is kept only if none is negative. */
+  perProposal: number[];
 }
 
 export interface ConsolidationCreated { id: string; fingerprint: string; proposal: number }
@@ -106,7 +108,8 @@ export interface ConsolidationReceipt {
   verdict: ConsolidationVerdict;
   reason: string;
   invariants: ConsolidationInvariant[];
-  proposals: { kind: ConsolidationKind; proposalSha256: string }[];
+  /** `fault`: this proposal regressed alone or broke an invariant (every proposal, when the fault is the pass's). Backoff skips faulted proposals. */
+  proposals: { kind: ConsolidationKind; proposalSha256: string; fault: boolean }[];
   created: ConsolidationCreated[];
   /** rollback only: whether the state after rollback hashes equal to the kept pass's stateBefore. */
   restored?: boolean;

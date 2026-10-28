@@ -20,28 +20,43 @@ type InvariantName = (typeof INVARIANT_NAMES)[number];
 const TRUSTS = ['untrusted', 'observed', 'verified'];
 const isPolicy = (kind: string): boolean => (POLICY_KINDS as readonly string[]).includes(kind);
 
+export interface InvariantReport {
+  invariants: ConsolidationInvariant[];
+  /** Per proposal: whether it broke an invariant itself (or read a candidate that did). Pass-level failures fault every proposal. */
+  faults: boolean[];
+}
+
 /**
- * `records` maps every candidate id to its record at the cut. `untrustedTokens`
- * is the token set of every untrusted record the owner can read, used to tell
- * undeclared content that came from an untrusted record apart from content
- * that came from nowhere.
+ * Candidates are re-read from the store, never trusted from the diff.
+ * `untrustedTokens` is the token set of every untrusted record the owner can
+ * read, used to tell undeclared content that came from an untrusted record
+ * apart from content that came from nowhere.
  */
-export function checkInvariants(memory: LocalMemory, diff: Pick<ConsolidationDiff, 'proposals' | 'candidateSet' | 'cut'>, caps: Readonly<ConsolidationCaps>, untrustedTokens: ReadonlySet<string>): ConsolidationInvariant[] {
+export function checkInvariants(memory: LocalMemory, diff: Pick<ConsolidationDiff, 'proposals' | 'candidateSet' | 'cut'>, caps: Readonly<ConsolidationCaps>, untrustedTokens: ReadonlySet<string>): InvariantReport {
   const failures = new Map<InvariantName, string>();
-  const fail = (name: InvariantName, detail: string): void => { if (!failures.has(name)) failures.set(name, detail); };
+  const faults = diff.proposals.map(() => false);
+  const badCandidates = new Set<string>();
+  let passFault = false;
+  let current: number | undefined;
+  const fail = (name: InvariantName, detail: string): void => {
+    if (!failures.has(name)) failures.set(name, detail);
+    if (current === undefined) passFault = true; else faults[current] = true;
+  };
   const candidates = new Map<string, MemoryRecord>();
   // Details name positions, never ids or text, so a receipt stays stable across runs and leaks nothing.
   diff.candidateSet.forEach((candidate, position) => {
     const record = memory.get(candidate.id);
-    if (!record) { fail('candidate-set', `candidate ${position} does not exist`); return; }
+    const flag = (name: InvariantName, detail: string): void => { if (!failures.has(name)) failures.set(name, detail); badCandidates.add(candidate.id); };
+    if (!record) { flag('candidate-set', `candidate ${position} does not exist`); return; }
     candidates.set(candidate.id, record);
     const reason = untouchable(record, memory.agentId);
-    if (reason) fail('untouchable', `candidate ${position}: ${reason}`);
-    else if (!usableSource(memory, record, diff.cut)) fail('sources-usable', `candidate ${position} is withheld from recall at the cut`);
+    if (reason) flag('untouchable', `candidate ${position}: ${reason}`);
+    else if (!usableSource(memory, record, diff.cut)) flag('sources-usable', `candidate ${position} is withheld from recall at the cut`);
   });
   const counts = new Map<string, number>();
   let created = 0;
   diff.proposals.forEach((proposal, index) => {
+    current = index;
     const at = `proposal ${index}`;
     if (!proposal || typeof proposal !== 'object' || !(CONSOLIDATION_KINDS as readonly string[]).includes(proposal.kind)) { fail('menu', `${at}: kind outside the closed menu`); return; }
     const sources = Array.isArray(proposal.sources) ? proposal.sources : [];
@@ -53,6 +68,8 @@ export function checkInvariants(memory: LocalMemory, diff: Pick<ConsolidationDif
     if (!ADDITIVE_KINDS.includes(proposal.kind)) fail('reversible', `${at}: ${proposal.kind} has no exact inverse in the kernel API`);
     const read = [...sources, ...(typeof proposal.by === 'string' ? [proposal.by] : [])];
     read.forEach((id, position) => { if (!candidates.has(id)) fail('candidate-set', `${at}: source ${position} is outside the candidate set`); });
+    for (const output of outputs) if (Array.isArray(output?.dependencies)) read.push(...output.dependencies);
+    if (read.some((id) => badCandidates.has(id))) faults[index] = true;
     const sourceRecords = sources.map((id) => candidates.get(id)).filter((record): record is MemoryRecord => record !== undefined);
     let outputBytes = 0;
     outputs.forEach((output, position) => {
@@ -83,8 +100,12 @@ export function checkInvariants(memory: LocalMemory, diff: Pick<ConsolidationDif
     const sourceBytes = sourceRecords.reduce((total, record) => total + Buffer.byteLength(record.text), 0) + sourceRecords.length;
     if (outputBytes > sourceBytes) fail('source-budget', `${at}: outputs (${outputBytes} B) exceed sources plus separators (${sourceBytes} B)`);
   });
+  current = undefined;
   for (const [kind, count] of counts) if (count > (caps[kind as keyof ConsolidationCaps] ?? 0)) fail('caps', `${count} ${kind} proposal(s) exceed the cap of ${caps[kind as keyof ConsolidationCaps] ?? 0}`);
   if (created > MAX_CREATED) fail('caps', `${created} outputs exceed the per-pass maximum of ${MAX_CREATED}`);
   if (!diff.proposals.length) fail('menu', 'the diff proposes nothing');
-  return INVARIANT_NAMES.map((name) => (failures.has(name) ? { name, ok: false, detail: failures.get(name)! } : { name, ok: true }));
+  return {
+    invariants: INVARIANT_NAMES.map((name) => (failures.has(name) ? { name, ok: false, detail: failures.get(name)! } : { name, ok: true })),
+    faults: faults.map((fault) => fault || passFault),
+  };
 }
