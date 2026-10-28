@@ -20,6 +20,11 @@
     return item;
   };
   const isText = value => typeof value === 'string';
+  // The recording's own limitation and PROOF label say "live" about the recording run.
+  // On this page that run is a replay, so those two strings are reworded for display only.
+  const recordedLiveLimit = /^Every number is measured\s+live\b.*\bthis machine\b/;
+  const displayLimitation = text => recordedLiveLimit.test(text) ? 'Every number was measured on the recording machine at recording time, not in your browser.' : text;
+  const displayProofLabel = label => /\blive\b/.test(label) ? `${label} (in the recording)` : label;
   const seconds = ms => `${(ms / 1000).toFixed(2)} s`;
   function validate(value) {
     if (!value || value.mode !== 'recorded' || !Array.isArray(value.moments) || !Array.isArray(value.limitations) || !Array.isArray(value.pending)) throw new Error('Invalid recording');
@@ -58,7 +63,7 @@
         const status = node('span', moment.proof.passed ? 'check-icon' : 'check-fail', moment.proof.passed ? 'Passed in this recording' : 'Failed in this recording');
         const facts = node('dl', 'moments-proof-facts');
         facts.append(node('dt', '', 'Measured'), node('dd', '', moment.proof.measured), node('dt', '', 'Bar'), node('dd', '', moment.proof.threshold));
-        proof.replaceChildren(node('p', 'moments-proof-label', `PROOF · ${moment.proof.label}`), status, facts);
+        proof.replaceChildren(node('p', 'moments-proof-label', `PROOF · ${displayProofLabel(moment.proof.label)}`), status, facts);
         const body = moment.lines.slice(0, -1).join('\n');
         transcript.replaceChildren(document.createTextNode(body ? `${body}\n` : ''), node('span', 'moments-proof-line', moment.lines[moment.lines.length - 1]));
         transcript.scrollTop = 0;
@@ -97,7 +102,7 @@
       const step = (delta, from, to) => { select(selected + delta); if (from.disabled && document.activeElement !== to) to.focus(); };
       previous.addEventListener('click', () => step(-1, previous, next));
       next.addEventListener('click', () => step(1, next, previous));
-      for (const limitation of report.limitations) byId('moments-limits').append(node('li', '', limitation));
+      for (const limitation of report.limitations) byId('moments-limits').append(node('li', '', displayLimitation(limitation)));
       render(false);
       byId('moments-loading').hidden = true;
       byId('moments-content').hidden = false;
