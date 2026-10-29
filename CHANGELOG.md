@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `indexMode: 'sqlite-vec'` failed in two cases. A recall whose candidate shortlist had to grow past 4,096 neighbours (a large `maxCandidates`, or widening on a store of more than 4,096 vectors) threw `k value in knn query too large`, because vec0 caps `k` at 4,096. The shortlist now stops at that limit and a recall that needs more is answered by the exact scan, which returns the same records and scores. Reopening a database with a different embedding model or dimension threw `no such table: main.local_vec_index`: the rebuild dropped the vec0 table before clearing the labels, whose erasure trigger still named it. The trigger is now dropped first and the table is recreated at the new width, inside the same transaction.
 - `importEmbeddings` checked only the byte length of a packed float32 vector, so a vector holding NaN, an infinity or only zeros was stored. Dense search then threw on that row, and re-embedding never replaced it because its source hash still matched. Such a vector is now rejected, with nothing written. A stored row that cannot be decoded (for example one written before this check) is skipped by exact, sqlite-vec and hnsw search instead of failing the query, and is marked so the next recall re-embeds it.
 
 ### Security
