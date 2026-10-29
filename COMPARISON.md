@@ -3,16 +3,16 @@
 The maintained feature comparison is [docs/comparison.md](docs/comparison.md): source-linked design
 tradeoffs, not a blanket feature/novelty scorecard.
 
-A **matched competitor benchmark has been run** for this release. Its numbers are below, losses
-included. Two runs exist, both scored inside a single process against a single chunk set at a single
+A **matched competitor benchmark was run** on 14 and 15 September 2026, on the 2.0.0-rc.8 source
+tree; it has not been re-run on 3.0. Its numbers are below, losses included. Two runs exist, both scored inside a single process against a single chunk set at a single
 K under a single packing budget — competitors are conditions in our own loop, not numbers quoted
 from a vendor:
 
 - **14 September 2026, full corpus** — LoCoMo, 1,986 questions, 10 conversations, 1,531 with positive
   evidence labels; plus LongMemEval-S, 50 questions (every 10th of 500, source order).
   Report: [`reports/matched-run-2026-09-14.md`](reports/matched-run-2026-09-14.md).
-- **15 September 2026, Mem0 LLM extraction** — the paid `infer:true` write path Mem0 ships by
-  default, on two whole LoCoMo conversations. Report:
+- **15 September 2026, Mem0 LLM extraction** — the LLM-calling `infer:true` write path (the
+  `add()` default in mem0ai 3.1.8), on two whole LoCoMo conversations. Report:
   [`reports/matched-run-2026-09-15-llm-extraction.md`](reports/matched-run-2026-09-15-llm-extraction.md).
 
 Both `reports/` links above are **repository paths, deliberately not shipped in the npm package**:
@@ -32,16 +32,17 @@ fingerprints and the generators that produce them are at
 | **Mnemosyne hybrid + rerank** | **73.57** | 80.08 | 67.80 | **0.6240** | 244 ms |
 | Mem0 OSS (extraction off) | 63.72 | 70.93 | 57.54 | 0.4756 | 196 ms |
 | Zep | not run — `ZEP_API_KEY` is not set | | | | |
-| Graphiti | not run — reachable only through paid Zep Cloud | | | | |
+| Graphiti | not run — this harness reaches it only through Zep Cloud | | | | |
 
 recall at the other depths, same run: overlap 33.73 / 46.84, BM25 44.95 / 57.98, hybrid 54.68 /
 71.18, hybrid + rerank 67.23 / 77.70, Mem0 OSS 55.09 / 71.91 (@5 / @20).
 
 ## Where we lose
 
-Our reranked path wins the headline. Our **unreranked** path does not: Mem0 OSS beats it on recall
-and on MRR at every K measured. The cross-encoder, not the hybrid fusion, is what wins this
-comparison.
+On the headline row our reranked path scores higher than Mem0 OSS (recall@10 73.57 against 63.72).
+That row compares our reranked pipeline with Mem0's unreranked vector search on our embedder. Our
+**unreranked** path does not score higher: Mem0 OSS beats it on recall and on MRR at every K
+measured. The margin comes from the cross-encoder reranker, not from the hybrid fusion.
 
 | Comparison | K | Mem0 OSS | Mnemosyne | Mnemosyne config compared | Result |
 |---|---:|---:|---:|---|---|
@@ -72,8 +73,8 @@ should know that.
 
 ## Mem0 with its LLM extraction on — 15 September
 
-The 14 September run measured Mem0 with extraction **off**. Mem0 ships `infer:true` on by default,
-so it was rerun on that path over OpenRouter. Two whole LoCoMo conversations, K = 10; denominators
+The 14 September run measured Mem0 with extraction **off**. `infer:true` is the `add()` default in
+mem0ai 3.1.8, so it was rerun on that path over OpenRouter. Two whole LoCoMo conversations, K = 10; denominators
 are 79 and 43 annotated questions and are small — they are stated, not buried.
 
 **Part A** — conversation 0, 10/19 sessions, 215 turns, 104 questions (79 annotated):
@@ -104,9 +105,9 @@ are 79 and 43 annotated questions and are small — they are stated, not buried.
 
 Our unreranked hybrid loses to Mem0 in both parts and in both of Mem0's extraction modes — by 8.65
 and 5.49 in part A, 1.74 and 2.91 in part B. Our reranked margin is thin: +1.27 and +1.94 over
-Mem0's paid path, and only **+0.78** over Mem0's free path in part B. Paying for extraction is not
-reliably better than not paying: +3.16 in part A, **−1.16** in part B, at roughly 65× the ingest
-time; it does lift MRR in both.
+Mem0's paid path, and only **+0.78** over Mem0's free path in part B. On these two
+conversations, extraction was not consistently better than no extraction: +3.16 in part A,
+**−1.16** in part B, at roughly 65× the ingest time; it did lift MRR in both.
 
 ## Exactly what each competitor was
 
@@ -125,17 +126,21 @@ mem0-oss-llm  mem0-oss@3.1.8, extraction=llm(openrouter/openai/gpt-4o-mini),
 ```
 
 Mem0 is given **our** embedder in both rows, disclosed in the string. `extraction=off` means Mem0's
-LLM fact-extraction write path is switched off; `extraction=llm` is the path Mem0 ships by default.
+LLM fact-extraction write path is switched off; `extraction=llm` is the `add()` default in mem0ai
+3.1.8. The extraction model (`openai/gpt-4o-mini` over OpenRouter) was our choice, not part of Mem0's
+default configuration.
 
-**Zep — not run.** `ZEP_API_KEY` is not set. Zep needs a Zep Cloud account and a `ZEP_API_KEY`. Zep
-Community Edition, the self-hostable server, is deprecated upstream and its compose file points at
-`zepai/zep:latest`, which no longer exists on Docker Hub, so there is no free self-hosted path.
-No Zep number appears anywhere in these reports — the cell carries the reason, never an estimate.
+**Zep — not run.** `ZEP_API_KEY` is not set. The harness reaches Zep only through Zep Cloud, which
+needs an account and a `ZEP_API_KEY`. When the run was made (14 September 2026) we found no working
+self-hosted alternative: Zep Community Edition was marked deprecated upstream and its compose file
+pointed at `zepai/zep:latest`, which we could not pull from Docker Hub (details in the 14 September
+report). That may have changed since. No Zep number appears anywhere in these reports — the cell
+carries the reason, never an estimate.
 
 **Graphiti — not run.** This repository has no standalone Graphiti adapter:
 `benchmarks/competitors/package.json` pins `mem0ai` and `@getzep/zep-cloud` and nothing else, so
-Graphiti is reachable from here only *through* paid Zep Cloud. Spend for it was authorised on
-15 September and it still did not run, for that reason. No Graphiti number is estimated into a table.
+Graphiti is reachable from this harness only *through* Zep Cloud, so it did not run either. That is
+a limit of this harness, not a statement about Graphiti. No Graphiti number is estimated into a table.
 
 ## What these numbers are not
 
