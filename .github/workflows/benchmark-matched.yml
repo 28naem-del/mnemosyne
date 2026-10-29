@@ -341,7 +341,8 @@ jobs:
           if [ "$RERANKER" != true ]; then args+=(--no-rerank); fi
           if [ -n "$OFFSET" ]; then args+=(--corpus-offset "$OFFSET" --max-corpora "$COUNT"); fi
           if [ -n "$MAX_QUESTIONS" ]; then args+=(--max-questions "$MAX_QUESTIONS"); fi
-          if [ -n "$STRIDE" ] && [ "$STRIDE" != 1 ]; then args+=(--stride "$STRIDE"); fi
+          # Stride is LongMemEval-S only: on LoCoMo the harness would drop whole conversations.
+          if [ "$CORPUS" = longmemeval ] && [ -n "$STRIDE" ] && [ "$STRIDE" != 1 ]; then args+=(--stride "$STRIDE"); fi
           # Older refs have no --split; a non-`all` split there fails instead of mislabelling a full-set run.
           if node dist/evaluation/matched-benchmark.js --help | grep -q -- '--split'; then
             args+=(--split "$SPLIT")

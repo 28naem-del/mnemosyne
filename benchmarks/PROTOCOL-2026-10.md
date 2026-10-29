@@ -131,8 +131,8 @@ reader can see the noise; the interval does not change the verdict.
      in source order, 117 of 350), K = 10;
    - our fast path, our reranked path and Mem0 `infer:false` measured in the
      **same** process, in **one** unsharded GitHub Actions job
-     (`benchmark-matched` with `split=holdout`, `stride=3`, `top_k=10`,
-     `modes=hybrid,hybrid+rerank`, `competitors=mem0`), so all three p50/p95
+     (`benchmark-matched` with `corpus=longmemeval_s`, `split=holdout`,
+     `stride=3`, `top_k=10`, `modes=hybrid,hybrid+rerank`, `competitors=mem0`), so all three p50/p95
      values come from one machine. The full HOLDOUT does not fit one job's
      6-hour limit (the pinned baseline needed about 12.4 compute-hours for all
      500 haystacks), so the stride is what makes one job possible;
