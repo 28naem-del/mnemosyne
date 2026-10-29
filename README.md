@@ -120,7 +120,22 @@ npm install mnemosy-ai@next              # or the pre-release: next = 3.0.0-rc.3
 
 Then, in that project, `npx --no-install mnemosy demo` runs the demo of the installed version offline (no API key, no server, no Docker); `--no-install` makes `npx` fail instead of fetching another package if none is installed. Without installing, `npx -y -p mnemosy-ai@3.0.0-rc.3 mnemosy demo` downloads and runs exactly that version.
 
-Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The entries below run the 3.0.0-rc.3 pre-release through `mnemosy-ai@next`; for the stable release write `mnemosy-ai@2.0.0` in its place, and to pin the pre-release write `mnemosy-ai@3.0.0-rc.3`. Both versions expose the same MCP tools. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
+Give the memory to an MCP client. The entries below run the 3.0.0-rc.3 pre-release through `mnemosy-ai@next` (the Hermes entries pin `mnemosy-ai@3.0.0-rc.3`); for the stable release write `mnemosy-ai@2.0.0` in its place, and to pin the pre-release write `mnemosy-ai@3.0.0-rc.3`. Both versions expose the same MCP tools. `mnemosy mcp` requires `--db`, `--workspace` and `--agent`. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use; add `.mnemosyne/` to the project's `.gitignore`. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere. Node.js >= 22.16 and `npx` must be on `PATH`.
+
+Each host is labelled **Tested** (we ran the commands shown, with the versions named) or **Documented** (written from the host's documentation; we did not run it).
+
+### Claude Code
+
+**Plugin.** This repository is a Claude Code plugin marketplace (`mnemosy-ai`, file [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) with one plugin, `mnemosyne` ([`integrations/claude-code`](integrations/claude-code/README.md)):
+
+```sh
+claude plugin marketplace add 28naem-del/mnemosyne      # in a session: /plugin marketplace add 28naem-del/mnemosyne
+claude plugin install mnemosyne@mnemosy-ai             # add --scope project to share it through .claude/settings.json
+```
+
+**Tested** with Claude Code 2.1.301 from a local checkout of these files (`claude plugin marketplace add <path>`, then the install command): `claude plugin validate` passes, `claude mcp list` shows `plugin:mnemosyne:mnemosyne` connected, and a session lists 16 tools. Adding the marketplace from GitHub (`28naem-del/mnemosyne`) is **Documented** until it is re-tested from `main`. The plugin starts `npx -y -p mnemosy-ai@next mnemosy mcp --db ${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite --workspace default --agent claude-code`, so each project gets its own database. In Claude Code its tools are named `mcp__plugin_mnemosyne_mnemosyne__memory_*`; permission rules must use that form.
+
+**Without the plugin.** Claude Code reads `.mcp.json` in the project root:
 
 ```json
 {
@@ -137,25 +152,76 @@ Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the proje
 }
 ```
 
-Claude Code can register the same server from the shell:
+or registers the same server from the shell:
 
 ```sh
 claude mcp add mnemosyne -- npx -y -p mnemosy-ai@next mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
 ```
 
-**Codex** keeps MCP servers in `~/.codex/config.toml`. Register the server with an absolute database path:
+**Tested** with Claude Code 2.1.301: `claude mcp list` shows the server connected after `claude mcp add`, and for `.mcp.json` once the project is trusted and its server approved.
+
+### Cursor
+
+**Documented.** Cursor was not available to us, so neither form below has been run.
+
+[![Add Mnemosyne to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=mnemosyne&config=eyJ0eXBlIjoic3RkaW8iLCJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi1wIiwibW5lbW9zeS1haUBuZXh0IiwibW5lbW9zeSIsIm1jcCIsIi0tZGIiLCIke3VzZXJIb21lfS8ubW5lbW9zeW5lL21lbW9yeS5zcWxpdGUiLCItLXdvcmtzcGFjZSIsImRlZmF1bHQiLCItLWFnZW50IiwiY3Vyc29yIl19)
+
+The button opens Cursor's install page; the direct link is `cursor://anysphere.cursor-deeplink/mcp/install?name=mnemosyne&config=eyJ0eXBlIjoic3RkaW8iLCJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi1wIiwibW5lbW9zeS1haUBuZXh0IiwibW5lbW9zeSIsIm1jcCIsIi0tZGIiLCIke3VzZXJIb21lfS8ubW5lbW9zeW5lL21lbW9yeS5zcWxpdGUiLCItLXdvcmtzcGFjZSIsImRlZmF1bHQiLCItLWFnZW50IiwiY3Vyc29yIl19`. Either one adds a global server whose database is `${userHome}/.mnemosyne/memory.sqlite`, shared by every Cursor project. For one database per project, put this in the project's `.cursor/mcp.json` instead:
+
+```json
+{
+  "mcpServers": {
+    "mnemosyne": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y", "-p", "mnemosy-ai@next", "mnemosy", "mcp",
+        "--db", "${workspaceFolder}/.mnemosyne/memory.sqlite",
+        "--workspace", "default", "--agent", "cursor"
+      ]
+    }
+  }
+}
+```
+
+### Codex
+
+Codex keeps MCP servers in `~/.codex/config.toml`. Register the server with an absolute database path:
 
 ```sh
 codex mcp add mnemosyne -- npx -y -p mnemosy-ai@next mnemosy mcp --db /absolute/path/project/.mnemosyne/memory.sqlite --workspace my-project --agent assistant
 ```
 
-The command writes this table, which you can also add by hand:
+The command writes the table below without the last line. Codex waits 10 s for a server to start by default, and the first `npx` launch downloads the package, so add `startup_timeout_sec = 60` by hand (or write the whole table yourself):
 
 ```toml
 [mcp_servers.mnemosyne]
 command = "npx"
 args = ["-y", "-p", "mnemosy-ai@next", "mnemosy", "mcp", "--db", "/absolute/path/project/.mnemosyne/memory.sqlite", "--workspace", "my-project", "--agent", "assistant"]
+startup_timeout_sec = 60
 ```
+
+**Tested** as configuration only, with codex-cli 0.153.4: `codex mcp add` wrote the table, and `codex mcp list` and `codex mcp get` read it back enabled, including `startup_timeout_sec`. The server has not been run inside a Codex session.
+
+### Hermes Agent
+
+**Documented, not tested**: Hermes is not available in our CI or development environment. Hermes reads MCP servers from `~/.hermes/config.yaml`:
+
+```yaml
+# ~/.hermes/config.yaml
+mcp_servers:
+  mnemosy:                       # not "mnemosyne": avoids confusion with the mnemosyne-oss provider
+    command: "npx"
+    args: ["-y", "-p", "mnemosy-ai@3.0.0-rc.3", "mnemosy", "mcp",
+           "--db", "/absolute/path/.mnemosyne/memory.sqlite",
+           "--workspace", "hermes", "--agent", "hermes"]
+    connect_timeout: 120         # default 60 s; the first npx run downloads the package
+    # trust: untrusted           # optional: ask before every write tool (read tools carry readOnlyHint)
+```
+
+[`integrations/hermes`](integrations/hermes/README.md) holds the same server as a Hermes portable plugin (`mnemosy-ai`, one MCP server and one skill). It is not listed in the Hermes plugin catalog.
+
+### Every host
 
 The first `npx` launch downloads the package; if a client gives up during that first start, install the package in the project first.
 

@@ -7,17 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A Claude Code plugin marketplace: `.claude-plugin/marketplace.json` (marketplace `mnemosy-ai`) lists one plugin, `mnemosyne`, in `integrations/claude-code/`. The plugin version is 3.0.0-rc.3 and it starts `npx -y -p mnemosy-ai@next mnemosy mcp` with one database per project at `${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite`. Validated with `claude plugin validate` and installed from a local checkout with Claude Code 2.1.301; installing from the GitHub marketplace is not yet tested.
+- `integrations/hermes/`: a Hermes portable plugin (`mnemosy-ai`: one MCP server pinned to `mnemosy-ai@3.0.0-rc.3` and one skill). Not tested under Hermes and not listed in the Hermes plugin catalog.
+
+### Changed
+
+- Publish workflow: a re-dispatch for a version npm already has skips `npm publish` and runs the remaining steps, so the MCP Registry step can be retried. The 3.0.0-rc.3 run failed at the `mcpName` wait after `npm publish` succeeded and could not be re-run.
+
 ### Fixed
 
 - The documented contributor path (`npm ci --ignore-scripts`, then `npm test`) no longer crashes 18 hnsw tests with "Could not locate the bindings file". `hnswAvailable()` now loads the `hnswlib-node` native addon instead of only resolving the package, so a host where the package is installed but its addon was never built reports it unavailable, as it does when the package is absent. Its tests then skip as `[env:hnsw]` and the post-test env-gate check names the fix, now `npm rebuild hnswlib-node`. The four differential tests that compared the hnsw index inside an untagged test are split into a sqlite-vec test and an `[env:hnsw]` test. `CONTRIBUTING.md` and `AGENTS.md` list `npm run build`, `npm rebuild hnswlib-node`, `npm run setup:embedder` and `npm run setup:reranker` after `npm ci --ignore-scripts`, as CI runs them.
 
-### Changed
-
-- Publish workflow: the wait for npm to report the new version's `mcpName` before the MCP Registry step is 30 attempts 10 s apart (was 6); npm took about 3 minutes to list 3.0.0-rc.3, so the 3.0.0-rc.3 run failed there after `npm publish` succeeded. A re-dispatch for a version npm already has skips `npm publish` and runs the remaining steps, so the registry step can be retried.
-
 ### Documentation
 
+- README "Install and connect an agent" has one subsection per host, each labelled Tested or Documented: Claude Code (plugin, `.mcp.json`, `claude mcp add`), Cursor (an "Add to Cursor" link and a project `.cursor/mcp.json`; documented), Codex (`codex mcp add` plus a `config.toml` table with `startup_timeout_sec = 60`; configuration checked with codex-cli 0.153.4, not run in a Codex session) and Hermes Agent (a `~/.hermes/config.yaml` entry; documented, not tested). `llms.txt` lists the plugin install commands.
 - `COMPARISON.md` says the matched run was not re-run on 3.0 as of 2026-10-29 and that no Zep or Graphiti run had been published by then, instead of calling both in progress. `docs/CLAIMS.md` cites all three 1M-record gate runs for the p95 range (139.40 ms in run 1 to 223.29 ms in run 3), not only run 1.
+
+### Development
+
+- A `mcp-registry` GitHub Actions workflow (`workflow_dispatch`, input `release_tag`) publishes `server.json` to the MCP Registry for a release whose npm version is already published, without touching npm. It checks that the tag, `package.json` and `server.json` versions agree, waits for npm to report the version's `mcpName`, downloads and cosign-verifies `mcp-publisher` v1.8.6, validates `server.json`, logs in with GitHub OIDC (no token or PAT), publishes, and fails unless the registry then lists that version. It covers the 3.0.0-rc.3 case, where npm published but the registry steps of `publish.yml` did not run.
+- `publish.yml` now waits about 5 minutes (20 tries, 15 s apart) for npm to report the published version's `mcpName` before the MCP Registry steps, up from about 1 minute (6 tries, 10 s apart). For 3.0.0-rc.3 npm took about 3 minutes, so the wait timed out and the registry publish was skipped.
 
 ## [3.0.0-rc.3] - 2026-10-29
 

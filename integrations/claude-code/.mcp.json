@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mnemosyne": {
+      "command": "npx",
+      "args": [
+        "-y", "-p", "mnemosy-ai@next", "mnemosy", "mcp",
+        "--db", "${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite",
+        "--workspace", "default", "--agent", "claude-code"
+      ]
+    }
+  }
+}
