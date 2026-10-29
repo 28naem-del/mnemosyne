@@ -9,6 +9,10 @@ contact_links:
     url: https://mnemosy.ai/#company
     about: Contact Aristotle Intelligence Inc. at 28naem@gmail.com about advanced memory, integrations or investment.
 
+  - name: Using the Python mnemosyne-memory package?
+    url: https://github.com/mnemosyne-oss/mnemosyne/issues
+    about: That is a separate project that shares the name. This repository is the TypeScript mnemosy-ai package; please report issues for mnemosyne-memory in its own repository.
+
   - name: Report a vulnerability privately
     url: https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md
     about: Follow the private reporting instructions. Do not publish vulnerabilities, credentials or private memories in an issue.

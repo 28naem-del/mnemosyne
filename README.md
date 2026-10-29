@@ -3,25 +3,61 @@
 # Mnemosyne
 
 [![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
-[![npm: 2.0.0](https://img.shields.io/badge/npm-2.0.0-b8f6dd?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/2.0.0)
-[![npm next: 3.0.0-rc.2](https://img.shields.io/badge/next-3.0.0--rc.2-9abfff?labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai/v/3.0.0-rc.2)
+[![npm latest](https://img.shields.io/npm/v/mnemosy-ai?label=npm%20latest&color=b8f6dd&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai)
+[![npm next](https://img.shields.io/npm/v/mnemosy-ai/next?label=npm%20next&color=9abfff&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai?activeTab=versions)
+[![Node.js ≥22.16](https://img.shields.io/badge/node-%E2%89%A522.16-b8f6dd?labelColor=111b2a)](https://nodejs.org/)
+[![MCP server](https://img.shields.io/badge/MCP-server-9abfff?labelColor=111b2a)](#install-and-connect-an-agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
 
 **The next agent starts wiser.**
 
-**Auditable memory for agents that act. Past beliefs replay exactly, corrections cascade through recorded dependencies, and consolidation is outcome-gated and reversible.**
+**Mnemosyne is local-first, long-term memory for AI agents: one SQLite file that keeps what an agent learned together with the evidence it came from, served to any host over TypeScript, MCP, CLI or HTTP.** When a source is corrected, every memory that depended on it is retired, so the next agent starts from what is still true instead of repeating a stale lesson. The local engine needs no model API key, database server or Docker.
 
-**Mnemosyne is local-first, long-term memory for AI agents: one SQLite file that keeps what an agent learned together with the evidence it came from, served to any host over TypeScript, MCP, CLI or HTTP.** When a source is corrected, every memory that depended on it is retired, so the next agent starts from what is still true instead of repeating a stale lesson.
+- **Evidence on every memory.** Each record keeps its source and trust tier, and the superseded version stays inspectable after a correction.
+- **Corrections that reach dependents.** A corrected requirement retires the procedures and skills recorded as depending on it; 3.0 can also propose dependencies nobody declared, for review.
+- **Auditable over time (3.0 pre-release).** Past beliefs replay exactly, `bisect` names the record behind a wrong answer, and consolidation is outcome-gated and reversible.
+- **Any host.** MCP for Claude Code, Cursor and Codex; a TypeScript SDK; a CLI; and authenticated HTTP with a Python client and live inspector.
 
-Mnemosyne connects memory to its consequences: a corrected requirement can retire a dependent procedure, a failed trial can withhold a skill, and a new agent can resume from an explicit handoff. Run the local engine in one SQLite file; connect your host through TypeScript, MCP, CLI, or authenticated HTTP with a Python client and live inspector.
+**Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.2, the breakthrough release (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
 
-**Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.2 (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [Releases](https://github.com/28naem-del/mnemosyne/releases) · [npm](https://www.npmjs.com/package/mnemosy-ai) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/28naem-del/mnemosyne/issues)
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [npm](https://www.npmjs.com/package/mnemosy-ai) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/28naem-del/mnemosyne/issues)
+> [!NOTE]
+> **Which Mnemosyne is this?** This repository is the TypeScript package published on npm as [`mnemosy-ai`](https://www.npmjs.com/package/mnemosy-ai), with its site at [mnemosy.ai](https://mnemosy.ai). It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemosyne-oss/mnemosyne), the Python memory library published on PyPI as `mnemosyne-memory`; the two share a name, not code or maintainers. Please file issues for that project in its own repository.
 
-## New in 3.0.0-rc.2 (pre-release on npm `next`)
+## Try it in 30 seconds
 
-3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
+The 3.0.0-rc.2 demo runs offline on synthetic corpora, with no API key and no model, and measures each claim while it runs:
+
+```sh
+npx -y -p mnemosy-ai@next mnemosy demo
+```
+
+The last line of each of its five moments, from one run (timings vary by machine; the pass bars printed after each line are omitted here):
+
+```text
+PROOF  replay determinism: 1000/1000 identical, 24000/24000 as-of answers = ground truth   [PASS]
+PROOF  downstream repair: undeclared invalidated 3/3, accepted edges true 3/3, stale after correction 0 (11 probes)   [PASS]
+PROOF  blame precision / time-to-locate: precision 1.00, 0.38 s, 2000 records   [PASS]
+PROOF  poisoning suite v1, live: 227 cases, 0 escapes, 0 false quarantines   [PASS]
+PROOF  consolidation receipts: kept 1 (delta +2), rolled back 2 (regression, invariant violated), rollback identical hash true, chain verified 4 receipts   [PASS]
+
+5/5 moments proved.
+```
+
+[What each moment proves, and what it does not](docs/DEMO.md). Then give the memory to Claude Code (other clients: [Install and connect an agent](#install-and-connect-an-agent)):
+
+```sh
+claude mcp add mnemosyne -- npx -y -p mnemosy-ai@next mnemosy mcp --db ./.mnemosyne/memory.sqlite --workspace my-project --agent assistant
+```
+
+For the stable release, write `mnemosy-ai@2.0.0` in place of `mnemosy-ai@next`; on 2.0.0, `mnemosy demo` runs the earlier single-scenario demo.
+
+**Contents:** [3.0: the breakthrough release](#new-in-300-rc2-the-breakthrough-release-pre-release-on-npm-next) · [Install and connect an agent](#install-and-connect-an-agent) · [Measured results](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed) · [Choose your engine](#choose-your-engine) · [A working demonstration](#start-with-a-working-demonstration) · [Corrections in code](#a-correction-should-change-what-the-next-agent-does) · [Tune the dense index](#tune-the-dense-index) · [What you can build](#what-you-can-build) · [Entry points](#local-engine-several-entry-points) · [Migrate](#migrate-while-your-agent-keeps-working) · [Limits](#measured-with-the-limits-visible) · [Operational boundaries](#operational-boundaries) · [Build with us](#build-with-us)
+
+## New in 3.0.0-rc.2: the breakthrough release (pre-release on npm `next`)
+
+3.0 is the breakthrough release: past beliefs replay exactly, corrections retire what depended on them (including dependencies nobody declared, once accepted), `bisect` names the record behind a wrong answer, a poisoning gate is checked against a reproducible attack suite, and consolidation is reversible with signed receipts. Each of these is documented and tested below. 3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
 
 | Measurement | Result | Protocol |
 |---|---|---|
