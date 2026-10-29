@@ -15,7 +15,12 @@ for (const spec of specs) {
   const args = argstr.trim().split(/\s+/).filter(Boolean);
   const res = spawnSync(process.execPath, [resolve(here, 'run.mjs'), '--label', `${sweepName}/${label}`, ...args], { cwd: root, encoding: 'utf8', env: process.env });
   const rep = resolve(root, 'reports/precisionmembench', sweepName, label, 'retrieval-report-mnemosyne.json');
-  if (!existsSync(rep)) { rows.push({ label, error: 'no report', tail: (res.stdout + res.stderr).slice(-400) }); continue; }
+  const summary = resolve(root, 'reports/precisionmembench', sweepName, label, 'run-summary.json');
+  // A failed run publishes nothing, so a report already at that path is an older
+  // run's: read it only when this run succeeded and its summary carries this runId.
+  const runId = /\[run\] runId (\S+)/.exec(res.stdout ?? '')?.[1];
+  const fresh = (res.status === 0 || res.status === 3) && runId && existsSync(summary) && JSON.parse(readFileSync(summary, 'utf8')).runId === runId;
+  if (!fresh || !existsSync(rep)) { rows.push({ label, error: `run failed (exit ${res.status})`, tail: ((res.stdout ?? '') + (res.stderr ?? '')).slice(-400) }); continue; }
   const r = JSON.parse(readFileSync(rep, 'utf8')).retrieval;
   rows.push({ label, args: argstr.trim(), passed: r.totalPassed, cases: r.totalCases, passRate: r.passRate, precision: r.meanPrecision, recall: r.meanRecall, active: r.activeRetrievalPasses, structural: r.passTypes.structural, trivial: r.passTypes.triviallyEmpty, p50ms: r.p50LatencyMs });
 }

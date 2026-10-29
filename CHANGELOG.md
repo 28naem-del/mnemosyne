@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `benchmarks/precisionmembench/run.mjs` could publish an old report after a failed run. It copied `test-results/<report>.json` from the benchmark clone whenever the file existed, and that file survives from earlier runs, so a harness that crashed before writing produced a `run-summary.json` with the previous run's scores (exit 3, as for a normal run with failing cases). The runner now deletes the clone's report before each eval, stages every output, and renames the staged directory onto `reports/precisionmembench/<label>/` only when each eval wrote a fresh, parseable report and the server stayed up. Otherwise it exits 1 and leaves the previous directory unchanged. `run-summary.json` now records a `runId`, an `inputsHash` and each report's sha256. `sweep.mjs` reads a report only from a run that succeeded with a matching `runId`. No published number changed.
 - `importEmbeddings` checked only the byte length of a packed float32 vector, so a vector holding NaN, an infinity or only zeros was stored. Dense search then threw on that row, and re-embedding never replaced it because its source hash still matched. Such a vector is now rejected, with nothing written. A stored row that cannot be decoded (for example one written before this check) is skipped by exact, sqlite-vec and hnsw search instead of failing the query, and is marked so the next recall re-embeds it.
 
 ### Security
