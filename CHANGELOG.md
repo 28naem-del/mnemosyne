@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The optional `ioredis` peer dependency accepts `^5.0.0 || ^6.0.0` (in `mnemosy-ai` and `packages/legacy`); before, npm refused to install the package next to `ioredis` 6 (`ERESOLVE`). No code changed. Against both ioredis 5.11.1 and 6.0.0, the legacy broadcast, Redis cache and user-model paths passed on a RESP3-capable Redis (6.0.0 negotiates RESP3 by default) and on a Redis without `HELLO` (6.0.0 falls back to RESP2), and the FalkorDB `GRAPH.QUERY` path returned the same reply shapes on a FalkorDB server. The repository now develops against ioredis 6 (`ioredis` ^6.0.0, devDependency). ioredis 6 requires Node.js 20 or newer; this package already requires 22.16.
 
+### Security
+
+- `startMemoryHttp` charged every request to its server-wide budget before checking the origin or the token. With `allowRemote`, about 1,000 unauthenticated requests a minute made authorized clients receive 429 until the minute ended; a principal over its own `requestsPerMinute` could do the same to other principals. The server-wide budget is now charged only after authentication and the principal's own budget. Requests without a valid token (the inspector shell, failed authentication, rejected origins) have a separate budget of 60 a minute per remote address and 1,000 a minute in total. The default loopback binding was affected only by local clients.
+
 ### Development
 
 - Builds with TypeScript 7 (`typescript` ^7.0.2, devDependency). Two tests transpiled `src` files into a subprocess fixture through the TypeScript compiler API, which the TypeScript 7 package no longer exports; they now use Node's built-in `stripTypeScriptTypes` (`node:module`), so the fixtures add no dependency. The emitted JavaScript is byte-identical to the TypeScript 6 build; 16 declaration files differ only in quote style and member order, and the published declarations typecheck under both TypeScript 6 and 7.
