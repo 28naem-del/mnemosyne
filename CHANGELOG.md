@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `fuzzy: true` could block the event loop on one long query token, even against an empty store. Candidate generation produced about 50 candidates per letter and checked each with a distance that scanned the full matrix, so cost grew with the cube of the token length: a 200-letter token took 4 s and a 4,000-letter one would have taken hours. A token longer than 48 letters is now matched exactly only, the distance computes only the diagonal band it needs, and at most 16 unmatched query terms are expanded per recall. A 4,000-letter token now takes about 5 ms, and a 4,096-character query made entirely of 48-letter tokens about 0.2 s. Ordinary words are matched as before.
 - `importEmbeddings` checked only the byte length of a packed float32 vector, so a vector holding NaN, an infinity or only zeros was stored. Dense search then threw on that row, and re-embedding never replaced it because its source hash still matched. Such a vector is now rejected, with nothing written. A stored row that cannot be decoded (for example one written before this check) is skipped by exact, sqlite-vec and hnsw search instead of failing the query, and is marked so the next recall re-embeds it.
 
 ### Security
