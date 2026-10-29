@@ -31,8 +31,8 @@ included, follow.
   2026-10-29; no number is claimed until one is.
 - **What retrieval tables don't measure.** These tables score whether the evidence comes back, not
   what the memory does with it afterwards. The 3.0 suites cover that: exact replay of past beliefs,
-  `bisect` naming the record behind a wrong answer, the poisoning gate and corrections that retire
-  what depended on them. See [New in 3.0](README.md#new-in-30-the-breakthrough-release-pre-release-on-npm-next)
+  `bisect` finding the records that push known expected records out of the top k, the poisoning gate
+  and corrections that retire what depended on them. See [New in 3.0](README.md#new-in-30-the-breakthrough-release-pre-release-on-npm-next)
   and [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md). No competitor was run on those
   suites and no comparison is claimed there.
 
