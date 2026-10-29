@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The documented contributor path (`npm ci --ignore-scripts`, then `npm test`) no longer crashes 18 hnsw tests with "Could not locate the bindings file". `hnswAvailable()` now loads the `hnswlib-node` native addon instead of only resolving the package, so a host where the package is installed but its addon was never built reports it unavailable, as it does when the package is absent. Its tests then skip as `[env:hnsw]` and the post-test env-gate check names the fix, now `npm rebuild hnswlib-node`. The four differential tests that compared the hnsw index inside an untagged test are split into a sqlite-vec test and an `[env:hnsw]` test. `CONTRIBUTING.md` and `AGENTS.md` list `npm run build`, `npm rebuild hnswlib-node`, `npm run setup:embedder` and `npm run setup:reranker` after `npm ci --ignore-scripts`, as CI runs them.
+
+### Changed
+
+- Publish workflow: the wait for npm to report the new version's `mcpName` before the MCP Registry step is 30 attempts 10 s apart (was 6); npm took about 3 minutes to list 3.0.0-rc.3, so the 3.0.0-rc.3 run failed there after `npm publish` succeeded. A re-dispatch for a version npm already has skips `npm publish` and runs the remaining steps, so the registry step can be retried.
+
+### Documentation
+
+- `COMPARISON.md` says the matched run was not re-run on 3.0 as of 2026-10-29 and that no Zep or Graphiti run had been published by then, instead of calling both in progress. `docs/CLAIMS.md` cites all three 1M-record gate runs for the p95 range (139.40 ms in run 1 to 223.29 ms in run 3), not only run 1.
+
 ## [3.0.0-rc.3] - 2026-10-29
 
 The third 3.0.0 release candidate, published on the `next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.3`); npm `latest` stays 2.0.0. It carries the fixes, security changes and documentation below on top of rc.2. The benchmark numbers in the rc.2 section were measured on the rc.2 tree.

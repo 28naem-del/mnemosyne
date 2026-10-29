@@ -44,8 +44,13 @@ interface HnswNative {
   setEf(ef: number): void;
 }
 
+/**
+ * Whether the native addon actually loads, not merely whether the package
+ * resolves: `npm ci --ignore-scripts` installs `hnswlib-node` without building
+ * it, and that host must report unavailable rather than crash on first use.
+ */
 export function hnswAvailable(): boolean {
-  try { require.resolve('hnswlib-node'); return true; } catch { return false; }
+  try { require('hnswlib-node'); return true; } catch { return false; }
 }
 
 /**

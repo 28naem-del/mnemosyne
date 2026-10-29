@@ -17,7 +17,7 @@ It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemo
 
 ## Work on the code
 
-- Node.js 22.16 or newer (24 recommended). `npm ci --ignore-scripts`, then `npm run build`.
+- Node.js 22.16 or newer (24 recommended). `npm ci --ignore-scripts`, then `npm run build`, then `npm rebuild hnswlib-node && npm run setup:embedder && npm run setup:reranker` (the optional native dense index and the pinned local models; `npm test` fails its env-gate check if tests that need them were skipped, as in CI). See [CONTRIBUTING.md](CONTRIBUTING.md#set-up-the-source-candidate).
 - Full gate before any pull request: `npm run check` (typecheck, tests, example typecheck), `npm run check:docs` (local Markdown links and anchors), `npm run check:public` (package identity and public surfaces). CI runs the same three plus `npm audit` and an isolated install of the packed tarball.
 - Tests live in `tests/` (Vitest). Add a failing test before a fix; the repository history records tests red before green.
 - Source is `src/`; published code is `dist/` (built, not committed). Public entry points are listed under `exports` in [package.json](package.json).
