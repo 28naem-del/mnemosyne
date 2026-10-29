@@ -1,0 +1,458 @@
+{
+  "generatedFrom": "reports/matched-run-2026-10-29-zep",
+  "runs": [
+    {
+      "k": 5,
+      "file": "locomo-k5.json",
+      "sha256": "ae97e2ad180daa73a810370fd9147a3ca9edab41d786eea62f807c02002df82a",
+      "bytes": 21364652,
+      "questions": 1986,
+      "corpora": 10,
+      "annotated": 1531,
+      "complete": true,
+      "normalizedSha256": "2a7886fc5ffc04607fdd9b82ef91d73c766b9cf60e880b1d6f25fb3fb4dd93de",
+      "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "implementationSha256": "3c7399787e49ca8d76e8c037bfc23b6a1b825bfb3688b01a3cd34a2664d92d4f",
+      "runtime": "v26.12.1 darwin/arm64",
+      "durationSeconds": 1668.9,
+      "settings": {
+        "topK": 5,
+        "maxContextUnits": 8192,
+        "chunkBytes": 4096,
+        "maxQuestions": 5000,
+        "maxTurnsPerCorpus": 100000,
+        "maxCorpusBytes": 67108864,
+        "maxTotalBytes": 536870912,
+        "maxCandidates": 10000,
+        "timeoutMs": 3600000,
+        "maxEmbeddingCalls": 1000000,
+        "maxEmbeddingInputBytes": 2147483647,
+        "rerankTopN": 50,
+        "systemIngestTimeoutMs": 3600000,
+        "corpusIndexBase": 0,
+        "accountingId": "utf8-bytes-v1",
+        "bm25Condition": "enabled",
+        "temporalRouting": "disabled",
+        "hybridLexicalScoring": "bm25",
+        "granularity": "turn",
+        "rerankContext": 0,
+        "rerankContextTopN": 14,
+        "reranker": "enabled",
+        "hybridWithoutRerankCondition": "enabled",
+        "matchedSystems": "mem0-oss,zep"
+      },
+      "systems": [
+        {
+          "id": "mem0-oss",
+          "revision": "3.1.8",
+          "mode": "mem0-oss@3.1.8, extraction=off(infer:false), retrieval=vector-cosine(exact), vectorStore=memory(sqlite,isolated), embedder=injected:onnxruntime-node|Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3|int8|cls|l2|512|bge-query-prefix-v1, history=disabled, telemetry=disabled, overfetch=1x",
+          "status": "scored",
+          "reason": null,
+          "ingestSeconds": 185.4
+        },
+        {
+          "id": "zep",
+          "revision": "3.28.0",
+          "mode": "zep-cloud@3.28.0, extraction=graphiti(vendor-side LLM, not ours), retrieval=graph-search(scope=episodes), endpoint=hosted, embedder=vendor-side(unknown), ingest=graph.add once per conversation (phase 1), episodes reused by the K=5/10/20 passes (replay client, 0 extra graph.add), account=free",
+          "status": "scored",
+          "reason": null,
+          "ingestSeconds": 6.4
+        }
+      ],
+      "rows": [
+        {
+          "id": "lexical",
+          "label": "Mnemosyne zero-model overlap",
+          "metrics": {
+            "recallAtK": 0.3373058425119745,
+            "anyHit": 0.3762246897452645,
+            "allHit": 0.3109079033311561,
+            "mrr": 0.27966470716307384,
+            "p95RetrievalMs": 10.564582999999402,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "bm25",
+          "label": "Mnemosyne zero-model BM25",
+          "metrics": {
+            "recallAtK": 0.44951520401918066,
+            "anyHit": 0.4990202482037884,
+            "allHit": 0.41280209013716523,
+            "mrr": 0.35841497931635047,
+            "p95RetrievalMs": 24.975250000003143,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid-norerank",
+          "label": "Mnemosyne hybrid (dense+BM25 RRF)",
+          "metrics": {
+            "recallAtK": 0.5467867757393008,
+            "anyHit": 0.6067929457870673,
+            "allHit": 0.4970607446113651,
+            "mrr": 0.4478445460483349,
+            "p95RetrievalMs": 68.15299999999843,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid",
+          "label": "Mnemosyne hybrid + rerank",
+          "metrics": {
+            "recallAtK": 0.6722514753528599,
+            "anyHit": 0.7400391900718485,
+            "allHit": 0.6165904637491836,
+            "mrr": 0.6159481820161126,
+            "p95RetrievalMs": 353.8174160000053,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:mem0-oss",
+          "label": "Mem0 OSS (extraction off)",
+          "metrics": {
+            "recallAtK": 0.5508983292609811,
+            "anyHit": 0.6198563030698889,
+            "allHit": 0.4983670803396473,
+            "mrr": 0.4633028521663405,
+            "p95RetrievalMs": 511.6608750000014,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:zep",
+          "label": "Zep Cloud (graph search, episodes)",
+          "metrics": {
+            "recallAtK": 0.4194730154866694,
+            "anyHit": 0.46701502286087526,
+            "allHit": 0.3840627041149575,
+            "mrr": 0.20758763335510502,
+            "p95RetrievalMs": 409.3876670000027,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        }
+      ]
+    },
+    {
+      "k": 10,
+      "file": "locomo-k10.json",
+      "sha256": "f94119ccc7d232b99c8e3eb5d8bdb8226297875eb73f5888584668948db33ec4",
+      "bytes": 27440493,
+      "questions": 1986,
+      "corpora": 10,
+      "annotated": 1531,
+      "complete": true,
+      "normalizedSha256": "2a7886fc5ffc04607fdd9b82ef91d73c766b9cf60e880b1d6f25fb3fb4dd93de",
+      "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "implementationSha256": "3c7399787e49ca8d76e8c037bfc23b6a1b825bfb3688b01a3cd34a2664d92d4f",
+      "runtime": "v26.12.1 darwin/arm64",
+      "durationSeconds": 1656.1,
+      "settings": {
+        "topK": 10,
+        "maxContextUnits": 8192,
+        "chunkBytes": 4096,
+        "maxQuestions": 5000,
+        "maxTurnsPerCorpus": 100000,
+        "maxCorpusBytes": 67108864,
+        "maxTotalBytes": 536870912,
+        "maxCandidates": 10000,
+        "timeoutMs": 3600000,
+        "maxEmbeddingCalls": 1000000,
+        "maxEmbeddingInputBytes": 2147483647,
+        "rerankTopN": 50,
+        "systemIngestTimeoutMs": 3600000,
+        "corpusIndexBase": 0,
+        "accountingId": "utf8-bytes-v1",
+        "bm25Condition": "enabled",
+        "temporalRouting": "disabled",
+        "hybridLexicalScoring": "bm25",
+        "granularity": "turn",
+        "rerankContext": 0,
+        "rerankContextTopN": 14,
+        "reranker": "enabled",
+        "hybridWithoutRerankCondition": "enabled",
+        "matchedSystems": "mem0-oss,zep"
+      },
+      "systems": [
+        {
+          "id": "mem0-oss",
+          "revision": "3.1.8",
+          "mode": "mem0-oss@3.1.8, extraction=off(infer:false), retrieval=vector-cosine(exact), vectorStore=memory(sqlite,isolated), embedder=injected:onnxruntime-node|Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3|int8|cls|l2|512|bge-query-prefix-v1, history=disabled, telemetry=disabled, overfetch=1x",
+          "status": "scored",
+          "reason": null,
+          "ingestSeconds": 167.6
+        },
+        {
+          "id": "zep",
+          "revision": "3.28.0",
+          "mode": "zep-cloud@3.28.0, extraction=graphiti(vendor-side LLM, not ours), retrieval=graph-search(scope=episodes), endpoint=hosted, embedder=vendor-side(unknown), ingest=graph.add once per conversation (phase 1), episodes reused by the K=5/10/20 passes (replay client, 0 extra graph.add), account=free",
+          "status": "scored",
+          "reason": null,
+          "ingestSeconds": 6.5
+        }
+      ],
+      "rows": [
+        {
+          "id": "lexical",
+          "label": "Mnemosyne zero-model overlap",
+          "metrics": {
+            "recallAtK": 0.4049393012950088,
+            "anyHit": 0.4519921619856303,
+            "allHit": 0.37099934683213587,
+            "mrr": 0.2898761572994098,
+            "p95RetrievalMs": 10.913958000019193,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "bm25",
+          "label": "Mnemosyne zero-model BM25",
+          "metrics": {
+            "recallAtK": 0.5246772845670147,
+            "anyHit": 0.5826257348138472,
+            "allHit": 0.47811887655127366,
+            "mrr": 0.36959788705379815,
+            "p95RetrievalMs": 25.207791000022553,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid-norerank",
+          "label": "Mnemosyne hybrid (dense+BM25 RRF)",
+          "metrics": {
+            "recallAtK": 0.6298569236171481,
+            "anyHit": 0.6982364467668191,
+            "allHit": 0.5715218811234487,
+            "mrr": 0.4606430074751437,
+            "p95RetrievalMs": 68.81608299998334,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid",
+          "label": "Mnemosyne hybrid + rerank",
+          "metrics": {
+            "recallAtK": 0.7357341595091663,
+            "anyHit": 0.8007838014369693,
+            "allHit": 0.6779882429784455,
+            "mrr": 0.6240002902968294,
+            "p95RetrievalMs": 341.54958300001454,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:mem0-oss",
+          "label": "Mem0 OSS (extraction off)",
+          "metrics": {
+            "recallAtK": 0.6372002539855051,
+            "anyHit": 0.7093403004572175,
+            "allHit": 0.5754408883082952,
+            "mrr": 0.47557592817227073,
+            "p95RetrievalMs": 359.1575409999932,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:zep",
+          "label": "Zep Cloud (graph search, episodes)",
+          "metrics": {
+            "recallAtK": 0.5283405830066887,
+            "anyHit": 0.5898105813193991,
+            "allHit": 0.47877204441541477,
+            "mrr": 0.1705239857754549,
+            "p95RetrievalMs": 413.1835420000134,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        }
+      ]
+    },
+    {
+      "k": 20,
+      "file": "locomo-k20.json",
+      "sha256": "b338dd0be081f5616bb0b467b034b3541fe3ff8ce95b78aaaf7d43ee4988b788",
+      "bytes": 39467962,
+      "questions": 1986,
+      "corpora": 10,
+      "annotated": 1531,
+      "complete": true,
+      "normalizedSha256": "2a7886fc5ffc04607fdd9b82ef91d73c766b9cf60e880b1d6f25fb3fb4dd93de",
+      "sourceSha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+      "implementationSha256": "3c7399787e49ca8d76e8c037bfc23b6a1b825bfb3688b01a3cd34a2664d92d4f",
+      "runtime": "v26.12.1 darwin/arm64",
+      "durationSeconds": 1684,
+      "settings": {
+        "topK": 20,
+        "maxContextUnits": 8192,
+        "chunkBytes": 4096,
+        "maxQuestions": 5000,
+        "maxTurnsPerCorpus": 100000,
+        "maxCorpusBytes": 67108864,
+        "maxTotalBytes": 536870912,
+        "maxCandidates": 10000,
+        "timeoutMs": 3600000,
+        "maxEmbeddingCalls": 1000000,
+        "maxEmbeddingInputBytes": 2147483647,
+        "rerankTopN": 50,
+        "systemIngestTimeoutMs": 3600000,
+        "corpusIndexBase": 0,
+        "accountingId": "utf8-bytes-v1",
+        "bm25Condition": "enabled",
+        "temporalRouting": "disabled",
+        "hybridLexicalScoring": "bm25",
+        "granularity": "turn",
+        "rerankContext": 0,
+        "rerankContextTopN": 14,
+        "reranker": "enabled",
+        "hybridWithoutRerankCondition": "enabled",
+        "matchedSystems": "mem0-oss,zep"
+      },
+      "systems": [
+        {
+          "id": "mem0-oss",
+          "revision": "3.1.8",
+          "mode": "mem0-oss@3.1.8, extraction=off(infer:false), retrieval=vector-cosine(exact), vectorStore=memory(sqlite,isolated), embedder=injected:onnxruntime-node|Xenova/bge-small-en-v1.5@ea104dacec62c0de699686887e3f920caeb4f3e3|int8|cls|l2|512|bge-query-prefix-v1, history=disabled, telemetry=disabled, overfetch=1x",
+          "status": "scored",
+          "reason": null,
+          "ingestSeconds": 171.8
+        },
+        {
+          "id": "zep",
+          "revision": "3.28.0",
+          "mode": "zep-cloud@3.28.0, extraction=graphiti(vendor-side LLM, not ours), retrieval=graph-search(scope=episodes), endpoint=hosted, embedder=vendor-side(unknown), ingest=graph.add once per conversation (phase 1), episodes reused by the K=5/10/20 passes (replay client, 0 extra graph.add), account=free",
+          "status": "scored",
+          "reason": null,
+          "ingestSeconds": 5.9
+        }
+      ],
+      "rows": [
+        {
+          "id": "lexical",
+          "label": "Mnemosyne zero-model overlap",
+          "metrics": {
+            "recallAtK": 0.4684349438909985,
+            "anyHit": 0.5284128020901372,
+            "allHit": 0.42064010450685824,
+            "mrr": 0.2951742396332068,
+            "p95RetrievalMs": 11.19191699998919,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "bm25",
+          "label": "Mnemosyne zero-model BM25",
+          "metrics": {
+            "recallAtK": 0.5797611801432734,
+            "anyHit": 0.6472893533638145,
+            "allHit": 0.5264532984977139,
+            "mrr": 0.3740428233241109,
+            "p95RetrievalMs": 25.740417000022717,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid-norerank",
+          "label": "Mnemosyne hybrid (dense+BM25 RRF)",
+          "metrics": {
+            "recallAtK": 0.711765287080041,
+            "anyHit": 0.7857609405617244,
+            "allHit": 0.6472893533638145,
+            "mrr": 0.46673480205508217,
+            "p95RetrievalMs": 67.88999999995576,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "hybrid",
+          "label": "Mnemosyne hybrid + rerank",
+          "metrics": {
+            "recallAtK": 0.7770345426555173,
+            "anyHit": 0.8419333768778576,
+            "allHit": 0.7145656433703462,
+            "mrr": 0.6269221792739637,
+            "p95RetrievalMs": 350.1565830000327,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:mem0-oss",
+          "label": "Mem0 OSS (extraction off)",
+          "metrics": {
+            "recallAtK": 0.7191266596717516,
+            "anyHit": 0.790333115610712,
+            "allHit": 0.6525146962769431,
+            "mrr": 0.479845175790404,
+            "p95RetrievalMs": 539.5730840000324,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        },
+        {
+          "id": "system:zep",
+          "label": "Zep Cloud (graph search, episodes)",
+          "metrics": {
+            "recallAtK": 0.6118299246960677,
+            "anyHit": 0.6806009144350098,
+            "allHit": 0.5525800130633572,
+            "mrr": 0.1288665054143666,
+            "p95RetrievalMs": 413.3112919999985,
+            "questions": 1986,
+            "completed": 1986,
+            "errors": 0,
+            "annotatedQuestions": 1531
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Published the 29 October 2026 Zep Cloud matched run: [`reports/matched-run-2026-10-29-zep.md`](reports/matched-run-2026-10-29-zep.md), with the gzipped raw reports, their SHA-256 hashes, `summary.json`, a `verify.mjs` that re-derives every value from the per-question records, and the secret-free run scripts. `COMPARISON.md` and the README now point to it instead of saying Zep was not run or in progress; Graphiti stays marked not run.
+
 ## [3.0.0-rc.4] - 2026-10-29
 
 The fourth 3.0.0 release candidate, published on the `next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.4`); npm `latest` stays 2.0.0. It carries the changes below on top of rc.3, among them `mnemosy dependencies --holds` with `--review DIGEST --accept|--reject` for what the premise guard holds, `mnemosy bisect` on the store's own retrieval path, hybrid included, and encrypted whole-database backups that include the consolidation signing key. The benchmark numbers in the rc.2 section were measured on the rc.2 tree.
