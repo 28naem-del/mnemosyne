@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.0.0-rc.4] - 2026-10-29
 
-The fourth 3.0.0 release candidate, published on the `next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.4`); npm `latest` stays 2.0.0. It carries the changes below on top of rc.3, among them `mnemosy bisect` on the store's own retrieval path, hybrid included, and encrypted whole-database backups that include the consolidation signing key. The benchmark numbers in the rc.2 section were measured on the rc.2 tree.
+The fourth 3.0.0 release candidate, published on the `next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.4`); npm `latest` stays 2.0.0. It carries the changes below on top of rc.3, among them `mnemosy dependencies --holds` with `--review DIGEST --accept|--reject` for what the premise guard holds, `mnemosy bisect` on the store's own retrieval path, hybrid included, and encrypted whole-database backups that include the consolidation signing key. The benchmark numbers in the rc.2 section were measured on the rc.2 tree.
 
 ### Added
 

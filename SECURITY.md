@@ -16,7 +16,7 @@ Memories are fallible reference data. Stored instructions do not authorize comma
 
 ## Storage, backups and erasure
 
-The local database and whole-database backups are **plaintext**. Anyone able to read them can access their contents, including private records and multiple workspaces. Protect storage permissions and use deployment-level encryption where required. Backup checksums and SQLite integrity checks detect corruption; they are not signatures, encryption or sender authentication. Restore goes to a new path and does not perform a service cutover.
+The local database and plain whole-database backups are **plaintext** (`--encrypt` bundles are passphrase-encrypted with AES-256-GCM and a scrypt-derived key). Anyone able to read them can access their contents, including private records and multiple workspaces. Protect storage permissions and use deployment-level encryption where required. Backup checksums and SQLite integrity checks detect corruption; they are not signatures, encryption or sender authentication. Restore goes to a new path and does not perform a service cutover.
 
 Local forgetting removes covered live content, correction history and dependent payloads, and uses tombstones to block replay of known source identities. It cannot erase old exports, backups, copied prompts, external logs, swap or physical storage remnants. Restoring an older backup cannot contain tombstones created after that backup. Maintain an appropriate recovery and deletion process. See [operations](docs/OPERATIONS.md).
 
