@@ -44,7 +44,7 @@ The dark cinematic identity is in `cinematic.css`, layered over the shared struc
 
 ## Publication and release links
 
-The website documents 2.0.0 (npm `latest`, stable) and 3.0.0-rc.3 (npm `next`, pre-release). Source quickstart, migration and reference-guide links are pinned to the `v3.0.0-rc.3` tag; demo and trust evidence links stay pinned to `v3.0.0-rc.2`, the tree those results were measured and recorded on. Publish the npm `next` release and verify the matching GitHub release and tag before deploying a website update that names them. Package registry publication is an independent manual workflow; a GitHub release does not publish to npm.
+The website documents 2.0.0 (npm `latest`, stable) and 3.0.0-rc.4 (npm `next`, pre-release). Source quickstart, migration and reference-guide links are pinned to the `v3.0.0-rc.4` tag; demo and trust evidence links stay pinned to `v3.0.0-rc.2`, the tree those results were measured and recorded on. Publish the npm `next` release and verify the matching GitHub release and tag before deploying a website update that names them. Package registry publication is an independent manual workflow; a GitHub release does not publish to npm.
 
 ## Existing URLs
 

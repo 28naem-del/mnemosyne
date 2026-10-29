@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.4] - 2026-10-29
+
+The fourth 3.0.0 release candidate, published on the `next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.4`); npm `latest` stays 2.0.0. It carries the changes below on top of rc.3. The benchmark numbers in the rc.2 section were measured on the rc.2 tree.
+
 ### Added
 
-- A Claude Code plugin marketplace: `.claude-plugin/marketplace.json` (marketplace `mnemosy-ai`) lists one plugin, `mnemosyne`, in `integrations/claude-code/`. The plugin version is 3.0.0-rc.3 and it starts `npx -y -p mnemosy-ai@next mnemosy mcp` with one database per project at `${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite`. Validated with `claude plugin validate` and installed with Claude Code 2.1.301 from a local checkout and from the GitHub marketplace (`claude plugin marketplace add 28naem-del/mnemosyne`).
+- A Claude Code plugin marketplace: `.claude-plugin/marketplace.json` (marketplace `mnemosy-ai`) lists one plugin, `mnemosyne`, in `integrations/claude-code/`. The plugin version is 3.0.0-rc.4 and it starts `npx -y -p mnemosy-ai@next mnemosy mcp` with one database per project at `${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite`. Validated with `claude plugin validate` and installed with Claude Code 2.1.301 from a local checkout and from the GitHub marketplace (`claude plugin marketplace add 28naem-del/mnemosyne`).
 - `mnemosy dependencies --holds` and `listPremiseHolds` (from `mnemosy-ai/dependencies`) list what the premise guard holds: each held dependent with the changed premise, the correction that changed it, the co-use count and the task, ledger and trace ids, as a proposal with a digest. `--review DIGEST` (and `reviewDependency`) now decide a hold as well as an inferred proposal, so a pair with a single successful co-use can be reviewed from the CLI. Accept links the dependent to the premise's current version through `correct()` (or `linkPremise` for a skill), so the next correction cascades; reject releases the hold and needs `--reason`. Either decision writes a `dependency` receipt that releases the hold. Automatic inference still needs two co-uses. See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#the-premise-guard).
-- `integrations/hermes/`: a Hermes portable plugin (`mnemosy-ai`: one MCP server pinned to `mnemosy-ai@3.0.0-rc.3` and one skill). Not tested under Hermes and not listed in the Hermes plugin catalog.
+- `integrations/hermes/`: a Hermes portable plugin (`mnemosy-ai`: one MCP server pinned to `mnemosy-ai@3.0.0-rc.4` and one skill). Not tested under Hermes and not listed in the Hermes plugin catalog.
 
 ### Changed
 
@@ -33,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A `mcp-registry` GitHub Actions workflow (`workflow_dispatch`, input `release_tag`) publishes `server.json` to the MCP Registry for a release whose npm version is already published, without touching npm. It checks that the tag, `package.json` and `server.json` versions agree, waits for npm to report the version's `mcpName`, downloads and cosign-verifies `mcp-publisher` v1.8.6, validates `server.json`, logs in with GitHub OIDC (no token or PAT), publishes, and fails unless the registry then lists that version. It covers the 3.0.0-rc.3 case, where npm published but the registry steps of `publish.yml` did not run.
 - `publish.yml` now waits about 5 minutes (20 tries, 15 s apart) for npm to report the published version's `mcpName` before the MCP Registry steps, up from about 1 minute (6 tries, 10 s apart). For 3.0.0-rc.3 npm took about 3 minutes, so the wait timed out and the registry publish was skipped.
+- The `benchmark-matched` workflow takes a `max_parallel` input (default 12, an integer from 1 to 256) that caps how many bench jobs run at once, so a full run leaves runner slots for pull-request CI. A run with a single bench job no longer fails in the assemble step with "no artifact". No code path or published number changed.
+- `benchmarks/competitors` pins `zod` to 4.6.7 through `overrides` (Dependabot alert #41, GHSA-mrhx-c7xc-m3w5, vulnerable below 4.6.6). `mem0ai` 3.1.8 and `@getzep/zep-cloud` 3.28.0 stay pinned; they declare zod ^3 and now resolve 4.6.7. A 20-question LoCoMo dry run of mem0-oss gave identical results on both zod versions. The npm package does not include `benchmarks/`, and the root package already depends on zod ^4.6.7.
 
 ## [3.0.0-rc.3] - 2026-10-29
 

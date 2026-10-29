@@ -1,6 +1,6 @@
 {
   "name": "mnemosy-ai",
-  "version": "3.0.0-rc.3",
+  "version": "3.0.0-rc.4",
   "mcpName": "io.github.28naem-del/mnemosyne",
   "description": "Local-first long-term memory for AI agents: an evidence-backed SQLite store with hybrid recall, cross-encoder reranking, corrections that retire stale guidance and temporal history, served over TypeScript, MCP, CLI and HTTP",
   "type": "module",
