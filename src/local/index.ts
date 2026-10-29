@@ -214,6 +214,9 @@ export class LocalMemory {
   #denseIndex: DenseIndex | null = null;
   #denseResolved = false;
   #denseStatus?: DenseIndexStatus;
+  /** `PRAGMA data_version` when the in-process HNSW graph last caught up with
+   * labels other connections assigned; see `#catchUpDenseIndex`. */
+  #denseSeenVersion = -1;
   /** Bumped by every mutation that can put a record back in the pending set. */
   #writeSeq = 0;
   #vectorsDrained?: { model: string; writeSeq: number; dataVersion: number };
@@ -1929,15 +1932,57 @@ export class LocalMemory {
    * quiet substitution naming a backend explicitly is supposed to refuse.
    */
   #resolveDenseIndex(model: string, dimensions: number): DenseIndex | null {
-    if (this.#denseResolved) return this.#denseIndex;
+    if (this.#denseResolved) {
+      if (this.#denseIndex?.kind === 'hnsw') this.#catchUpDenseIndex(this.#denseIndex as HnswIndex, model, dimensions);
+      return this.#denseIndex;
+    }
     const selection = this.#transaction(() => createDenseIndex(this.#db, {
       mode: this.#indexMode, model, dimensions, databasePath: this.#path, vecLoaded: this.#vecLoaded, ...(this.#vecError ? { vecError: this.#vecError } : {}),
     }));
+    this.#denseSeenVersion = this.#dataVersion();
     this.#denseResolved = true;
     this.#denseIndex = selection.index;
     this.#denseStatus = selection.status;
     if (selection.index && selection.rebuild) this.#syncDenseIndex(selection.index, model, dimensions);
     return this.#denseIndex;
+  }
+
+  /**
+   * Add to an open HNSW graph the vectors another connection indexed since.
+   *
+   * sqlite-vec lives in the database file, so every connection sees the same
+   * index. An HNSW graph lives in this process: when another connection (or
+   * process) on the same file embeds new records, it assigns their labels and
+   * adds them to ITS graph, and this one never hears of them — its dense channel
+   * would miss those records for as long as it stayed open, because to this
+   * connection they are no longer pending. Labels are AUTOINCREMENT, so
+   * everything new sits above this graph's watermark. The check costs one
+   * `PRAGMA data_version` per recall, which only moves when another connection
+   * commits, plus one indexed `max(label)` when it has.
+   *
+   * Only additions are caught up here. An erasure elsewhere needs nothing: its
+   * label is gone, so the authorization join withholds the record whatever this
+   * graph still proposes.
+   */
+  #catchUpDenseIndex(index: HnswIndex, model: string, dimensions: number): void {
+    const version = this.#dataVersion();
+    if (version === this.#denseSeenVersion) return;
+    this.#denseSeenVersion = version;
+    const top = this.#db.prepare('SELECT max(label) AS label FROM local_vec_labels WHERE model=?').get(model) as { label: number | bigint | null };
+    if (top.label === null || Number(top.label) <= index.watermark) return;
+    const statement = this.#db.prepare(`SELECT l.label, e.data AS vector FROM local_vec_labels l
+      JOIN local_embeddings e ON e.memory_id=l.memory_id AND e.model=l.model
+      WHERE l.model=? AND e.dimensions=? AND l.label>? ORDER BY l.label`);
+    let batch: DenseIndexEntry[] = [];
+    for (const row of statement.iterate(model, dimensions, index.watermark) as Iterable<{ label: number | bigint; vector: string | Uint8Array }>) {
+      // An undecodable row is left to the recall that reads it, which marks it
+      // for re-embedding; it only costs this graph that one vector meanwhile.
+      let vector: number[];
+      try { vector = this.#decodeVector(row.vector, dimensions); } catch { continue; }
+      batch.push({ label: Number(row.label), vector: Float32Array.from(vector) });
+      if (batch.length === 512) { index.upsert(batch); batch = []; }
+    }
+    if (batch.length) index.upsert(batch);
   }
 
   /**
