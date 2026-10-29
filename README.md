@@ -18,7 +18,7 @@
 - **Auditable over time (3.0 pre-release).** Past beliefs replay exactly, `bisect` names the record behind a wrong answer, and consolidation is outcome-gated and reversible.
 - **Any host.** MCP for Claude Code, Cursor and Codex; a TypeScript SDK; a CLI; and authenticated HTTP with a Python client and live inspector.
 
-**Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.2 (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
+**Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.2, the breakthrough release (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
 
 [Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [Releases](https://github.com/28naem-del/mnemosyne/releases) · [npm](https://www.npmjs.com/package/mnemosy-ai) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/28naem-del/mnemosyne/issues)
 
@@ -53,11 +53,11 @@ claude mcp add mnemosyne -- npx -y -p mnemosy-ai@next mnemosy mcp --db ./.mnemos
 
 For the stable release, write `mnemosy-ai@2.0.0` in place of `mnemosy-ai@next`; on 2.0.0, `mnemosy demo` runs the earlier single-scenario demo.
 
-**Contents:** [New in 3.0.0-rc.2](#new-in-300-rc2-pre-release-on-npm-next) · [Install and connect an agent](#install-and-connect-an-agent) · [Measured results](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed) · [Choose your engine](#choose-your-engine) · [A working demonstration](#start-with-a-working-demonstration) · [Corrections in code](#a-correction-should-change-what-the-next-agent-does) · [Tune the dense index](#tune-the-dense-index) · [What you can build](#what-you-can-build) · [Entry points](#local-engine-several-entry-points) · [Migrate](#migrate-while-your-agent-keeps-working) · [Limits](#measured-with-the-limits-visible) · [Operational boundaries](#operational-boundaries) · [Build with us](#build-with-us)
+**Contents:** [3.0: the breakthrough release](#new-in-300-rc2-the-breakthrough-release-pre-release-on-npm-next) · [Install and connect an agent](#install-and-connect-an-agent) · [Measured results](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed) · [Choose your engine](#choose-your-engine) · [A working demonstration](#start-with-a-working-demonstration) · [Corrections in code](#a-correction-should-change-what-the-next-agent-does) · [Tune the dense index](#tune-the-dense-index) · [What you can build](#what-you-can-build) · [Entry points](#local-engine-several-entry-points) · [Migrate](#migrate-while-your-agent-keeps-working) · [Limits](#measured-with-the-limits-visible) · [Operational boundaries](#operational-boundaries) · [Build with us](#build-with-us)
 
-## New in 3.0.0-rc.2 (pre-release on npm `next`)
+## New in 3.0.0-rc.2: the breakthrough release (pre-release on npm `next`)
 
-3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
+3.0 is the breakthrough release: past beliefs replay exactly, corrections retire what depended on them (including dependencies nobody declared, once accepted), `bisect` names the record behind a wrong answer, a poisoning gate is checked against a reproducible attack suite, and consolidation is reversible with signed receipts. Each of these is documented and tested below. 3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
 
 | Measurement | Result | Protocol |
 |---|---|---|
