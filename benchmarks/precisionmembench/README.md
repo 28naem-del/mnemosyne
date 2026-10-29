@@ -15,7 +15,7 @@ clone of this repository. Nothing here ships in the npm package (`benchmarks/` i
 | File | Purpose |
 | --- | --- |
 | `server.mjs` | PMB provider wrapper over the built kernel (`dist/local`). One `LocalMemory` per PMB `user_id`, all in one SQLite file, isolated only by the kernel's workspace scope. |
-| `run.mjs` | Starts the server, waits for `/health`, runs the pinned harness with `MEMORY_PROVIDER=mnemosyne RESEED=true`, copies the JSON reports to `reports/precisionmembench/<label>/`, stops the server. Fully synchronous. Exits 3 when an ava suite reported a failing case (which every run below has). |
+| `run.mjs` | Starts the server, waits for `/health`, runs the pinned harness with `MEMORY_PROVIDER=mnemosyne RESEED=true`, stops the server and publishes the JSON reports to `reports/precisionmembench/<label>/`. Fully synchronous. The clone's report is deleted before each eval, and outputs are staged and renamed into place only when every eval wrote a fresh, valid report and the server stayed up; otherwise it exits 1 and leaves the previous `<label>/` unchanged. Exits 3 when an ava suite reported a failing case (which every run below has). |
 | `sweep.mjs` | Runs several `run.mjs` configurations and prints one table row each. |
 | `patches/pmb-register-provider.patch` | Adds the `mnemosyne` entry to the clone's `providers.config.json`. |
 | `patches/pmb-extended-metadata.patch` | Configuration B only: makes the clone's `BaseAdapter.seedMetadata` forward `type`, `pinned`, `superseded_by`, `created_at`, `resolved_at` during single-turn seeding. Applied by `run.mjs --extended-harness` for one run and reverted afterwards. |
@@ -49,7 +49,7 @@ Each label directory holds `retrieval-report-mnemosyne.json` (per-case precision
 pass flag and failure reasons), `session-retrieval-report-mnemosyne.json`, the full ava
 output, the server log and `run-summary.json` (configuration, `wrapperFilter: "none"`,
 `recallKinds: null`, the kernel options in force, benchmark commit, clone dirty-state, kernel commit, node version,
-per-eval scores and server counters).
+per-eval scores and server counters, plus a `runId`, an `inputsHash` over the configuration, both commits and the wrapper files, and the sha256 of each published report).
 
 The hybrid runs need the bundled local models (`bge-small-en-v1.5`; the cross-encoder only
 with `--rerank`) in `~/.cache/mnemosyne/models`. No network or API key is used at scoring time.
