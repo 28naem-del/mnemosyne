@@ -55,7 +55,7 @@ const report = await reflect(memory, {
 });
 ```
 
-The adapter receives `{ instructions, query, context, maxProposals, maxOutputBytes, signal }`. It must return JSON text or an object of the form `{ proposals: [{ text, rationale, kind: 'procedure' | 'observation', dependencies: ['provided-memory-id'] }] }`. The adapter chooses and pays for any model calls; Mnemosyne selects no provider or fallback. Honor `signal` to cancel external computation.
+The adapter receives `{ instructions, query, context, maxProposals, maxOutputBytes, signal }`. It must return JSON text or an object of the form `{ proposals: [{ text, rationale, kind: 'procedure' | 'observation', dependencies: ['provided-memory-id'] }] }`. The adapter chooses and pays for any model calls; Mnemosyne selects no provider or fallback. Honor `signal` to cancel external computation. The adapter is called from a queued microtask; immediately before that call every source is re-read, and a source corrected, failed or forgotten since `reflect` started rejects the call without sending anything.
 
 Reports include proposals, rejections, source IDs, call count, elapsed time, and status. Validate a proposal with an external test or trusted review before calling:
 

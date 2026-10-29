@@ -2506,9 +2506,17 @@ export class LocalMemory {
     const write = this.#db.prepare('INSERT INTO local_granularity_embeddings(doc_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(doc_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data');
     for (let offset = 0; offset < pending.length;) {
       this.#assertOpen(); this.#abort(options.signal);
-      const batch = pending.slice(offset, offset + batchSize);
-      offset += batch.length;
-      const vectors = await this.#boundedCall((signal) => options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }), options.signal, options.timeoutMs);
+      const queued = pending.slice(offset, offset + batchSize);
+      offset += queued.length;
+      let batch: typeof queued = [];
+      const vectors = await this.#boundedCall((signal) => {
+        // Earlier batches and the queued dispatch itself are invalidation
+        // boundaries. A member erased or changed since `pending` was read has
+        // already dropped or rewritten its documents, so only a document whose
+        // stored hash still matches is sent; a forgotten member's text never is.
+        batch = queued.filter(document => (current.get(document.id) as unknown as { sourceHash: string } | undefined)?.sourceHash === document.sourceHash);
+        return batch.length ? options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }) : Promise.resolve([]);
+      }, options.signal, options.timeoutMs);
       if (!Array.isArray(vectors) || vectors.length !== batch.length) throw new TypeError('Embedder must return one vector per input text');
       const validated = vectors.map(vector => this.#vector(vector, dimensions));
       this.#abort(options.signal);
