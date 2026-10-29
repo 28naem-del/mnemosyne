@@ -1,0 +1,42 @@
+{
+  "corpus": "locomo10",
+  "unit": "sample_id",
+  "seed": 20261029,
+  "algorithm": "mulberry32(seed) Fisher-Yates shuffle; first n of the shuffled population = tune, rest = holdout; lists re-sorted to source order",
+  "source": {
+    "file": "locomo10.json",
+    "sha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+    "bytes": 2805274
+  },
+  "population": [
+    "conv-26",
+    "conv-30",
+    "conv-41",
+    "conv-42",
+    "conv-43",
+    "conv-44",
+    "conv-47",
+    "conv-48",
+    "conv-49",
+    "conv-50"
+  ],
+  "sizes": {
+    "population": 10,
+    "tune": 4,
+    "holdout": 6
+  },
+  "tune": [
+    "conv-42",
+    "conv-44",
+    "conv-47",
+    "conv-48"
+  ],
+  "holdout": [
+    "conv-26",
+    "conv-30",
+    "conv-41",
+    "conv-43",
+    "conv-49",
+    "conv-50"
+  ]
+}

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `npm run benchmark:matched -- --split tune|holdout|all` scores only the questions in a committed TUNE or HOLDOUT split: LoCoMo by conversation (4 TUNE, 6 HOLDOUT), LongMemEval-S by question, stratified by type (150 TUNE, 350 HOLDOUT), both drawn with seed 20261029. The id lists are in `benchmarks/splits/`, written by `npm run benchmark:splits`, and a test checks that they equal a regeneration and are disjoint and complete. `all`, the default, is the previous behaviour. `benchmarks/PROTOCOL-2026-10.md` fixes the splits, metrics, success bars and reporting rule for the October 2026 retrieval work before any tuning. No benchmark number changed.
+
 ### Documentation
 
 - README: a 30-second offline demo with its PROOF lines, a Claude Code one-liner and a contents line on the first screen; npm badges now read the `latest` and `next` dist-tags instead of fixed versions; a note that this project is separate from mnemosyne-oss/mnemosyne (`mnemosyne-memory` on PyPI). The same note is in `AGENTS.md`, `llms.txt` and the issue chooser.
