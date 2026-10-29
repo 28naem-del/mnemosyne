@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The optional `ioredis` peer dependency accepts `^5.0.0 || ^6.0.0` (in `mnemosy-ai` and `packages/legacy`); before, npm refused to install the package next to `ioredis` 6 (`ERESOLVE`). No code changed. Against both ioredis 5.11.1 and 6.0.0, the legacy broadcast, Redis cache and user-model paths passed on a RESP3-capable Redis (6.0.0 negotiates RESP3 by default) and on a Redis without `HELLO` (6.0.0 falls back to RESP2), and the FalkorDB `GRAPH.QUERY` path returned the same reply shapes on a FalkorDB server. The repository now develops against ioredis 6 (`ioredis` ^6.0.0, devDependency). ioredis 6 requires Node.js 20 or newer; this package already requires 22.16.
 
+### Security
+
+- Model setup (`npm run setup:embedder`, `npm run setup:reranker`, `fetchBundledModel`, `fetchBundledReranker`) staged each download at the fixed name `<file>.partial` and wrote it with a call that follows symlinks, then changed the target's mode by path. Another local user who could write to the model cache directory could plant a symlink there and have the download overwrite a file of the user running setup. Setup now stages under an unpredictable name created exclusively (`O_CREAT|O_EXCL`, plus `O_NOFOLLOW` where available), sets the mode on the open file, and renames into place, which replaces a symlink at the target rather than writing through it. A private cache directory, the default, was not exposed.
+
 ### Development
 
 - Builds with TypeScript 7 (`typescript` ^7.0.2, devDependency). Two tests transpiled `src` files into a subprocess fixture through the TypeScript compiler API, which the TypeScript 7 package no longer exports; they now use Node's built-in `stripTypeScriptTypes` (`node:module`), so the fixtures add no dependency. The emitted JavaScript is byte-identical to the TypeScript 6 build; 16 declaration files differ only in quote style and member order, and the published declarations typecheck under both TypeScript 6 and 7.
