@@ -1818,7 +1818,8 @@ export class LocalMemory {
     // lookup for a row already in hand.
     const stored = JSON.parse(row.record) as MemoryRecord, memory = this.#at(stored, scan.time);
     if (!memory || row.source_hash !== this.#textHash(memory.text)) return null;
-    const vector = this.#decodeVector(row.vector, scan.dimensions);
+    const vector = this.#storedVector(row.id, scan.model, row.vector, scan.dimensions);
+    if (!vector) return null;
     let score = 0;
     for (let index = 0; index < scan.dimensions; index++) score += vector[index] * scan.query[index];
     // Nonpositive cosine is not affirmative semantic evidence, and neither is
@@ -1949,13 +1950,18 @@ export class LocalMemory {
       FROM local_embeddings e LEFT JOIN local_vec_labels l ON l.memory_id=e.memory_id AND l.model=e.model
       WHERE e.model=? AND e.dimensions=? AND (l.label IS NULL OR l.label>?) ORDER BY e.memory_id`);
     let batch: DenseIndexEntry[] = [];
+    const corrupt: { id: string; vector: unknown }[] = [];
     this.#transaction(() => {
       for (const row of statement.iterate(model, dimensions, after) as Iterable<{ id: string; vector: string | Uint8Array; label: number | bigint | null }>) {
+        let vector: number[];
+        try { vector = this.#decodeVector(row.vector, dimensions); } catch { corrupt.push(row); continue; }
         const label = row.label === null ? this.#assignLabel(row.id, model) : Number(row.label);
-        batch.push({ label, vector: Float32Array.from(this.#decodeVector(row.vector, dimensions)) });
+        batch.push({ label, vector: Float32Array.from(vector) });
         if (batch.length === 512) { index.upsert(batch); batch = []; }
       }
       if (batch.length) index.upsert(batch);
+      // Marked after the walk, never while its statement is still iterating.
+      for (const row of corrupt) this.#storedVector(row.id, model, row.vector, dimensions);
     });
     if (index.kind === 'hnsw') {
       const live = new Set((this.#db.prepare('SELECT label FROM local_vec_labels WHERE model=?').all(model) as { label: number | bigint }[])
@@ -2296,6 +2302,21 @@ export class LocalMemory {
   #encodeVector(vector: readonly number[]): Uint8Array {
     const packed = Float32Array.from(vector);
     return new Uint8Array(packed.buffer, packed.byteOffset, packed.byteLength);
+  }
+
+  /**
+   * A stored vector for search, or null when the row cannot be decoded (a
+   * non-finite value, a zero norm, a wrong width or unreadable JSON). Such a row
+   * is skipped rather than failing the query, and its source hash is cleared so
+   * the pending-vector pass re-embeds it on the next recall: a stale hash is
+   * exactly what that pass looks for.
+   */
+  #storedVector(memoryId: string, model: string, value: unknown, dimensions: number): number[] | null {
+    try { return this.#decodeVector(value, dimensions); } catch {
+      this.#db.prepare("UPDATE local_embeddings SET source_hash='' WHERE memory_id=? AND model=?").run(memoryId, model);
+      this.#writeSeq++;
+      return null;
+    }
   }
 
   #decodeVector(value: unknown, dimensions: number): number[] {
@@ -3253,9 +3274,10 @@ export class LocalMemory {
    * cache, unchanged. A row is taken only when its record exists in this owner
    * scope and its `sourceHash` still matches that record's text; anything else
    * is skipped, and a skipped record is simply embedded on the next hybrid
-   * recall as it would have been anyway. The vectors are trusted as given, so
-   * only import ones exported from a store you trust. Writes no memory, outcome
-   * or ledger entry.
+   * recall as it would have been anyway. Every vector must hold finite values
+   * with a nonzero norm, or the whole call is rejected before anything is
+   * written. Beyond that the vectors are trusted as given, so only import ones
+   * exported from a store you trust. Writes no memory, outcome or ledger entry.
    */
   importEmbeddings(rows: readonly StoredEmbedding[]): { imported: number; skipped: number } {
     this.#assertOpen();
@@ -3265,7 +3287,11 @@ export class LocalMemory {
       v.keys(value, ['memoryId', 'model', 'dimensions', 'sourceHash', 'data'], 'embedding');
       const dimensions = v.limit(value.dimensions, 0, 4096);
       const data = value.data;
-      if (data instanceof Uint8Array) { if (data.byteLength !== dimensions * 4) throw new TypeError('Embedding data does not match its declared dimensions'); }
+      if (data instanceof Uint8Array) {
+        if (data.byteLength !== dimensions * 4) throw new TypeError('Embedding data does not match its declared dimensions');
+        // The same check search applies to a stored row, so an imported vector can never make it throw.
+        try { this.#decodeVector(data, dimensions); } catch { throw new TypeError('Embedding data must contain finite float32 values with a nonzero norm'); }
+      }
       else if (typeof data === 'string') this.#vector(JSON.parse(data), dimensions);
       else throw new TypeError('Embedding data must be packed float32 bytes or JSON text');
       return { memoryId: v.string(value.memoryId, 'memoryId', 160), model: v.string(value.model, 'model', 512), dimensions, sourceHash: v.string(value.sourceHash, 'sourceHash', 128), data };
