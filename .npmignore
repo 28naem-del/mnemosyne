@@ -24,5 +24,7 @@ memory-token.txt
 *.sqlite3-*
 *.db
 *.db-*
+assets/demo.gif
+assets/demo.tape
 .DS_Store
 Thumbs.db
