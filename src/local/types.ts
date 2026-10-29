@@ -659,10 +659,21 @@ export interface EmbeddingIndexOptions {
   signal?: AbortSignal;
 }
 export interface EmbeddingIndexResult { indexed: number; skipped: number; remaining: number }
+/** Weights of the two first-stage channels `recallHybrid` fuses. */
+export interface HybridFusionWeights {
+  /** Lexical (BM25 or overlap) channel. Defaults to 1. */
+  lexical?: number;
+  /** Dense (cosine) channel. Defaults to 1. */
+  dense?: number;
+}
 export interface HybridRecallOptions {
   embedder: MemoryEmbedder;
   /** Reciprocal rank fusion constant, 1-1000. Defaults to the memory's setting. */
   rrfK?: number;
+  /** Per-channel RRF weights, each 0-1000. Each channel contributes
+   * `weight / (rrfK + rank)` per candidate. Both default to 1, which is the
+   * unweighted fusion this path has always done, bit for bit. */
+  fusionWeights?: HybridFusionWeights;
   reranker?: MemoryReranker;
   /** Fused candidates handed to the reranker, 1-1000. Defaults to 100, which is
    * the depth this path has always rescored. The synchronous default path uses

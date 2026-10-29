@@ -9,6 +9,7 @@ import { adaptLoCoMoCorpus, adaptLongMemEvalCorpus, runCorpusBenchmark, summariz
 import type { BenchmarkConditionId, CorpusBenchmarkReport, CorpusDataset, CorpusSummary } from './corpus-types.js';
 import { createMem0Factory } from './matched-mem0.js';
 import { createZepFactory } from './matched-zep.js';
+import { corpusEngineOptions, parseEngineOpts, resolveEngineConfig, type MatchedEngineConfig } from './engine-opts.js';
 import { resolveCompetitorModule } from './matched-resolve.js';
 import { filterSourceBySplit, loadSplit, parseSplitName, SPLIT_FILES, type LoadedSplit } from './splits.js';
 import type { MatchedSystem, MatchedSystemFactory } from './matched-types.js';
@@ -181,7 +182,8 @@ function mergeParts(files: string[]): CorpusBenchmarkReport {
     settings: { ...report.settings, corpusIndexBase: 'partition-coordinate' }, source: report.dataset.sourceSha256, adapter: report.dataset.adapter,
     embedding: report.embedding ?? null, systems: (report.systems ?? []).map(system => [system.id, system.revision, system.mode]),
     implementation: report.runtime.implementationSha256, protocol: report.protocol,
-    split: (report as { matched?: { split?: unknown } }).matched?.split ?? null });
+    split: (report as { matched?: { split?: unknown } }).matched?.split ?? null,
+    engineOpts: (report as { matched?: { engineOpts?: unknown } }).matched?.engineOpts ?? null });
   const reference = key(parts[0]);
   for (const [index, part] of parts.entries()) {
     if (key(part) !== reference) throw new Error(`Part ${files[index]} did not run the same experiment as ${files[0]}; merging it would compare different settings under one heading.`);
@@ -211,12 +213,19 @@ function mergeParts(files: string[]): CorpusBenchmarkReport {
   return merged;
 }
 
+/** The merged engine configuration as the report records it: an unset ORT thread
+ * count is written as what it means, so a latency row always names its threads. */
+function recordedConfig(config: MatchedEngineConfig): Record<string, unknown> {
+  return { ...config, embedder: { ...config.embedder, threads: config.embedder.threads ?? 'onnxruntime-default' },
+    reranker: { ...config.reranker, threads: config.reranker.threads ?? 'onnxruntime-default' } };
+}
+
 export async function matchedBenchmark(args = process.argv.slice(2)): Promise<void> {
   const { values } = parseArgs({ args, strict: true, allowPositionals: false, options: {
     corpus: { type: 'string' }, systems: { type: 'string' }, 'top-k': { type: 'string' },
     'max-corpora': { type: 'string' }, 'max-questions': { type: 'string' }, out: { type: 'string' },
     'corpus-offset': { type: 'string' }, merge: { type: 'string' }, stride: { type: 'string' }, 'max-context-units': { type: 'string' },
-    'mem0-extraction': { type: 'string' }, 'no-rerank': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, split: { type: 'string' }, help: { type: 'boolean' },
+    'mem0-extraction': { type: 'string' }, 'no-rerank': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, split: { type: 'string' }, 'engine-opts': { type: 'string' }, help: { type: 'boolean' },
   } });
   if (values.help) {
     console.log(`node dist/evaluation/matched-benchmark.js [options]
@@ -237,6 +246,14 @@ export async function matchedBenchmark(args = process.argv.slice(2)): Promise<vo
                                      a budget that holds all K hits records the full ranked list
   --out DIR                          write one raw JSON report per corpus
   --merge DIR                        combine the part files in DIR into one report
+  --engine-opts '<json>'             engine configuration merged over this harness's own, for
+                                     every Mnemosyne row (default {}). Sections:
+                                       memory   createLocalMemory options (rrfK, minSimilarity, ...)
+                                       hybrid   recallHybrid: rrfK, fusionWeights {lexical, dense},
+                                                rerankTopN (default 50), maxCandidates
+                                       embedder ONNX embedder: batchSize (default 32), threads
+                                       reranker ONNX cross-encoder: batchSize (default 32), threads
+                                     Recorded in the raw report under matched.engineOpts.
   --mem0-extraction off|llm          Mem0 write path. off = no LLM, free, offline (default)
   --no-rerank                        drop our reranked condition from the table
   --dry-run                          tiny slice, for proving the wiring
@@ -282,13 +299,16 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
   const maxContextUnits = values['max-context-units'] !== undefined ? Number(values['max-context-units']) : undefined;
   if (maxContextUnits !== undefined && (!Number.isSafeInteger(maxContextUnits) || maxContextUnits < 1 || maxContextUnits > 16_777_216)) throw new Error('--max-context-units must be between 1 and 16777216');
   const requested = (values.systems ?? '').split(',').map(entry => entry.trim()).filter(Boolean);
+  const engineOpts = parseEngineOpts(values['engine-opts']);
+  const engineConfig = resolveEngineConfig(engineOpts);
+  const engine = corpusEngineOptions(engineConfig);
   const noSystems = requested.length === 1 && requested[0] === 'none';
 
   let embedder: SyncMemoryEmbedder | undefined, reranker: SyncMemoryReranker | undefined;
-  try { embedder = createBundledEmbedder({ batchSize: 32 }); }
+  try { embedder = createBundledEmbedder({ ...engineConfig.embedder }); }
   catch (error) { console.error(`${error instanceof Error ? error.message : 'Local embedder unavailable'}\nRun "npm run setup:embedder". Reporting zero-model rows only.`); }
   if (embedder && !values['no-rerank']) {
-    try { reranker = createBundledReranker({ batchSize: 32 }); }
+    try { reranker = createBundledReranker({ ...engineConfig.reranker }); }
     catch (error) { console.error(`${error instanceof Error ? error.message : 'Local reranker unavailable'}\nRun "npm run setup:reranker". Reporting the fused ranking only.`); }
   }
 
@@ -324,7 +344,8 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
       topK, includeBm25: true, hybridLexicalScoring: 'bm25', includeHybridWithoutRerank: true,
       ...(maxContextUnits !== undefined ? { maxContextUnits } : {}),
       ...(embedder ? { embedder: embedder.forPassages(), queryEmbedder: embedder.forQueries() } : {}),
-      ...(reranker ? { reranker: asMemoryReranker(reranker), rerankTopN: 50 } : {}),
+      ...(reranker ? { reranker: asMemoryReranker(reranker), rerankTopN: engineConfig.hybrid.rerankTopN } : {}),
+      ...(engine ? { engine } : {}),
       ...(systems.length ? { systems } : {}),
       maxEmbeddingCalls: 1_000_000, maxEmbeddingInputBytes: 2_147_483_647, timeoutMs: 3_600_000, systemIngestTimeoutMs: 3_600_000,
       // Keeps a split run's chunk identities equal to an unsplit run's.
@@ -337,6 +358,7 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
     console.log(`corpus sha256 ${sha256} (${bytes} bytes)  normalized ${report.dataset.normalizedSha256}`);
     console.log(`runtime ${report.runtime.node} ${report.runtime.platform}  elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`);
     console.log(`identical for every row: K=${topK}  maxContextUnits=${report.settings.maxContextUnits} (${report.settings.accountingId})  chunkBytes=${report.settings.chunkBytes}  envelope=corpus-v1`);
+    console.log(`engine opts ${JSON.stringify(engineOpts)} -> ${JSON.stringify(recordedConfig(engineConfig))}`);
     console.log(`reader/judge: none — this is retrieval coverage, not answer accuracy (calls: generation=${report.calls.generation}, judge=${report.calls.judge})`);
     for (const line of printTable(report, outcomes, topK)) console.log(line);
     for (const system of report.systems ?? []) console.log(`  ingest ${system.id}: ${(system.ingestMilliseconds / 1000).toFixed(1)}s${system.reason ? ` — ${system.reason}` : ''}`);
@@ -347,7 +369,7 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
       const partial = corpusOffset > 0 || maxCorpora !== undefined;
       const tag = stride > 1 ? `${kind}${splitTag}-stride${stride}-k${topK}` : `${kind}${splitTag}-k${topK}`;
       const target = join(outDir, partial ? `${tag}-part${String(corpusOffset).padStart(3, '0')}.json` : `${tag}.json`);
-      writeFileSync(target, `${JSON.stringify({ ...report, matched: { requested, split: split ? { name: split.name, file: relative(REPO, split.file), sha256: split.sha256, seed: split.seed, ids: split.ids.size } : { name: 'all' }, outcomes: outcomes.map(outcome => ({ id: outcome.id, available: outcome.system !== null, mode: outcome.system?.mode ?? null, reason: outcome.reason ?? null, describes: outcome.factory.describe() })) } }, null, 2)}\n`, { mode: 0o600 });
+      writeFileSync(target, `${JSON.stringify({ ...report, matched: { requested, split: split ? { name: split.name, file: relative(REPO, split.file), sha256: split.sha256, seed: split.seed, ids: split.ids.size } : { name: 'all' }, engineOpts, engineConfig: recordedConfig(engineConfig), outcomes: outcomes.map(outcome => ({ id: outcome.id, available: outcome.system !== null, mode: outcome.system?.mode ?? null, reason: outcome.reason ?? null, describes: outcome.factory.describe() })) } }, null, 2)}\n`, { mode: 0o600 });
       console.log(`raw report -> ${target}`);
     }
     // Our own conditions must be complete for the run to mean anything; a

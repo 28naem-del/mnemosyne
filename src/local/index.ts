@@ -2188,12 +2188,17 @@ export class LocalMemory {
     });
   }
 
-  /** Reciprocal rank fusion: each channel contributes 1/(k + rank) per candidate. */
-  #fuse(channels: readonly ScoredId[][], k: number): Map<string, ScoredId> {
+  /** Reciprocal rank fusion: each channel contributes weight/(k + rank) per
+   * candidate. Without `weights` every channel weighs 1, and the arithmetic is
+   * the unweighted `1 / (k + rank)` exactly, not an approximation of it. */
+  #fuse(channels: readonly ScoredId[][], k: number, weights?: readonly number[]): Map<string, ScoredId> {
     const fused = new Map<string, ScoredId>();
-    for (const channel of channels) channel.forEach((entry, rank) => {
-      const previous = fused.get(entry.id);
-      fused.set(entry.id, { id: entry.id, score: (previous?.score ?? 0) + 1 / (k + rank + 1) });
+    channels.forEach((channel, index) => {
+      const weight = weights?.[index] ?? 1;
+      channel.forEach((entry, rank) => {
+        const previous = fused.get(entry.id);
+        fused.set(entry.id, { id: entry.id, score: (previous?.score ?? 0) + weight / (k + rank + 1) });
+      });
     });
     return fused;
   }
@@ -2596,7 +2601,8 @@ export class LocalMemory {
       if (request && typeof request === 'object' && request[key] !== undefined) throw new TypeError(`recallHybrid does not support ${key}; use recall()`);
     }
     const route = this.#route(request), input = this.#routed(request, route);
-    v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'rerankTopN', 'signal', 'timeoutMs', 'maxCandidates', 'rrfK'], 'hybrid options');
+    v.keys(v.object(options, 'hybrid options'), ['embedder', 'reranker', 'rerankTopN', 'signal', 'timeoutMs', 'maxCandidates', 'rrfK', 'fusionWeights'], 'hybrid options');
+    const weights = fusionWeights(options.fusionWeights);
     const { model, dimensions } = this.#embeddingContract(options.embedder);
     const maxCandidates = v.limit(options.maxCandidates, 1000, 10000);
     const count = v.limit(input.limit, 10);
@@ -2615,7 +2621,7 @@ export class LocalMemory {
     time = this.#temporal(input);
     const semantic = await this.#scanVectors(input, options, { model, dimensions, query, maxCandidates, time });
     const rrfK = v.limit(options.rrfK, this.#rrfK, 1000);
-    const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], rrfK);
+    const fused = this.#fuse([lexical.map(entry => ({ id: entry.memory.id, score: entry.score })), semantic], rrfK, weights);
     const rerankTopN = v.limit(options.rerankTopN, 100, 1000);
     const multi = this.#multiGranularity(input, fused, { model, dimensions, query }, time, rrfK, rerankTopN, () => { this.#assertOpen(); this.#abort(options.signal); });
     let ranked = multi?.ranked ?? [...fused.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
@@ -3553,6 +3559,20 @@ export class LocalMemory {
     this.#db.close();
     this.#closed = true;
   }
+}
+
+/** Validates `HybridRecallOptions.fusionWeights` into `#fuse` channel order
+ * (lexical, dense); undefined when absent, so the default path stays unweighted. */
+function fusionWeights(value: unknown): [number, number] | undefined {
+  if (value === undefined) return undefined;
+  const input = v.object(value, 'fusionWeights');
+  v.keys(input, ['lexical', 'dense'], 'fusionWeights');
+  const weight = (entry: unknown, name: string): number => {
+    if (entry === undefined) return 1;
+    if (typeof entry !== 'number' || !Number.isFinite(entry) || entry < 0 || entry > 1000) throw new TypeError(`fusionWeights.${name} must be a number between 0 and 1000`);
+    return entry;
+  };
+  return [weight(input.lexical, 'lexical'), weight(input.dense, 'dense')];
 }
 
 export function createLocalMemory(options: LocalMemoryOptions): LocalMemory { return new LocalMemory(options); }
