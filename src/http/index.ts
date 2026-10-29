@@ -8,6 +8,10 @@ import { MemoryRelations } from '../relations/index.js';
 import { INSPECTOR_HTML, INSPECTOR_JS } from './inspector.js';
 
 const MAX_BYTES = 1_048_576;
+// Requests without a valid token (inspector assets, failed authentication, bad
+// origins) have their own per-minute budgets, per remote address and in total,
+// so they cannot use up the budget of authenticated principals.
+const ANONYMOUS_PER_ADDRESS = 60, ANONYMOUS_TOTAL = 1000, ANONYMOUS_ADDRESSES = 4096;
 const text = (max: number) => z.string().min(1).max(max).refine(value => value.trim().length > 0 && !value.includes('\0') && Buffer.byteLength(value) <= max);
 const id = text(160);
 const source = z.object({ uri: text(2048), revision: text(512).optional(), author: text(512).optional(), observedAt: z.iso.datetime().transform(value => new Date(value).toISOString()).optional() }).strict();
@@ -79,7 +83,17 @@ export async function startMemoryHttp(options: MemoryHttpOptions): Promise<{ url
     return selected;
   };
   let origin = '';
-  let totalWindow = 0, totalCount = 0;
+  let totalWindow = 0, totalCount = 0, anonymousWindow = 0, anonymousCount = 0;
+  const anonymousByAddress = new Map<string, number>();
+  const anonymous = (request: IncomingMessage, minute: number) => {
+    if (anonymousWindow !== minute) { anonymousWindow = minute; anonymousCount = 0; anonymousByAddress.clear(); }
+    if (++anonymousCount > ANONYMOUS_TOTAL) throw new ApiError(429, 'Unauthenticated request budget exceeded');
+    const address = request.socket.remoteAddress ?? '';
+    // Past the tracking bound, new addresses share one bucket; the map stays bounded.
+    const key = anonymousByAddress.has(address) || anonymousByAddress.size < ANONYMOUS_ADDRESSES ? address : '';
+    const count = (anonymousByAddress.get(key) ?? 0) + 1; anonymousByAddress.set(key, count);
+    if (count > ANONYMOUS_PER_ADDRESS) throw new ApiError(429, 'Unauthenticated request budget exceeded');
+  };
   const send = (response: ServerResponse, status: number, value: unknown) => {
     const json = JSON.stringify(value);
     if (Buffer.byteLength(json) > MAX_BYTES) {
@@ -94,16 +108,19 @@ export async function startMemoryHttp(options: MemoryHttpOptions): Promise<{ url
     response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     void (async () => {
       const minute = Math.floor(Date.now() / 60_000);
-      if (totalWindow !== minute) { totalWindow = minute; totalCount = 0; }
-      if (++totalCount > Math.max(1000, rate * principals.length * 2)) throw new ApiError(429, 'Server request budget exceeded');
-      if (`http://${request.headers.host}` !== origin || (request.headers.origin && request.headers.origin !== origin)) throw new ApiError(403, 'Unexpected request origin');
+      if (`http://${request.headers.host}` !== origin || (request.headers.origin && request.headers.origin !== origin)) { anonymous(request, minute); throw new ApiError(403, 'Unexpected request origin'); }
       if (request.method === 'GET' && (request.url === '/' || request.url === '/app.js')) {
+        anonymous(request, minute);
         response.writeHead(200, { 'Content-Type': request.url === '/' ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8' });
         response.end(request.url === '/' ? INSPECTOR_HTML : INSPECTOR_JS); return;
       }
-      const principal = authenticate(request);
+      let principal: typeof principals[number];
+      try { principal = authenticate(request); } catch (error) { anonymous(request, minute); throw error; }
       if (principal.window !== minute) { principal.window = minute; principal.count = 0; }
       if (++principal.count > rate) throw new ApiError(429, 'Principal request budget exceeded');
+      // Charged only after authentication and the principal's own budget.
+      if (totalWindow !== minute) { totalWindow = minute; totalCount = 0; }
+      if (++totalCount > Math.max(1000, rate * principals.length * 2)) throw new ApiError(429, 'Server request budget exceeded');
       const memory = principal.memory;
       if (request.method === 'GET' && request.url === '/v1/capabilities') {
         send(response, 200, { workspaceId: memory.workspaceId, agentId: memory.agentId, readOnly: !!principal.readOnly,
