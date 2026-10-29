@@ -33,8 +33,13 @@ export interface DenseIndex {
    * withholds erased records — but it keeps the candidate budget useful. */
   remove(labels: readonly number[]): void;
   /** Labels of the nearest `k`, best first. Ordering only: the engine rescores
-   * every survivor at full precision, so an index never decides a final score. */
+   * every survivor at full precision, so an index never decides a final score.
+   * A `k` above `maxK` returns at most `maxK` labels. */
   search(query: Float32Array, k: number): number[];
+  /** The deepest shortlist one search can return, when the backend has a limit.
+   * A query that needs more is answered by the exact scan, which returns the
+   * same records. */
+  readonly maxK?: number;
   /** Vectors currently indexed. Bounds the over-fetch loop. */
   size(): number;
   /** Persist anything that lives outside the SQLite file. */
