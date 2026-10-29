@@ -190,53 +190,60 @@ export class AdaptiveContext {
   }
   async build(input: AdaptiveContextInput): Promise<AdaptiveContextPacket> {
     const parsed = inputSchema.parse(input); this.#read(parsed.signal);
-    return this.runtime.memory.atomic(() => {
+    // Read the candidates and their evidence in one transaction. Token counters
+    // are host callbacks, so they run after it: a deletion a callback makes (a
+    // forget) commits on its own, and no later failure here can roll it back.
+    const { state, requestKey, combined } = this.runtime.memory.atomic(() => {
       const state = this.#candidateState(parsed), requestKey = hash({ version: 1, workspaceId: this.runtime.memory.workspaceId, agentId: this.runtime.memory.agentId, ...parsed, signal: undefined, tokenizerId: this.#tokenizerId, customCounter: this.#customCounter });
-      const cached = this.#cache.get(requestKey), hit = !!cached && cached.fingerprint === state.fingerprint;
       const records = new Map<string, MemoryRecord>();
       for (const candidate of state.candidates) for (const [id, record] of candidate.snapshot.records) records.set(id, record);
-      const combined: Snapshot = { fingerprint: state.fingerprint, records, leaves: [] };
-      let selection: Selection[] = hit ? cached.selection.map(item => ({ ...item })) : [];
-      const excluded = [...state.excluded];
-      const fits = (items: Selection[]): boolean => { this.#read(parsed.signal); const rendered = this.#render(items, combined, parsed); return Buffer.byteLength(rendered) <= 1_048_576 && this.#count(rendered) <= parsed.maxTokens; };
-      if (hit && !fits(selection)) selection = []; // Stateful token counters cannot break the bound.
-      if (!hit || (!selection.length && cached?.selection.length)) {
-        const covered = new Set<string>();
-        for (const candidate of state.candidates) {
-          this.#read(parsed.signal);
-          if (selection.length >= 64) break;
-          const leaves = candidate.snapshot.leaves;
-          if (leaves.length && leaves.every(key => covered.has(key))) { excluded.push({ id: candidate.record.id, reason: 'covered' }); continue; }
-          const bytes = Buffer.from(candidate.record.text), full: Selection = { id: candidate.record.id, start: 0, end: bytes.length, tier: candidate.tier };
-          if (fits([...selection, full])) { selection.push(full); leaves.forEach(key => covered.add(key)); continue; }
-          if (candidate.tier !== 'source') { excluded.push({ id: candidate.record.id, reason: 'budget' }); continue; }
-          // Query-focused exact byte range; never silently truncate a generated claim.
-          const words = parsed.query.toLocaleLowerCase('en').match(/[\p{L}\p{N}_-]+/gu) ?? [];
-          const lower = candidate.record.text.toLocaleLowerCase('en');
-          const positions = words.map(word => lower.indexOf(word)).filter(position => position >= 0);
-          const match = positions.length ? Math.min(...positions) : 0;
-          let start = Math.max(0, Buffer.byteLength(candidate.record.text.slice(0, match)) - 96);
-          while (start > 0 && (bytes[start] & 0xc0) === 0x80) start--;
-          let low = 0, high = bytes.length - start, best = 0;
-          while (low <= high) {
-            const middle = Math.floor((low + high) / 2); let end = start + middle;
-            while (end > start && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
-            if (fits([...selection, { ...full, start, end }])) { best = Math.max(best, end - start); low = middle + 1; } else high = middle - 1;
-          }
-          if (best > 0) { selection.push({ ...full, start, end: start + best }); leaves.forEach(key => covered.add(key)); }
-          else excluded.push({ id: candidate.record.id, reason: 'budget' });
+      return { state, requestKey, combined: { fingerprint: state.fingerprint, records, leaves: [] } as Snapshot };
+    });
+    const cached = this.#cache.get(requestKey), hit = !!cached && cached.fingerprint === state.fingerprint;
+    let selection: Selection[] = hit ? cached.selection.map(item => ({ ...item })) : [];
+    const excluded = [...state.excluded];
+    const fits = (items: Selection[]): boolean => { this.#read(parsed.signal); const rendered = this.#render(items, combined, parsed); return Buffer.byteLength(rendered) <= 1_048_576 && this.#count(rendered) <= parsed.maxTokens; };
+    if (hit && !fits(selection)) selection = []; // Stateful token counters cannot break the bound.
+    if (!hit || (!selection.length && cached?.selection.length)) {
+      const covered = new Set<string>();
+      for (const candidate of state.candidates) {
+        this.#read(parsed.signal);
+        if (selection.length >= 64) break;
+        const leaves = candidate.snapshot.leaves;
+        if (leaves.length && leaves.every(key => covered.has(key))) { excluded.push({ id: candidate.record.id, reason: 'covered' }); continue; }
+        const bytes = Buffer.from(candidate.record.text), full: Selection = { id: candidate.record.id, start: 0, end: bytes.length, tier: candidate.tier };
+        if (fits([...selection, full])) { selection.push(full); leaves.forEach(key => covered.add(key)); continue; }
+        if (candidate.tier !== 'source') { excluded.push({ id: candidate.record.id, reason: 'budget' }); continue; }
+        // Query-focused exact byte range; never silently truncate a generated claim.
+        const words = parsed.query.toLocaleLowerCase('en').match(/[\p{L}\p{N}_-]+/gu) ?? [];
+        const lower = candidate.record.text.toLocaleLowerCase('en');
+        const positions = words.map(word => lower.indexOf(word)).filter(position => position >= 0);
+        const match = positions.length ? Math.min(...positions) : 0;
+        let start = Math.max(0, Buffer.byteLength(candidate.record.text.slice(0, match)) - 96);
+        while (start > 0 && (bytes[start] & 0xc0) === 0x80) start--;
+        let low = 0, high = bytes.length - start, best = 0;
+        while (low <= high) {
+          const middle = Math.floor((low + high) / 2); let end = start + middle;
+          while (end > start && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
+          if (fits([...selection, { ...full, start, end }])) { best = Math.max(best, end - start); low = middle + 1; } else high = middle - 1;
         }
+        if (best > 0) { selection.push({ ...full, start, end: start + best }); leaves.forEach(key => covered.add(key)); }
+        else excluded.push({ id: candidate.record.id, reason: 'budget' });
       }
-      // Tokenizer callbacks can be reentrant. Validate every selected dependency
-      // after all callbacks, and do not serve an earlier in-memory snapshot.
+    }
+    let rendered = this.#render(selection, combined, parsed), tokens = this.#count(rendered);
+    if (!selection.length || tokens > parsed.maxTokens || Buffer.byteLength(rendered) > 1_048_576) { rendered = ''; tokens = 0; selection = []; }
+    // Tokenizer callbacks can be reentrant. Validate every selected dependency
+    // after all callbacks, and do not serve an earlier in-memory snapshot.
+    // No host callback runs inside this transaction.
+    return this.runtime.memory.atomic(() => {
       const roots = selection.map(item => item.id);
       const fresh = roots.length ? this.#snapshot(roots, parsed.requireWatched, parsed.signal) : { fingerprint: hash([]), records: new Map<string, MemoryRecord>(), leaves: [] };
       for (const root of roots) {
         const original = state.candidates.find(candidate => candidate.record.id === root)!;
         if (this.#snapshot([root], parsed.requireWatched, parsed.signal).fingerprint !== original.snapshot.fingerprint) throw new EvidenceUnavailable();
       }
-      let rendered = this.#render(selection, fresh, parsed), tokens = this.#count(rendered);
-      if (!selection.length || tokens > parsed.maxTokens || Buffer.byteLength(rendered) > 1_048_576) { rendered = ''; tokens = 0; selection = []; }
+      if (selection.length && this.#render(selection, fresh, parsed) !== rendered) throw new EvidenceUnavailable();
       const finalRoots = selection.map(item => item.id);
       const finalState = finalRoots.length ? this.#snapshot(finalRoots, parsed.requireWatched, parsed.signal) : { fingerprint: hash([]), records: new Map<string, MemoryRecord>(), leaves: [] };
       if (finalRoots.length && finalState.fingerprint !== fresh.fingerprint) throw new EvidenceUnavailable();

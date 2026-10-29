@@ -40,7 +40,7 @@ The recording above is one unedited run ([`assets/demo.tape`](assets/demo.tape) 
 ```text
 PROOF  replay determinism: 1000/1000 identical, 24000/24000 as-of answers = ground truth   [PASS]
 PROOF  downstream repair: undeclared invalidated 3/3, accepted edges true 3/3, stale after correction 0 (11 probes)   [PASS]
-PROOF  blame precision / time-to-locate: precision 1.00, 0.38 s, 2000 records   [PASS]
+PROOF  blame precision / time-to-locate: precision 1.00, 0.40 s, 2000 records   [PASS]
 PROOF  poisoning suite v1, live: 227 cases, 0 escapes, 0 false quarantines   [PASS]
 PROOF  consolidation receipts: kept 1 (delta +2), rolled back 2 (regression, invariant violated), rollback identical hash true, chain verified 4 receipts   [PASS]
 
