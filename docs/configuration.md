@@ -4,7 +4,7 @@
 
 `createLocalMemory({ path, workspaceId, agentId, now?, tokenCounter? })` takes explicit options. CLI commands use `--db`, `--workspace`, and `--agent`. The local kernel needs no network service or model. Optional HTTP serving, embeddings, file capture and durable observation jobs are explicit integrations. MCP and HTTP authority is set at launch with `--read-only`, `--allow-destructive`, `--no-capture` and `--no-recall`. [The runtime guide](RUNTIME.md) documents provider JSON, token handling and working commands; the CLI never chooses a provider or API key automatically.
 
-The database directory must already exist. File permissions reduce accidental access but do not implement encryption or hostile local-user isolation. Select identities in trusted controller code.
+The engine creates the database's parent directory (mode `0700`) and the database file (mode `0600`) on first use; backup and restore output directories are different and must already exist ([Operations](OPERATIONS.md)). File permissions reduce accidental access but do not implement encryption or hostile local-user isolation. Select identities in trusted controller code.
 
 ## Qdrant mode
 

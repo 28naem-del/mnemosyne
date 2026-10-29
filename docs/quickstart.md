@@ -17,8 +17,8 @@ In your Node.js project:
 
 ```sh
 npm install mnemosy-ai           # stable: latest = 2.0.0
-npm install mnemosy-ai@next      # newest pre-release: 3.0.0-rc.3
-npx --no-install mnemosy demo
+# or, instead: npm install mnemosy-ai@next   (newest pre-release: 3.0.0-rc.3)
+npx --no-install mnemosy demo   # runs the installed version offline
 npx --no-install mnemosy learning-demo
 ```
 

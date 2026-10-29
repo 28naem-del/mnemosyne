@@ -157,6 +157,7 @@
     "benchmark:matched": "node dist/evaluation/matched-benchmark.js",
     "benchmark:matched:install": "npm ci --prefix benchmarks/competitors",
     "benchmark:scale": "node dist/evaluation/local-benchmark.js",
+    "benchmark:splits": "node dist/evaluation/make-splits.js",
     "build": "tsc",
     "check": "npm run typecheck && npm test && npm run typecheck:examples",
     "check:docs": "node --test scripts/check-doc-links.test.mjs && node scripts/check-doc-links.mjs",
