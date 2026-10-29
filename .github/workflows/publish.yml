@@ -143,6 +143,8 @@ jobs:
       # MCP Registry publication runs only after the npm publish above succeeded:
       # the registry checks the mcpName of the published npm version. GitHub OIDC
       # (id-token: write above) authenticates; no token or PAT is stored or used.
+      # npm can take minutes to serve a new version (about 3 minutes for
+      # 3.0.0-rc.3), so this polls for about 5 minutes: 20 tries, 15 s apart.
       - name: Wait for npm to report the release's mcpName
         shell: bash
         run: |
@@ -150,16 +152,17 @@ jobs:
           version=$(node -p 'require("./package.json").version')
           expected=$(node -p 'require("./package.json").mcpName')
           if [ -z "$expected" ] || [ "$expected" = "undefined" ]; then echo "package.json has no mcpName" >&2; exit 1; fi
-          for attempt in 1 2 3 4 5 6; do
+          tries=20
+          for attempt in $(seq 1 "$tries"); do
             actual=$(npm view --prefer-online "mnemosy-ai@${version}" mcpName 2>/dev/null || true)
             if [ "$actual" = "$expected" ]; then
               echo "npm reports mnemosy-ai@${version} mcpName ${actual}"
               exit 0
             fi
-            echo "Attempt ${attempt}/6: npm reports mcpName '${actual}', expected '${expected}'"
-            [ "$attempt" -lt 6 ] && sleep 10
+            echo "Attempt ${attempt}/${tries}: npm reports mcpName '${actual}', expected '${expected}'"
+            [ "$attempt" -lt "$tries" ] && sleep 15
           done
-          echo "npm did not report mcpName ${expected} for mnemosy-ai@${version}" >&2
+          echo "npm did not report mcpName ${expected} for mnemosy-ai@${version} after ${tries} tries over about 5 minutes" >&2
           exit 1
 
       - name: Publish to the MCP Registry

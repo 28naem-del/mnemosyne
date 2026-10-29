@@ -1,0 +1,129 @@
+name: Publish to the MCP Registry
+
+# Publishes server.json for a release whose npm version is already published,
+# without republishing to npm. publish.yml runs the same registry steps right
+# after the npm publish; this workflow is for when those steps did not run or
+# failed. GitHub OIDC (id-token: write) authenticates; no token or PAT is stored
+# or used.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag whose npm version is already published (for example v3.0.0-rc.3)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout release
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Check the release tag, package.json and server.json agree
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          node -e '
+          const s = require("./server.json"), p = require("./package.json");
+          const pkg = (s.packages || [])[0] || {};
+          const problems = [];
+          if (p.name !== "mnemosy-ai") problems.push(`package.json name ${p.name} != mnemosy-ai`);
+          if (p.mcpName !== "io.github.28naem-del/mnemosyne") problems.push(`package.json mcpName ${p.mcpName} != io.github.28naem-del/mnemosyne`);
+          if (`v${p.version}` !== process.env.RELEASE_TAG) problems.push(`release tag ${process.env.RELEASE_TAG} != v${p.version} (v plus package.json version)`);
+          if (s.name !== p.mcpName) problems.push(`server.json name ${s.name} != package.json mcpName ${p.mcpName}`);
+          if (s.version !== p.version) problems.push(`server.json version ${s.version} != package.json version ${p.version}`);
+          if (pkg.version !== p.version) problems.push(`server.json packages[0].version ${pkg.version} != package.json version ${p.version}`);
+          if (pkg.identifier !== p.name) problems.push(`server.json packages[0].identifier ${pkg.identifier} != package.json name ${p.name}`);
+          if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
+          console.log(`server.json matches ${p.name}@${p.version} (${p.mcpName}) for ${process.env.RELEASE_TAG}`);
+          '
+
+      # The registry checks the mcpName of the published npm version, so the npm
+      # version must exist and report it. Polls for about 5 minutes, like publish.yml.
+      - name: Wait for npm to report the release's mcpName
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          expected=$(node -p 'require("./package.json").mcpName')
+          if [ -z "$expected" ] || [ "$expected" = "undefined" ]; then echo "package.json has no mcpName" >&2; exit 1; fi
+          tries=20
+          for attempt in $(seq 1 "$tries"); do
+            actual=$(npm view --prefer-online "mnemosy-ai@${version}" mcpName 2>/dev/null || true)
+            if [ "$actual" = "$expected" ]; then
+              echo "npm reports mnemosy-ai@${version} mcpName ${actual}"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/${tries}: npm reports mcpName '${actual}', expected '${expected}'"
+            [ "$attempt" -lt "$tries" ] && sleep 15
+          done
+          echo "npm did not report mcpName ${expected} for mnemosy-ai@${version} after ${tries} tries over about 5 minutes" >&2
+          exit 1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        shell: bash
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.6
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail -sSL -o "$archive" "$base/$archive"
+          curl --fail -sSL -o "$archive.sigstore.json" "$base/$archive.sigstore.json"
+          cosign verify-blob --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "$archive"
+          tar xzf "$archive" mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Validate server.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/mcp-publisher" validate server.json
+
+      - name: Publish to the MCP Registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/mcp-publisher" login github-oidc
+          "$RUNNER_TEMP/mcp-publisher" publish
+
+      - name: Verify the registry lists the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          name=$(node -p 'require("./server.json").name')
+          url="https://registry.modelcontextprotocol.io/v0.1/servers/$(jq -rn --arg n "$name" '$n|@uri')/versions/${version}"
+          tries=10
+          for attempt in $(seq 1 "$tries"); do
+            body=$(curl --fail -sS --max-time 30 "$url" 2>/dev/null || true)
+            if printf '%s' "$body" | jq -e --arg n "$name" --arg v "$version" '.server.name == $n and .server.version == $v' >/dev/null 2>&1; then
+              echo "The MCP Registry lists ${name} ${version}: ${url}"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/${tries}: ${url} does not list ${name} ${version} yet"
+            [ "$attempt" -lt "$tries" ] && sleep 10
+          done
+          echo "The MCP Registry does not list ${name} ${version} at ${url}" >&2
+          exit 1
