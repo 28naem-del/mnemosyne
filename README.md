@@ -14,8 +14,7 @@
 [![LoCoMo recall@10: 73.57 vs Mem0 OSS 63.72](https://img.shields.io/badge/LoCoMo%20recall%4010-73.57%20vs%20Mem0%20OSS%2063.72-9abfff?labelColor=111b2a)](COMPARISON.md)
 [![GitHub stars](https://img.shields.io/github/stars/28naem-del/mnemosyne?label=stars&color=b8f6dd&labelColor=111b2a)](https://github.com/28naem-del/mnemosyne)
 [![GitHub Discussions](https://img.shields.io/github/discussions/28naem-del/mnemosyne?label=discussions&color=9abfff&labelColor=111b2a)](https://github.com/28naem-del/mnemosyne/discussions)
-
-<!-- [![MCP Registry](https://img.shields.io/badge/MCP-Registry-9abfff?labelColor=111b2a)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.28naem-del/mnemosyne) — enable once io.github.28naem-del/mnemosyne is listed -->
+[![MCP Registry](https://img.shields.io/badge/MCP-Registry-9abfff?labelColor=111b2a)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.28naem-del/mnemosyne)
 
 **The next agent starts wiser.**
 
@@ -133,7 +132,7 @@ claude plugin marketplace add 28naem-del/mnemosyne      # in a session: /plugin 
 claude plugin install mnemosyne@mnemosy-ai             # add --scope project to share it through .claude/settings.json
 ```
 
-**Tested** with Claude Code 2.1.301 from a local checkout of these files (`claude plugin marketplace add <path>`, then the install command): `claude plugin validate` passes, `claude mcp list` shows `plugin:mnemosyne:mnemosyne` connected, and a session lists 16 tools. Adding the marketplace from GitHub (`28naem-del/mnemosyne`) is **Documented** until it is re-tested from `main`. The plugin starts `npx -y -p mnemosy-ai@next mnemosy mcp --db ${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite --workspace default --agent claude-code`, so each project gets its own database. In Claude Code its tools are named `mcp__plugin_mnemosyne_mnemosyne__memory_*`; permission rules must use that form.
+**Tested** with Claude Code 2.1.301, from a local checkout of these files and from GitHub with the commands above (run against `main`): `claude plugin validate` passes, `claude mcp list` shows `plugin:mnemosyne:mnemosyne` connected, and a session lists 16 tools. The plugin starts `npx -y -p mnemosy-ai@next mnemosy mcp --db ${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite --workspace default --agent claude-code`, so each project gets its own database. In Claude Code its tools are named `mcp__plugin_mnemosyne_mnemosyne__memory_*`; permission rules must use that form.
 
 **Without the plugin.** Claude Code reads `.mcp.json` in the project root:
 
