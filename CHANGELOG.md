@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The optional `ioredis` peer dependency accepts `^5.0.0 || ^6.0.0` (in `mnemosy-ai` and `packages/legacy`); before, npm refused to install the package next to `ioredis` 6 (`ERESOLVE`). No code changed. Against both ioredis 5.11.1 and 6.0.0, the legacy broadcast, Redis cache and user-model paths passed on a RESP3-capable Redis (6.0.0 negotiates RESP3 by default) and on a Redis without `HELLO` (6.0.0 falls back to RESP2), and the FalkorDB `GRAPH.QUERY` path returned the same reply shapes on a FalkorDB server. The repository now develops against ioredis 6 (`ioredis` ^6.0.0, devDependency). ioredis 6 requires Node.js 20 or newer; this package already requires 22.16.
 
+### Security
+
+- `MemoryAgent.runTurn` checked context freshness at dispatch with a new read set that dropped `requireWatched` and recorded the state at that moment. A change between `beforeTurn` and dispatch, such as a removed watch, could therefore pass, and the host responder ran on a source that `requireWatched: true` should have withheld. This affected a host `contextBuilder` and a `contextProvider` whose `validate` does not recheck watches; the built-in builder revalidated its own packet. `runTurn` now revalidates the read set that `beforeTurn` created, with the same `requireWatched`, and fails with `context-failed` when it no longer holds.
+
 ### Development
 
 - Builds with TypeScript 7 (`typescript` ^7.0.2, devDependency). Two tests transpiled `src` files into a subprocess fixture through the TypeScript compiler API, which the TypeScript 7 package no longer exports; they now use Node's built-in `stripTypeScriptTypes` (`node:module`), so the fixtures add no dependency. The emitted JavaScript is byte-identical to the TypeScript 6 build; 16 declaration files differ only in quote style and member order, and the published declarations typecheck under both TypeScript 6 and 7.
