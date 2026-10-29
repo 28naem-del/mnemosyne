@@ -34,7 +34,7 @@ gh workflow run benchmark-matched --ref main -f corpus=locomo -f modes=bm25,hybr
 It installs Node 24, the two pinned local models, these competitor SDKs (when `competitors=mem0`)
 and the corpora, each verified against its pinned SHA-256. It runs one job per corpus and K, and
 LongMemEval-S is split into `lme_shard_size` haystacks per job and recombined with the
-harness's own `--merge`. Every job logs and stores its runner's CPU model, core count and memory,
+harness's own `--merge`; at most `max_parallel` (default 12) slices run at once, so pull-request CI keeps runner slots. Every job logs and stores its runner's CPU model, core count and memory,
 because latency numbers mean something only together with the machine that produced them. The
 assembled artifact holds the raw JSON reports, the per-slice parts and logs, a `SUMMARY.md` table
 and a `MANIFEST.sha256` of every file. Mem0 runs with `infer:false` only, because the workflow has no

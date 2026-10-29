@@ -49,6 +49,10 @@ on:
         description: LongMemEval-S haystacks per job (0 = one job); ignored when max_questions is set
         type: string
         default: '20'
+      max_parallel:
+        description: Most bench jobs at once (leave runner slots free for pull-request CI)
+        type: string
+        default: '12'
       ref:
         description: Free-text note recorded in the run manifest (e.g. why this run was dispatched)
         type: string
@@ -84,6 +88,7 @@ jobs:
       reranker: ${{ steps.plan.outputs.reranker }}
       needs_locomo: ${{ steps.plan.outputs.needs_locomo }}
       needs_lme: ${{ steps.plan.outputs.needs_lme }}
+      max_parallel: ${{ steps.plan.outputs.max_parallel }}
     steps:
       - name: Checkout the split files
         uses: actions/checkout@v7
@@ -100,6 +105,7 @@ jobs:
           IN_TOP_K: ${{ inputs.top_k }}
           IN_MAX_QUESTIONS: ${{ inputs.max_questions }}
           IN_SHARD: ${{ inputs.lme_shard_size }}
+          IN_MAX_PARALLEL: ${{ inputs.max_parallel }}
         run: |
           node --input-type=module <<'NODE'
           import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -113,6 +119,8 @@ jobs:
           if (new Set(ks).size !== ks.length) fail('top_k has duplicates');
           const maxQ = env.IN_MAX_QUESTIONS.trim();
           if (maxQ && (!/^\d+$/.test(maxQ) || Number(maxQ) < 1)) fail(`max_questions must be a positive integer or empty; got "${maxQ}"`);
+          const maxParallel = env.IN_MAX_PARALLEL.trim();
+          if (!/^\d+$/.test(maxParallel) || Number(maxParallel) < 1 || Number(maxParallel) > 256) fail(`max_parallel must be an integer 1..256; got "${maxParallel}"`);
           const shard = env.IN_SHARD.trim();
           if (!/^\d+$/.test(shard)) fail(`lme_shard_size must be a non-negative integer; got "${shard}"`);
           // A TUNE/HOLDOUT run filters the haystacks before --corpus-offset applies, so
@@ -140,7 +148,7 @@ jobs:
           const embedder = modes.some(m => m.startsWith('hybrid')) || env.IN_COMPETITORS === 'mem0';
           const reranker = modes.includes('hybrid+rerank');
           const out = { matrix: JSON.stringify({ include }), embedder: String(embedder), reranker: String(reranker),
-            needs_locomo: String(corpora.includes('locomo')), needs_lme: String(corpora.includes('longmemeval')) };
+            max_parallel: maxParallel, needs_locomo: String(corpora.includes('locomo')), needs_lme: String(corpora.includes('longmemeval')) };
           for (const [key, value] of Object.entries(out)) appendFileSync(env.GITHUB_OUTPUT, `${key}=${value}\n`);
           console.log(JSON.stringify({ ...out, matrix: include }, null, 2));
           NODE
@@ -212,6 +220,7 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
+      max-parallel: ${{ fromJSON(needs.plan.outputs.max_parallel) }}
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Runner machine
@@ -395,6 +404,7 @@ jobs:
           IN_TOP_K: ${{ inputs.top_k }}
           IN_MAX_QUESTIONS: ${{ inputs.max_questions }}
           IN_SHARD: ${{ inputs.lme_shard_size }}
+          IN_MAX_PARALLEL: ${{ inputs.max_parallel }}
           IN_REF: ${{ inputs.ref }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           NODE_OPTIONS: --max-old-space-size=12288
@@ -452,7 +462,7 @@ jobs:
           const pct = v => v === null || v === undefined ? 'n/a' : (v * 100).toFixed(2);
           const ms = v => v === null || v === undefined ? 'n/a' : v.toFixed(1);
           const lines = ['# benchmark-matched run', '', `- run: ${env.RUN_URL}`, `- commit: ${env.GITHUB_SHA} (${env.GITHUB_REF})`,
-            `- inputs: corpus=${env.IN_CORPUS} modes=${env.IN_MODES} competitors=${env.IN_COMPETITORS} split=${env.IN_SPLIT} top_k=${env.IN_TOP_K} max_questions=${env.IN_MAX_QUESTIONS || '(all)'} lme_shard_size=${env.IN_SHARD}`,
+            `- inputs: corpus=${env.IN_CORPUS} modes=${env.IN_MODES} competitors=${env.IN_COMPETITORS} split=${env.IN_SPLIT} top_k=${env.IN_TOP_K} max_questions=${env.IN_MAX_QUESTIONS || '(all)'} lme_shard_size=${env.IN_SHARD} max_parallel=${env.IN_MAX_PARALLEL}`,
             `- ref note: ${env.IN_REF || '(none)'}`, `- bench jobs: ${env.BENCH_RESULT}`, ''];
           for (const { corpus, k, file, report } of reports.sort((a, b) => a.corpus.localeCompare(b.corpus) || a.k - b.k)) {
             const annotated = report.summaries.bm25?.annotatedQuestions ?? 'n/a';
@@ -469,7 +479,7 @@ jobs:
           if (problems.length) lines.push('', '## Problems', '', ...problems.map(p => `- ${p}`));
           writeFileSync(join(env.FINAL, 'SUMMARY.md'), `${lines.join('\n')}\n`);
           writeFileSync(join(env.FINAL, 'RUN.json'), `${JSON.stringify({ runUrl: env.RUN_URL, commit: env.GITHUB_SHA, ref: env.GITHUB_REF, note: env.IN_REF,
-            inputs: { corpus: env.IN_CORPUS, modes: env.IN_MODES, competitors: env.IN_COMPETITORS, split: env.IN_SPLIT, topK: env.IN_TOP_K, maxQuestions: env.IN_MAX_QUESTIONS, lmeShardSize: env.IN_SHARD },
+            inputs: { corpus: env.IN_CORPUS, modes: env.IN_MODES, competitors: env.IN_COMPETITORS, split: env.IN_SPLIT, topK: env.IN_TOP_K, maxQuestions: env.IN_MAX_QUESTIONS, lmeShardSize: env.IN_SHARD, maxParallel: env.IN_MAX_PARALLEL },
             benchJobs: env.BENCH_RESULT, matrix: include, problems }, null, 2)}\n`);
           appendFileSync(env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
           console.log(lines.join('\n'));
