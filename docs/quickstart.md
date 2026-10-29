@@ -102,4 +102,4 @@ To ingest a local file, use `capture` with an explicit path and scope; the [file
 - [Local semantic retrieval](LOCAL-MODELS.md): explicitly provision CPU embeddings and reranking.
 - [Documentation index](README.md): choose a guide by the task you want to complete.
 
-Keep memory databases, token files and backups outside Git. They contain plaintext data; forgetting from the live store cannot erase a prior backup or a prompt already sent to a model.
+Keep memory databases, token files and backups outside Git. They contain plaintext data, except backups made with `--encrypt`, which are passphrase-encrypted ([encrypted bundles](OPERATIONS.md#encrypted-bundles)); forgetting from the live store cannot erase a prior backup or a prompt already sent to a model.

@@ -28,6 +28,6 @@ The checked-in [LongMemEval retrieval run](evaluation/BENCHMARKS.md) compares Mn
 
 ## Deployment tradeoffs
 
-The local path keeps lifecycle state inspectable in one database and needs no remote service for lexical recall. Its synchronous scans and explicit model setup trade managed convenience for application control. The HTTP interface has authentication, but it is not a managed cloud account system. Databases and backups are plaintext unless your storage layer protects them.
+The local path keeps lifecycle state inspectable in one database and needs no remote service for lexical recall. Its synchronous scans and explicit model setup trade managed convenience for application control. The HTTP interface has authentication, but it is not a managed cloud account system. Databases and plain backup bundles are plaintext unless your storage layer protects them; `--encrypt` bundles are passphrase-encrypted ([encrypted bundles](OPERATIONS.md#encrypted-bundles)).
 
 If you require automatic multi-device sync, enterprise single sign-on, distributed storage or fully packaged framework plugins, budget for additional integration and deployment work. Read [features and boundaries](features.md), [operations](OPERATIONS.md) and [security](../SECURITY.md) before selecting the path for production.
