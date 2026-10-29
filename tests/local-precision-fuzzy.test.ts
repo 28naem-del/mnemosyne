@@ -86,7 +86,9 @@ describe('fuzzy cost bound', () => {
     // checked each in O(n^2), which blocked the event loop for hours.
     let started = performance.now();
     expect(db.recall({ query: longToken(4000), fuzzy: true })).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(1000);
+    // Budgets are wide for loaded CI hosts: unloaded these take ~5 ms and ~0.2 s,
+    // while before the bound the first alone took hours.
+    expect(performance.now() - started).toBeLessThan(2000);
     // The worst case left: as many tokens of the maximum length as a 4,096-character query holds.
     let seed = 11;
     const letter = (): string => { seed = (seed * 1103515245 + 12345) % 2147483648; return 'abcdefghijklmnopqrstuvwxyz'[seed % 26]; };
@@ -95,7 +97,7 @@ describe('fuzzy cost bound', () => {
     expect(words.every(fuzzyEligible)).toBe(true);
     started = performance.now();
     expect(db.recall({ query: words.join(' ').slice(0, 4096), fuzzy: true })).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(1500);
+    expect(performance.now() - started).toBeLessThan(5000);
   });
 
   it('expands at most sixteen unmatched terms per query, in query order', () => {
