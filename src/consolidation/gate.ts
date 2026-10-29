@@ -513,17 +513,30 @@ export interface ConsolidationChainReport {
   errors: { sequence: number; passId: string | null; error: string }[];
 }
 
-/** Walks the receipts in ledger order and checks digests, links, signatures and rollback references. */
-export function verifyConsolidationChain(memory: LocalMemory, options: { pinnedKeyIds?: string[] } = {}): ConsolidationChainReport {
+/**
+ * Walks the receipts in ledger order and checks digests, links, signatures and rollback references.
+ *
+ * Links prove nothing about the end of the chain: deleting the last receipts,
+ * or all of them, leaves a shorter chain that still verifies. `expectedHead` is
+ * the `head` of an earlier verification, kept where the database writer cannot
+ * reach it; verification then fails unless a receipt with that digest is still
+ * in the chain, so truncation at or before that checkpoint is detected.
+ * Receipts appended after it are accepted. Without it, `ok` says the chain
+ * present is intact, not that it is complete.
+ */
+export function verifyConsolidationChain(memory: LocalMemory, options: { pinnedKeyIds?: string[]; expectedHead?: string } = {}): ConsolidationChainReport {
   const input = v.object(options, 'consolidation chain options');
-  v.keys(input, ['pinnedKeyIds'], 'consolidation chain options');
+  v.keys(input, ['pinnedKeyIds', 'expectedHead'], 'consolidation chain options');
   const pinned = options.pinnedKeyIds === undefined ? undefined : v.strings(options.pinnedKeyIds, 'pinnedKeyIds', 64, 64);
+  const expectedHead = options.expectedHead === undefined ? undefined : v.string(options.expectedHead, 'expectedHead', 64);
+  if (expectedHead !== undefined && !/^[0-9a-f]{64}$/.test(expectedHead)) throw new TypeError('expectedHead must be a receipt digest: 64 lowercase hex characters');
   const errors: ConsolidationChainReport['errors'] = [];
   const keyChanges: ConsolidationChainReport['keyChanges'] = [];
   const kept = new Set<string>(), undone = new Set<string>();
-  let previous: string | null = null, key: string | null = null, count = 0;
+  let previous: string | null = null, key: string | null = null, count = 0, last = 0, checkpointed = false;
   for (const { sequence, receipt } of consolidationReceipts(memory)) {
     count++;
+    last = sequence;
     const fail = (error: string): void => { errors.push({ sequence, passId: typeof receipt?.passId === 'string' ? receipt.passId : null, error }); };
     if (!receipt || receipt.schema !== 'mnemosyne-consolidation-receipt-v1') { fail('unknown receipt schema'); previous = null; continue; }
     if (receiptDigest(receipt) !== receipt.digest) fail('digest does not match the receipt');
@@ -543,7 +556,11 @@ export function verifyConsolidationChain(memory: LocalMemory, options: { pinnedK
         undone.add(receipt.rollbackOf);
       }
     }
+    if (receipt.digest === expectedHead) checkpointed = true;
     previous = receipt.digest;
+  }
+  if (expectedHead !== undefined && !checkpointed) {
+    errors.push({ sequence: last, passId: null, error: 'expected head is not in the chain: receipts up to it were deleted (tail truncation) or replaced' });
   }
   return { ok: errors.length === 0, receipts: count, head: previous, keyChanges, errors };
 }
