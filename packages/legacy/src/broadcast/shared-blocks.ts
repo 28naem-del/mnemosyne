@@ -12,6 +12,7 @@
  */
 
 import { DEFAULT_COLLECTIONS } from "../core/types.js";
+import { assertQdrantWritten } from "../core/http.js";
 
 export type SharedBlock = {
   name: string;
@@ -129,10 +130,11 @@ export class SharedBlockManager {
       metadata: { ...(metadata || {}), block_history_writer: this.agentId },
     };
 
-    await this.qdrantRequest(`/collections/${this.collection}/points`, {
+    const path = `/collections/${this.collection}/points`;
+    assertQdrantWritten(await this.qdrantRequest(path, {
       method: "PUT",
       body: JSON.stringify({ wait: true, points: [{ id, vector: embedVector, payload }] }),
-    });
+    }), "PUT", path);
 
     return {
       name,
@@ -151,14 +153,15 @@ export class SharedBlockManager {
   async delete(name: string): Promise<boolean> {
     const id = await this.blockNameToId(name);
     try {
-      await this.qdrantRequest(`/collections/${this.collection}/points/payload`, {
+      const path = `/collections/${this.collection}/points/payload`;
+      assertQdrantWritten(await this.qdrantRequest(path, {
         method: "POST",
         body: JSON.stringify({
           wait: true,
           points: [id],
           payload: { deleted: true, updated_at: new Date().toISOString() },
         }),
-      });
+      }), "POST", path);
       return true;
     } catch {
       return false;

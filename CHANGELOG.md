@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `packages/legacy`: five Qdrant helpers that write with plain `fetch` reported success when Qdrant answered with an error status. `SharedBlockManager.set` returned the new block and `delete` returned `true`, `applyCorroboration` returned `true`, `storeInsights` counted the insight, and `SkillLibrary.store` and `incrementExecution` resolved. Each write now checks the status: `set`, `store` and `incrementExecution` reject with `QdrantHttpError` (method, path and status only; no response body), `delete` and `applyCorroboration` return `false`, and `storeInsights` does not count the failed write. The helpers that already checked `res.ok`, and the `qdrantRequest` path used by `createMnemosyne`, are unchanged. Writes the code marks non-fatal (the user-model, dream-report and agent-profile caches, and neutral feedback) still swallow failures, as before.
 - `importEmbeddings` checked only the byte length of a packed float32 vector, so a vector holding NaN, an infinity or only zeros was stored. Dense search then threw on that row, and re-embedding never replaced it because its source hash still matched. Such a vector is now rejected, with nothing written. A stored row that cannot be decoded (for example one written before this check) is skipped by exact, sqlite-vec and hnsw search instead of failing the query, and is marked so the next recall re-embeds it.
 
 ### Security

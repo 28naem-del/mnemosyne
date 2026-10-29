@@ -12,6 +12,16 @@ export class QdrantHttpError extends Error {
   }
 }
 
+/**
+ * For a write sent with plain `fetch`: Qdrant answers a failed write with a
+ * non-2xx status, not a rejected promise, so a caller that only awaited the
+ * request would report a write that never happened.
+ */
+export function assertQdrantWritten(response: Response, method: string, path: string): Response {
+  if (!response.ok) throw new QdrantHttpError(response.status, method, path);
+  return response;
+}
+
 export async function qdrantRequest(
   baseUrl: string,
   path: string,

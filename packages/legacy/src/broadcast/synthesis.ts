@@ -15,6 +15,7 @@
 import { createHash } from "node:crypto";
 import type { MemCell } from "../core/types.js";
 import { DEFAULT_COLLECTIONS } from "../core/types.js";
+import { assertQdrantWritten } from "../core/http.js";
 import type { FalkorDBClient } from "../graph/falkordb.js";
 
 // ============================================================================
@@ -541,11 +542,12 @@ export async function storeInsights(
         },
       };
 
-      await fetch(`${qdrantUrl}/collections/${DEFAULT_COLLECTIONS.SHARED}/points`, {
+      const path = `/collections/${DEFAULT_COLLECTIONS.SHARED}/points`;
+      assertQdrantWritten(await fetch(`${qdrantUrl}${path}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wait: true, points: [{ id, vector, payload }] }),
-      });
+      }), "PUT", path);
       stored++;
     } catch {
       // Non-fatal: skip individual insight on error
