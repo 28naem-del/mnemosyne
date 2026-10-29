@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "mnemosy": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y", "-p", "mnemosy-ai@3.0.0-rc.3", "mnemosy", "mcp",
+        "--db", "${PLUGIN_DATA}/memory.sqlite",
+        "--workspace", "hermes", "--agent", "hermes"
+      ],
+      "cwd": "${PLUGIN_DATA}"
+    }
+  }
+}
