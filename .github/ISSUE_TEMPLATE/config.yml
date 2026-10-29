@@ -1,6 +1,10 @@
 blank_issues_enabled: true
 
 contact_links:
+  - name: Questions and ideas
+    url: https://github.com/28naem-del/mnemosyne/discussions
+    about: Ask how to use Mnemosyne or share what you built. Use issues for reproducible bugs.
+
   - name: Documentation and getting started
     url: https://mnemosy.ai/docs/
     about: Find the supported interfaces, examples, migration paths and operational limits.
