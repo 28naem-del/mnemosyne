@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `AdaptiveContext.build` ran a custom `tokenCounter` inside the database transaction that reads the context evidence. A `forget` made from inside the counter was therefore rolled back when the build then failed, which it does when a selected source disappears, and the erased text stayed stored. The counter now runs outside that transaction, so a deletion it makes commits on its own; the builder still revalidates every selected source afterwards and rejects a packet whose evidence changed. `MemoryBridge` already counted outside its transaction.
 - `startMemoryHttp` charged every request to its server-wide budget before checking the origin or the token. With `allowRemote`, about 1,000 unauthenticated requests a minute made authorized clients receive 429 until the minute ended; a principal over its own `requestsPerMinute` could do the same to other principals. The server-wide budget is now charged only after authentication and the principal's own budget. Requests without a valid token (the inspector shell, failed authentication, rejected origins) have a separate budget of 60 a minute per remote address and 1,000 a minute in total. The default loopback binding was affected only by local clients.
 
 ### Development
