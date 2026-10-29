@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mnemosy-ai",
-  "version": "3.0.0-rc.3",
+  "version": "3.0.0-rc.4",
   "description": "Mnemosyne (npm mnemosy-ai): evidence-tracked local memory over MCP. One SQLite file per Hermes profile; corrections retire the memories that depended on them.",
   "keywords": ["memory", "mcp", "local-first", "sqlite"],
   "author": {

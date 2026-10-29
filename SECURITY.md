@@ -1,6 +1,6 @@
 # Security policy
 
-Mnemosyne 2.0.0 is the stable release of the version 2 line (npm `latest`); 3.0.0-rc.3 is the newest pre-release (npm `next`) and a breaking release. Review the [version 2](docs/MIGRATION-v2.md) and [version 3](docs/MIGRATION-v3.md) migration notes before upgrading existing applications. Report security issues affecting this release or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
+Mnemosyne 2.0.0 is the stable release of the version 2 line (npm `latest`); 3.0.0-rc.4 is the newest pre-release (npm `next`) and a breaking release. Review the [version 2](docs/MIGRATION-v2.md) and [version 3](docs/MIGRATION-v3.md) migration notes before upgrading existing applications. Report security issues affecting this release or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
 
 ## Report a vulnerability privately
 
@@ -16,7 +16,7 @@ Memories are fallible reference data. Stored instructions do not authorize comma
 
 ## Storage, backups and erasure
 
-The local database and whole-database backups are **plaintext**. Anyone able to read them can access their contents, including private records and multiple workspaces. Protect storage permissions and use deployment-level encryption where required. Backup checksums and SQLite integrity checks detect corruption; they are not signatures, encryption or sender authentication. Restore goes to a new path and does not perform a service cutover.
+The local database and plain whole-database backups are **plaintext** (`--encrypt` bundles are passphrase-encrypted with AES-256-GCM and a scrypt-derived key). Anyone able to read them can access their contents, including private records and multiple workspaces. Protect storage permissions and use deployment-level encryption where required. Backup checksums and SQLite integrity checks detect corruption; they are not signatures, encryption or sender authentication. Restore goes to a new path and does not perform a service cutover.
 
 Local forgetting removes covered live content, correction history and dependent payloads, and uses tombstones to block replay of known source identities. It cannot erase old exports, backups, copied prompts, external logs, swap or physical storage remnants. Restoring an older backup cannot contain tombstones created after that backup. Maintain an appropriate recovery and deletion process. See [operations](docs/OPERATIONS.md).
 

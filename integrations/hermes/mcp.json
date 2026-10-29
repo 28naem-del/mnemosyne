@@ -5,7 +5,7 @@
       "type": "stdio",
       "command": "npx",
       "args": [
-        "-y", "-p", "mnemosy-ai@3.0.0-rc.3", "mnemosy", "mcp",
+        "-y", "-p", "mnemosy-ai@3.0.0-rc.4", "mnemosy", "mcp",
         "--db", "${PLUGIN_DATA}/memory.sqlite",
         "--workspace", "hermes", "--agent", "hermes"
       ],
