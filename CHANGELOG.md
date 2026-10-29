@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `AdaptiveContext.build` ran a custom `tokenCounter` inside the database transaction that reads the context evidence. A `forget` made from inside the counter was therefore rolled back when the build then failed, which it does when a selected source disappears, and the erased text stayed stored. The counter now runs outside that transaction, so a deletion it makes commits on its own; the builder still revalidates every selected source afterwards and rejects a packet whose evidence changed. `MemoryBridge` already counted outside its transaction.
 - Model setup (`npm run setup:embedder`, `npm run setup:reranker`, `fetchBundledModel`, `fetchBundledReranker`) staged each download at the fixed name `<file>.partial` and wrote it with a call that follows symlinks, then changed the target's mode by path. Another local user who could write to the model cache directory could plant a symlink there and have the download overwrite a file of the user running setup. Setup now stages under an unpredictable name created exclusively (`O_CREAT|O_EXCL`, plus `O_NOFOLLOW` where available), sets the mode on the open file, and renames into place, which replaces a symlink at the target rather than writing through it. A private cache directory, the default, was not exposed.
 
 ### Development
