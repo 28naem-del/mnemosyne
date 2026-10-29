@@ -1,0 +1,479 @@
+name: benchmark-matched
+
+# Re-runs the matched retrieval benchmark (`npm run benchmark:matched`) on GitHub's
+# runners so anyone can reproduce the published comparison and read its logs.
+# Nothing here changes a code path or a result: the workflow only provisions the
+# pinned models, corpora and competitor SDKs and calls the same CLI as a local run.
+#
+# Shape: `plan` validates the inputs and expands them into one job per corpus x K
+# (LongMemEval-S is further split into haystack shards with --corpus-offset /
+# --max-corpora, because the full 500 haystacks do not fit one 6 h job), `prepare`
+# fills the model and corpus caches once, `bench` runs each slice, and `assemble`
+# merges the shards with the harness's own `--merge`, writes a summary table and a
+# SHA-256 manifest, and uploads everything as one artifact.
+#
+# Latency (p50/p95) is attributable only together with the machine each job ran on;
+# every bench job logs and stores its runner's CPU model, core count and memory.
+
+on:
+  workflow_dispatch:
+    inputs:
+      corpus:
+        description: Corpus to score
+        type: choice
+        options: [locomo, longmemeval_s, both]
+        default: locomo
+      modes:
+        description: Mnemosyne modes, comma list of lexical, bm25, hybrid, hybrid+rerank (selects which models are provisioned; lexical and bm25 rows always run)
+        type: string
+        default: bm25,hybrid,hybrid+rerank
+      competitors:
+        description: Competitors (mem0 = Mem0 OSS 3.1.8, infer:false, our bge-small embedder injected)
+        type: choice
+        options: [none, mem0]
+        default: none
+      split:
+        description: Question split, passed to the harness --split flag when the harness supports it
+        type: choice
+        options: [all, tune, holdout]
+        default: all
+      top_k:
+        description: Comma list of K values, one run per K
+        type: string
+        default: '10'
+      max_questions:
+        description: Optional question cap per job (smoke runs); empty = every question
+        type: string
+        default: ''
+      lme_shard_size:
+        description: LongMemEval-S haystacks per job (0 = one job); ignored when max_questions is set
+        type: string
+        default: '20'
+      ref:
+        description: Free-text note recorded in the run manifest (e.g. why this run was dispatched)
+        type: string
+        default: ''
+
+run-name: >-
+  benchmark-matched ${{ inputs.corpus }} modes=${{ inputs.modes }} competitors=${{ inputs.competitors }}
+  split=${{ inputs.split }} k=${{ inputs.top_k }}${{ inputs.max_questions != '' && format(' maxq={0}', inputs.max_questions) || '' }}
+
+permissions:
+  contents: read
+
+# Two dispatches queue instead of overlapping, so they never share runner capacity.
+concurrency:
+  group: benchmark-matched
+  cancel-in-progress: false
+
+env:
+  # LongMemEval-S has 500 haystacks (one per question); used only to cut shards.
+  LME_HAYSTACKS: '500'
+  LOCOMO_SHA256: 79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4
+  LME_SHA256: d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442
+  LME_URL: https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      embedder: ${{ steps.plan.outputs.embedder }}
+      reranker: ${{ steps.plan.outputs.reranker }}
+      needs_locomo: ${{ steps.plan.outputs.needs_locomo }}
+      needs_lme: ${{ steps.plan.outputs.needs_lme }}
+    steps:
+      - name: Validate inputs and expand the job matrix
+        id: plan
+        env:
+          IN_CORPUS: ${{ inputs.corpus }}
+          IN_MODES: ${{ inputs.modes }}
+          IN_COMPETITORS: ${{ inputs.competitors }}
+          IN_SPLIT: ${{ inputs.split }}
+          IN_TOP_K: ${{ inputs.top_k }}
+          IN_MAX_QUESTIONS: ${{ inputs.max_questions }}
+          IN_SHARD: ${{ inputs.lme_shard_size }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const env = process.env;
+          const fail = message => { console.error(`::error::${message}`); process.exit(1); };
+          const modes = env.IN_MODES.split(',').map(m => m.trim()).filter(Boolean);
+          const known = ['lexical', 'bm25', 'hybrid', 'hybrid+rerank'];
+          if (!modes.length || modes.some(m => !known.includes(m))) fail(`modes must be a comma list of ${known.join(', ')}; got "${env.IN_MODES}"`);
+          const ks = env.IN_TOP_K.split(',').map(k => k.trim()).filter(Boolean);
+          if (!ks.length || ks.some(k => !/^\d+$/.test(k) || Number(k) < 1 || Number(k) > 100)) fail(`top_k must be a comma list of integers 1..100; got "${env.IN_TOP_K}"`);
+          if (new Set(ks).size !== ks.length) fail('top_k has duplicates');
+          const maxQ = env.IN_MAX_QUESTIONS.trim();
+          if (maxQ && (!/^\d+$/.test(maxQ) || Number(maxQ) < 1)) fail(`max_questions must be a positive integer or empty; got "${maxQ}"`);
+          const shard = env.IN_SHARD.trim();
+          if (!/^\d+$/.test(shard)) fail(`lme_shard_size must be a non-negative integer; got "${shard}"`);
+          const total = Number(env.LME_HAYSTACKS);
+          const corpora = env.IN_CORPUS === 'both' ? ['locomo', 'longmemeval'] : [env.IN_CORPUS === 'longmemeval_s' ? 'longmemeval' : env.IN_CORPUS];
+          const include = [];
+          for (const corpus of corpora) for (const k of ks) {
+            const size = Number(shard);
+            if (corpus === 'longmemeval' && !maxQ && size > 0 && size < total) {
+              for (let offset = 0; offset < total; offset += size)
+                include.push({ corpus, k, offset: String(offset), count: String(Math.min(size, total - offset)), name: `${corpus}-k${k}-part${String(offset).padStart(3, '0')}` });
+            } else include.push({ corpus, k, offset: '', count: '', name: `${corpus}-k${k}` });
+          }
+          if (include.length > 256) fail(`${include.length} jobs exceed the 256-job matrix limit; raise lme_shard_size`);
+          // Mem0 is run with OUR embedder injected, so it needs the embedder even
+          // when no hybrid row was asked for.
+          const embedder = modes.some(m => m.startsWith('hybrid')) || env.IN_COMPETITORS === 'mem0';
+          const reranker = modes.includes('hybrid+rerank');
+          const out = { matrix: JSON.stringify({ include }), embedder: String(embedder), reranker: String(reranker),
+            needs_locomo: String(corpora.includes('locomo')), needs_lme: String(corpora.includes('longmemeval')) };
+          for (const [key, value] of Object.entries(out)) appendFileSync(env.GITHUB_OUTPUT, `${key}=${value}\n`);
+          console.log(JSON.stringify({ ...out, matrix: include }, null, 2));
+          NODE
+
+  prepare:
+    name: Fill model and corpus caches
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Restore the model cache
+        if: needs.plan.outputs.embedder == 'true'
+        id: models
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/mnemosyne-models
+          key: benchmark-models-${{ hashFiles('src/local/embedding/model-assets.ts', 'src/local/reranking/model-assets.ts') }}
+
+      - name: Fetch and verify the pinned local models
+        if: needs.plan.outputs.embedder == 'true'
+        env:
+          MNEMOSYNE_MODEL_CACHE: ${{ runner.temp }}/mnemosyne-models
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          npm run setup:embedder
+          npm run setup:reranker
+
+      - name: Restore the LoCoMo cache
+        if: needs.plan.outputs.needs_locomo == 'true'
+        uses: actions/cache@v6
+        with:
+          path: benchmarks/data/locomo10.json
+          key: benchmark-corpus-locomo-${{ env.LOCOMO_SHA256 }}
+
+      - name: Fetch and verify LoCoMo
+        if: needs.plan.outputs.needs_locomo == 'true'
+        run: |
+          [ -f benchmarks/data/locomo10.json ] || npm run benchmark:fetch -- --corpus locomo
+          echo "$LOCOMO_SHA256  benchmarks/data/locomo10.json" | sha256sum -c -
+
+      - name: Restore the LongMemEval-S cache
+        if: needs.plan.outputs.needs_lme == 'true'
+        uses: actions/cache@v6
+        with:
+          path: benchmarks/data/longmemeval_s_cleaned.json
+          key: benchmark-corpus-longmemeval-s-${{ env.LME_SHA256 }}
+
+      - name: Fetch and verify LongMemEval-S
+        if: needs.plan.outputs.needs_lme == 'true'
+        run: |
+          mkdir -p benchmarks/data
+          [ -f benchmarks/data/longmemeval_s_cleaned.json ] || curl -fsSL --retry 3 -o benchmarks/data/longmemeval_s_cleaned.json "$LME_URL"
+          echo "$LME_SHA256  benchmarks/data/longmemeval_s_cleaned.json" | sha256sum -c -
+
+  bench:
+    name: ${{ matrix.name }}
+    needs: [plan, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Runner machine
+        run: |
+          # The runner context is not available in job-level env, so paths are exported here.
+          OUT="$RUNNER_TEMP/matched-out"
+          { echo "OUT=$OUT"; echo "MNEMOSYNE_MODEL_CACHE=$RUNNER_TEMP/mnemosyne-models"; } >> "$GITHUB_ENV"
+          mkdir -p "$OUT"
+          echo "nproc: $(nproc)"
+          cat /proc/cpuinfo | grep 'model name' | head -1
+          free -h
+          lscpu
+          uname -a
+          echo "image: ${ImageOS:-unknown} ${ImageVersion:-unknown}  runner: $RUNNER_NAME"
+          jq -n --arg job "${{ matrix.name }}" --arg nproc "$(nproc)" \
+            --arg cpu "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')" \
+            --arg mem "$(free -b | awk '/^Mem:/{print $2}')" --arg kernel "$(uname -r)" \
+            --arg image "${ImageOS:-unknown} ${ImageVersion:-unknown}" --arg runner "$RUNNER_NAME" \
+            '{job:$job, nproc:($nproc|tonumber), cpu:$cpu, memBytes:($mem|tonumber), kernel:$kernel, image:$image, runner:$runner}' \
+            > "$OUT/machine-${{ matrix.name }}.json"
+          cat "$OUT/machine-${{ matrix.name }}.json"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies and build
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Restore the model cache
+        if: needs.plan.outputs.embedder == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/mnemosyne-models
+          key: benchmark-models-${{ hashFiles('src/local/embedding/model-assets.ts', 'src/local/reranking/model-assets.ts') }}
+
+      - name: Verify the pinned embedder
+        if: needs.plan.outputs.embedder == 'true'
+        run: npm run setup:embedder
+
+      - name: Verify the pinned reranker
+        if: needs.plan.outputs.reranker == 'true'
+        run: npm run setup:reranker
+
+      - name: Install the pinned competitor SDKs
+        if: inputs.competitors == 'mem0'
+        run: |
+          python3 --version
+          npm run benchmark:matched:install
+          node -p "'mem0ai ' + require('./benchmarks/competitors/node_modules/mem0ai/package.json').version"
+
+      - name: Restore and verify LoCoMo
+        if: matrix.corpus == 'locomo'
+        uses: actions/cache/restore@v6
+        with:
+          path: benchmarks/data/locomo10.json
+          key: benchmark-corpus-locomo-${{ env.LOCOMO_SHA256 }}
+          fail-on-cache-miss: true
+
+      - name: Restore LongMemEval-S
+        if: matrix.corpus == 'longmemeval'
+        uses: actions/cache/restore@v6
+        with:
+          path: benchmarks/data/longmemeval_s_cleaned.json
+          key: benchmark-corpus-longmemeval-s-${{ env.LME_SHA256 }}
+          fail-on-cache-miss: true
+
+      - name: Verify the corpus digest
+        env:
+          CORPUS: ${{ matrix.corpus }}
+        run: |
+          if [ "$CORPUS" = locomo ]; then echo "$LOCOMO_SHA256  benchmarks/data/locomo10.json" | sha256sum -c -
+          else echo "$LME_SHA256  benchmarks/data/longmemeval_s_cleaned.json" | sha256sum -c -; fi
+
+      - name: Run the matched benchmark
+        env:
+          CORPUS: ${{ matrix.corpus }}
+          TOP_K: ${{ matrix.k }}
+          OFFSET: ${{ matrix.offset }}
+          COUNT: ${{ matrix.count }}
+          NAME: ${{ matrix.name }}
+          COMPETITORS: ${{ inputs.competitors }}
+          SPLIT: ${{ inputs.split }}
+          MAX_QUESTIONS: ${{ inputs.max_questions }}
+          RERANKER: ${{ needs.plan.outputs.reranker }}
+          EMBEDDER: ${{ needs.plan.outputs.embedder }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          args=(--corpus "$CORPUS" --top-k "$TOP_K" --out "$OUT")
+          if [ "$COMPETITORS" = mem0 ]; then args+=(--systems mem0-oss); else args+=(--systems none); fi
+          if [ "$RERANKER" != true ]; then args+=(--no-rerank); fi
+          if [ -n "$OFFSET" ]; then args+=(--corpus-offset "$OFFSET" --max-corpora "$COUNT"); fi
+          if [ -n "$MAX_QUESTIONS" ]; then args+=(--max-questions "$MAX_QUESTIONS"); fi
+          if node dist/evaluation/matched-benchmark.js --help | grep -q -- '--split'; then
+            args+=(--split "$SPLIT")
+          elif [ "$SPLIT" != all ]; then
+            # TODO: remove this branch once the harness on main accepts --split.
+            echo "::error::split=$SPLIT requested but this harness has no --split flag; refusing to label a full-set run as $SPLIT"
+            exit 1
+          fi
+          if [ "$EMBEDDER" != true ]; then
+            # Zero-model rows only: hide any cached model so the run cannot pick one up.
+            export MNEMOSYNE_MODEL_CACHE="$RUNNER_TEMP/no-models"
+          fi
+          echo "node dist/evaluation/matched-benchmark.js ${args[*]}"
+          node dist/evaluation/matched-benchmark.js "${args[@]}" 2>&1 | tee "$OUT/log-$NAME.txt"
+
+      - name: Require every requested competitor to have been scored
+        if: inputs.competitors == 'mem0'
+        run: |
+          node --input-type=module - "$OUT" <<'NODE'
+          import { readdirSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const dir = process.argv[2];
+          const files = readdirSync(dir).filter(name => name.endsWith('.json') && !name.startsWith('machine-'));
+          if (!files.length) { console.error('::error::no report written'); process.exit(1); }
+          for (const name of files) {
+            const report = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+            const mem0 = (report.systems ?? []).find(system => system.id === 'mem0-oss');
+            if (!mem0 || mem0.status !== 'scored') { console.error(`::error::${name}: mem0-oss not scored — ${mem0?.reason ?? JSON.stringify(report.matched?.outcomes ?? null)}`); process.exit(1); }
+            console.log(`${name}: mem0-oss scored, mode=${mem0.mode}, revision=${mem0.revision}`);
+          }
+          NODE
+
+      - name: Upload this slice
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: part-${{ matrix.name }}
+          path: ${{ runner.temp }}/matched-out/
+          if-no-files-found: error
+          retention-days: 90
+
+  assemble:
+    name: Merge, summarize and checksum
+    needs: [plan, bench]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Paths
+        run: |
+          { echo "PARTS=$RUNNER_TEMP/parts"; echo "FINAL=$RUNNER_TEMP/final"; } >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies and build
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Download every slice
+        uses: actions/download-artifact@v8
+        with:
+          pattern: part-*
+          path: ${{ runner.temp }}/parts
+
+      - name: Merge shards and write the summary
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+          BENCH_RESULT: ${{ needs.bench.result }}
+          IN_CORPUS: ${{ inputs.corpus }}
+          IN_MODES: ${{ inputs.modes }}
+          IN_COMPETITORS: ${{ inputs.competitors }}
+          IN_SPLIT: ${{ inputs.split }}
+          IN_TOP_K: ${{ inputs.top_k }}
+          IN_MAX_QUESTIONS: ${{ inputs.max_questions }}
+          IN_SHARD: ${{ inputs.lme_shard_size }}
+          IN_REF: ${{ inputs.ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const env = process.env;
+          const { include } = JSON.parse(env.MATRIX);
+          mkdirSync(join(env.FINAL, 'parts'), { recursive: true });
+          mkdirSync(join(env.FINAL, 'machines'), { recursive: true });
+          mkdirSync(join(env.FINAL, 'logs'), { recursive: true });
+          const problems = [];
+          const machines = {};
+          const partFiles = {};
+          for (const entry of include) {
+            const dir = join(env.PARTS, `part-${entry.name}`);
+            if (!existsSync(dir)) { problems.push(`${entry.name}: no artifact`); continue; }
+            for (const name of readdirSync(dir)) {
+              const from = join(dir, name);
+              if (name.startsWith('machine-')) { copyFileSync(from, join(env.FINAL, 'machines', name)); machines[entry.name] = JSON.parse(readFileSync(from, 'utf8')); }
+              else if (name.startsWith('log-')) copyFileSync(from, join(env.FINAL, 'logs', name));
+              else if (name.endsWith('.json')) { copyFileSync(from, join(env.FINAL, 'parts', name)); (partFiles[`${entry.corpus}|${entry.k}`] ??= []).push({ entry, name, from }); }
+            }
+          }
+          const reports = [];
+          const groups = [...new Set(include.map(entry => `${entry.corpus}|${entry.k}`))];
+          for (const group of groups) {
+            const [corpus, k] = group.split('|');
+            const expected = include.filter(entry => `${entry.corpus}|${entry.k}` === group);
+            const files = partFiles[group] ?? [];
+            if (files.length !== expected.length) problems.push(`${corpus} K=${k}: ${files.length} of ${expected.length} slices wrote a report`);
+            if (!files.length) continue;
+            let target;
+            if (expected.length === 1 && !expected[0].offset) {
+              target = join(env.FINAL, files[0].name);
+              copyFileSync(files[0].from, target);
+            } else {
+              const tmp = mkdtempSync(join(env.RUNNER_TEMP, 'merge-'));
+              for (const file of files) copyFileSync(file.from, join(tmp, file.name));
+              const args = ['dist/evaluation/matched-benchmark.js', '--merge', tmp, '--corpus', corpus, '--top-k', k];
+              console.log(`node ${args.join(' ')}`);
+              console.log(execFileSync('node', args, { encoding: 'utf8' }));
+              const merged = readdirSync(tmp).filter(name => name.endsWith('.json') && !/-part\d+\.json$/.test(name));
+              if (merged.length !== 1) { problems.push(`${corpus} K=${k}: merge produced ${merged.length} files`); continue; }
+              target = join(env.FINAL, merged[0]);
+              copyFileSync(join(tmp, merged[0]), target);
+            }
+            reports.push({ corpus, k: Number(k), file: target.split('/').pop(), report: JSON.parse(readFileSync(target, 'utf8')) });
+          }
+          const order = ['lexical', 'bm25', 'hybrid-norerank', 'hybrid'];
+          const labels = { lexical: 'lexical (zero-model overlap)', bm25: 'bm25 (zero-model)', 'hybrid-norerank': 'hybrid (dense+BM25 RRF, no rerank)', hybrid: 'hybrid+rerank (cross-encoder top-50)' };
+          const pct = v => v === null || v === undefined ? 'n/a' : (v * 100).toFixed(2);
+          const ms = v => v === null || v === undefined ? 'n/a' : v.toFixed(1);
+          const lines = ['# benchmark-matched run', '', `- run: ${env.RUN_URL}`, `- commit: ${env.GITHUB_SHA} (${env.GITHUB_REF})`,
+            `- inputs: corpus=${env.IN_CORPUS} modes=${env.IN_MODES} competitors=${env.IN_COMPETITORS} split=${env.IN_SPLIT} top_k=${env.IN_TOP_K} max_questions=${env.IN_MAX_QUESTIONS || '(all)'} lme_shard_size=${env.IN_SHARD}`,
+            `- ref note: ${env.IN_REF || '(none)'}`, `- bench jobs: ${env.BENCH_RESULT}`, ''];
+          for (const { corpus, k, file, report } of reports.sort((a, b) => a.corpus.localeCompare(b.corpus) || a.k - b.k)) {
+            const annotated = report.summaries.bm25?.annotatedQuestions ?? 'n/a';
+            lines.push(`## ${report.dataset.dataset} K=${k} — ${report.dataset.questions} questions, ${report.dataset.corpora} corpora, ${annotated} with positive evidence, complete=${report.complete}`, '',
+              `file \`${file}\`, implementation ${report.runtime.implementationSha256}, ${report.runtime.node} ${report.runtime.platform}`, '',
+              `| row | recall@${k} | anyHit | allHit | MRR | p50 ms | p95 ms | questions | completed |`, '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+            const rows = [...order.filter(c => report.summaries[c]).map(c => [labels[c], report.summaries[c]]),
+              ...(report.systems ?? []).map(s => [`${s.id} [${s.mode}]${s.status === 'scored' ? '' : ` NOT RUN: ${s.reason ?? s.status}`}`, report.summaries[`system:${s.id}`]])];
+            for (const [label, s] of rows) lines.push(s ? `| ${label} | ${pct(s.meanRecall)} | ${pct(s.anyHitRate)} | ${pct(s.allHitRate)} | ${(s.mrr ?? 0).toFixed(4)} | ${ms(s.p50RetrievalMs)} | ${ms(s.p95RetrievalMs)} | ${s.questions} | ${s.completed} |` : `| ${label} | not run | | | | | | | |`);
+            lines.push('');
+          }
+          lines.push('## Machines', '', '| job | cpu | nproc | memory GiB | image |', '| --- | --- | ---: | ---: | --- |');
+          for (const [job, m] of Object.entries(machines).sort()) lines.push(`| ${job} | ${m.cpu} | ${m.nproc} | ${(m.memBytes / 2 ** 30).toFixed(1)} | ${m.image} |`);
+          if (problems.length) lines.push('', '## Problems', '', ...problems.map(p => `- ${p}`));
+          writeFileSync(join(env.FINAL, 'SUMMARY.md'), `${lines.join('\n')}\n`);
+          writeFileSync(join(env.FINAL, 'RUN.json'), `${JSON.stringify({ runUrl: env.RUN_URL, commit: env.GITHUB_SHA, ref: env.GITHUB_REF, note: env.IN_REF,
+            inputs: { corpus: env.IN_CORPUS, modes: env.IN_MODES, competitors: env.IN_COMPETITORS, split: env.IN_SPLIT, topK: env.IN_TOP_K, maxQuestions: env.IN_MAX_QUESTIONS, lmeShardSize: env.IN_SHARD },
+            benchJobs: env.BENCH_RESULT, matrix: include, problems }, null, 2)}\n`);
+          appendFileSync(env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          console.log(lines.join('\n'));
+          if (problems.length || env.BENCH_RESULT !== 'success') { console.error(`::error::incomplete run: ${problems.join('; ') || `bench jobs ${env.BENCH_RESULT}`}`); process.exitCode = 1; }
+          NODE
+
+      - name: SHA-256 manifest
+        if: always()
+        run: |
+          cd "$FINAL"
+          find . -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/MANIFEST.sha256"
+          mv "$RUNNER_TEMP/MANIFEST.sha256" MANIFEST.sha256
+          cat MANIFEST.sha256
+
+      - name: Upload the assembled results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-matched-${{ github.run_id }}
+          path: ${{ runner.temp }}/final/
+          if-no-files-found: error
+          retention-days: 90
