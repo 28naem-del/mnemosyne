@@ -1867,19 +1867,24 @@ export class LocalMemory {
    * a too-short shortlist would silently be a different answer than the exact
    * scan's. When it still comes up short the shortlist widens, and widening
    * terminates at the index size — where the shortlist IS the whole index, so the
-   * result is exactly what the exact scan returns. Returns null only when there
-   * is nothing indexed yet, which is the caller's cue to scan.
+   * result is exactly what the exact scan returns. Returns null when there is
+   * nothing indexed yet, or when the shortlist would have to grow past what the
+   * backend can return in one search (`maxK`, 4096 for sqlite-vec): both are the
+   * caller's cue to scan, and the scan returns what the full shortlist would have.
    */
   #annVectorScan(index: DenseIndex, scan: DenseScan): ScoredId[] | null {
     const size = index.size();
     if (!size) return null;
     const query = Float32Array.from(scan.query);
-    let depth = Math.min(size, Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64));
+    const limit = Math.min(size, index.maxK ?? size);
+    let depth = Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64);
     for (;;) {
       this.#assertOpen();
+      if (depth > limit && limit < size) return null;
+      depth = Math.min(depth, size);
       const accepted = this.#authorizeLabels(index.search(query, depth), scan);
       if (accepted.length >= scan.maxCandidates || depth >= size) return accepted.slice(0, scan.maxCandidates);
-      depth = Math.min(size, depth * DENSE_WIDENING);
+      depth *= DENSE_WIDENING;
     }
   }
 
