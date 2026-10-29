@@ -1,13 +1,13 @@
 # Public claims and their evidence
 
-This page lists each public claim made in the README, `llms.txt`, the site and these docs. For each one it gives the wording that the code supports, the conditions that come with it, and the file in this repository that backs it. Other pages may shorten a claim, but they must not go beyond what this page states. A claim that is not listed here should not appear on a public surface.
+This page lists each public claim made in the README, `llms.txt`, the site and these docs. For each one it gives the wording that the code supports, the conditions that come with it, and the file in this repository that backs it. Other pages may shorten a claim, but they must not go beyond what this page states. Benchmark and measured claims not listed here should not appear on a public surface.
 
 "Recorded run" means an output saved in this repository. It is not a rerun on your machine.
 
 ## Identity
 
 - **Tagline:** "The next agent starts wiser." The README, the site and both `llms.txt` files use this line and no other.
-- **Name:** this is the TypeScript package `mnemosy-ai` (repository 28naem-del/mnemosyne, site mnemosy.ai). It is a separate project from mnemosyne-oss/mnemosyne (`mnemosyne-memory` on PyPI). Source: [`scripts/public-identity.json`](../scripts/public-identity.json).
+- **Name:** this is the TypeScript package `mnemosy-ai` (repository 28naem-del/mnemosyne, site mnemosy.ai). It is a separate project from mnemosyne-oss/mnemosyne (`mnemosyne-memory` on PyPI). Source: the name note in [README.md](../README.md) and [`.github/ISSUE_TEMPLATE/config.yml`](../.github/ISSUE_TEMPLATE/config.yml); package and site identity in [`scripts/public-identity.json`](../scripts/public-identity.json).
 
 ## Capabilities and their conditions
 
@@ -38,7 +38,7 @@ This page lists each public claim made in the README, `llms.txt`, the site and t
 | Matched comparison with Mem0 OSS (2.0.0) | Retrieval only. It is not a comparison on the 3.0 numbers above. | [COMPARISON.md](../COMPARISON.md) |
 | 1M-record recall p95 139–223 ms (50 ms goal not met) | Synthetic vectors, reranker off. | [`reports/t1-targets/evidence/t12/gate-run1.txt`](../reports/t1-targets/evidence/t12/gate-run1.txt) |
 | Contextual reranking 71.98 % against a 72.80 % gate (not met) | | [`reports/t1-targets/evidence/t13/cmp-ctx-full10.txt`](../reports/t1-targets/evidence/t13/cmp-ctx-full10.txt) |
-| Default retrieval unchanged from rc.1 to rc.2 (LoCoMo, LongMemEval-S recall) | Controls off. Per-question outputs are not committed. | [`reports/retrieval-regression/2026-10-28/summary.json`](../reports/retrieval-regression/2026-10-28/summary.json) |
+| Default retrieval recall unchanged from rc.1 to rc.2 (LoCoMo, LongMemEval-S) | Controls off. Per-question outputs are not committed. | [`reports/retrieval-regression/2026-10-28/summary.json`](../reports/retrieval-regression/2026-10-28/summary.json) |
 | rc.2 latency figures (for example +18.2 % BM25 p50 with the opt-in controls) | Loaded 10-core host. The harness is **not committed**, so these figures cannot be reproduced from this repository. | Protocol stated in [CHANGELOG.md](../CHANGELOG.md) and [BENCHMARKS-TRUST.md](BENCHMARKS-TRUST.md) |
 | Lifecycle diagnostic: 15/16 with compiled context, 13/16 with raw retrieval | Both conditions are stated together. | [`docs/evaluation/reports/evidence-lifecycle-after.json`](evaluation/reports/evidence-lifecycle-after.json) |
 

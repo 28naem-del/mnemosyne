@@ -468,7 +468,7 @@ is the same runner as `npm run poisoning`.
 
 The opt-in precision controls are off in these runs, and neither corpus contains superseded or
 expired records, so the always-on lifecycle prefilter has nothing to drop. These runs confirm
-that the default retrieval path did not move. Each was run before (`84cb6c3`) and after the
+that the default retrieval path's recall did not move. Each was run before (`84cb6c3`) and after the
 precision work, with the same command. The summary with run settings and the per-condition
 values is committed at `reports/retrieval-regression/2026-10-28/summary.json` (see its
 [README](../reports/retrieval-regression/2026-10-28/README.md)); the full per-question outputs
