@@ -33,7 +33,7 @@ body:
     attributes:
       label: Package version or channel
       description: Output of `npm ls mnemosy-ai`, or the channel you installed (`latest` or `next`).
-      placeholder: "3.0.0-rc.2, installed from the next channel"
+      placeholder: "3.0.0-rc.3, installed from the next channel"
 
   - type: textarea
     id: suggestion

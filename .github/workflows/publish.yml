@@ -55,6 +55,44 @@ jobs:
           console.log(`Validated ${pkg.name}@${pkg.version} for npm tag ${tag}`);
           NODE
 
+      # The MCP Registry entry must describe exactly the version published below;
+      # a stale server.json stops the job before anything is published.
+      - name: Check server.json matches the release
+        run: |
+          node -e '
+          const s = require("./server.json"), p = require("./package.json");
+          const pkg = (s.packages || [])[0] || {};
+          const problems = [];
+          if (s.name !== p.mcpName) problems.push(`server.json name ${s.name} != package.json mcpName ${p.mcpName}`);
+          if (s.version !== p.version) problems.push(`server.json version ${s.version} != package.json version ${p.version}`);
+          if (pkg.version !== p.version) problems.push(`server.json packages[0].version ${pkg.version} != package.json version ${p.version}`);
+          if (pkg.identifier !== p.name) problems.push(`server.json packages[0].identifier ${pkg.identifier} != package.json name ${p.name}`);
+          if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
+          console.log(`server.json matches ${p.name}@${p.version} (${p.mcpName})`);
+          '
+
+      # Fetch and verify the MCP Registry tooling before anything is published, so a
+      # tooling failure stops the job before npm and the registry can diverge.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        shell: bash
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.6
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail -sSL -o "$archive" "$base/$archive"
+          curl --fail -sSL -o "$archive.sigstore.json" "$base/$archive.sigstore.json"
+          cosign verify-blob --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "$archive"
+          tar xzf "$archive" mcp-publisher
+          ./mcp-publisher --version
+
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
@@ -101,3 +139,32 @@ jobs:
           PACK_FILE: ${{ steps.package.outputs.filename }}
           NPM_DIST_TAG: ${{ steps.release.outputs.dist-tag }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # MCP Registry publication runs only after the npm publish above succeeded:
+      # the registry checks the mcpName of the published npm version. GitHub OIDC
+      # (id-token: write above) authenticates; no token or PAT is stored or used.
+      - name: Wait for npm to report the release's mcpName
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          expected=$(node -p 'require("./package.json").mcpName')
+          if [ -z "$expected" ] || [ "$expected" = "undefined" ]; then echo "package.json has no mcpName" >&2; exit 1; fi
+          for attempt in 1 2 3 4 5 6; do
+            actual=$(npm view --prefer-online "mnemosy-ai@${version}" mcpName 2>/dev/null || true)
+            if [ "$actual" = "$expected" ]; then
+              echo "npm reports mnemosy-ai@${version} mcpName ${actual}"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/6: npm reports mcpName '${actual}', expected '${expected}'"
+            [ "$attempt" -lt 6 ] && sleep 10
+          done
+          echo "npm did not report mcpName ${expected} for mnemosy-ai@${version}" >&2
+          exit 1
+
+      - name: Publish to the MCP Registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/mcp-publisher" login github-oidc
+          "$RUNNER_TEMP/mcp-publisher" publish

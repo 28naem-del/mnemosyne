@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [3.0.0-rc.3] - 2026-10-29
 
-- `npm run benchmark:matched -- --split tune|holdout|all` scores only the questions in a committed TUNE or HOLDOUT split: LoCoMo by conversation (4 TUNE, 6 HOLDOUT), LongMemEval-S by question, stratified by type (150 TUNE, 350 HOLDOUT), both drawn with seed 20261029. The id lists are in `benchmarks/splits/`, written by `npm run benchmark:splits`, and a test checks that they equal a regeneration and are disjoint and complete. `all`, the default, is the previous behaviour. `benchmarks/PROTOCOL-2026-10.md` fixes the splits, metrics, success bars and reporting rule for the October 2026 retrieval work before any tuning. No benchmark number changed.
+The third 3.0.0 release candidate, published on the `next` channel (`npm install mnemosy-ai@next`, or pin `mnemosy-ai@3.0.0-rc.3`); npm `latest` stays 2.0.0. It carries the fixes, security changes and documentation below on top of rc.2. The benchmark numbers in the rc.2 section were measured on the rc.2 tree.
 
 ### Documentation
 
@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `verifyConsolidationChain` takes an optional `expectedHead`: the `head` of an earlier verification, kept outside the database. Verification fails unless a receipt with that digest is still in the chain, so deleting the last receipts, or all of them, at or before that checkpoint is detected; `prevDigest` links alone cannot see tail truncation. Without it, `ok` means the receipts present are intact, not that none are missing; `docs/CONSOLIDATION-SIGNING.md` now says so in the threat model (audit finding S06).
+- `server.json` describes the package for the official MCP Registry as `io.github.28naem-del/mnemosyne` (npm package `mnemosy-ai`, stdio transport), and `package.json` declares the matching `mcpName`, which the registry checks against the published npm version.
+- `npm run benchmark:matched -- --split tune|holdout|all` scores only the questions in a committed TUNE or HOLDOUT split: LoCoMo by conversation (4 TUNE, 6 HOLDOUT), LongMemEval-S by question, stratified by type (150 TUNE, 350 HOLDOUT), both drawn with seed 20261029. The id lists are in `benchmarks/splits/`, written by `npm run benchmark:splits`, and a test checks that they equal a regeneration and are disjoint and complete. `all`, the default, is the previous behaviour. `benchmarks/PROTOCOL-2026-10.md` fixes the splits, metrics, success bars and reporting rule for the October 2026 retrieval work before any tuning. No benchmark number changed.
 
 ### Changed
 
@@ -63,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/check-env-gated-tests.mjs` (the `posttest` guard) fails when any environment-gated test was skipped, not only when a whole gate ran nothing: one passing test no longer certifies a gate whose other tests were skipped. `MNEMOSYNE_ALLOW_BARE_TEST_ENV=1` still downgrades both cases to a warning (audit finding S15).
 - A `benchmark-matched` GitHub Actions workflow (`workflow_dispatch` only) reruns `npm run benchmark:matched` on `ubuntu-latest`: corpus, Mnemosyne modes, Mem0 (infer:false) or no competitor, split, a list of K values and an optional question cap are inputs. It shards LongMemEval-S by haystack and merges the shards with the harness's `--merge`, logs each runner's CPU, core count and memory, and uploads the raw reports, a summary table and a SHA-256 manifest. No code path or published number changed. See `benchmarks/competitors/README.md`.
 - Builds with TypeScript 7 (`typescript` ^7.0.2, devDependency). Two tests transpiled `src` files into a subprocess fixture through the TypeScript compiler API, which the TypeScript 7 package no longer exports; they now use Node's built-in `stripTypeScriptTypes` (`node:module`), so the fixtures add no dependency. The emitted JavaScript is byte-identical to the TypeScript 6 build; 16 declaration files differ only in quote style and member order, and the published declarations typecheck under both TypeScript 6 and 7.
+- The publish workflow (`.github/workflows/publish.yml`) now also publishes `server.json` to the official MCP Registry through GitHub OIDC, with no stored token. Before anything is published, the job stops when `server.json` `name`, `version` or `packages[0].version` differs from `package.json`, then installs cosign (action pinned by commit SHA) and downloads `mcp-publisher` v1.8.6 and verifies its Sigstore bundle, so a tooling failure aborts before the npm publish. After the npm publish succeeds, it waits (up to six tries, 10 s apart) until npm reports the released version's `mcpName`, then runs `mcp-publisher login github-oidc` and `mcp-publisher publish`.
 - Removed tracked clutter: `.Codex/evals/*` (already ignored) and the unreferenced `scratch/t14/*.mjs` probes; `scratch/` is now ignored.
 - The npm package no longer ships `python/tests`, `site/README.md` or the two raw LongMemEval report JSON files under `docs/evaluation` (6.4 MB); they stay in the repository. The root README entry in `files` is anchored (`/README.md`), because an unanchored entry made npm ship every `README.md` regardless of negations. Packed size 2.0 MB to 1.6 MB, unpacked 12.4 MB to 6.0 MB. `docs/EVALUATION.md` and `docs/evaluation/LONGMEMEVAL-S-BASELINE.md` now link the 499-case raw report by its repository URL; the generated `docs/evaluation/BENCHMARKS.md` still links its reports relatively.
 

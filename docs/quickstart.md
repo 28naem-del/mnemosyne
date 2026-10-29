@@ -9,7 +9,7 @@ The stable version **2.0.0 includes both engines**:
 - **Vector Engine:** use `createMnemosyne` from `mnemosy-ai` 2.x (from 3.0, the separate `mnemosy-ai-legacy` package) with configured external services. Start with the [existing backend example](../packages/legacy/examples/basic-usage.ts) and review the [version 2](MIGRATION-v2.md) and [version 3](MIGRATION-v3.md) migration notes.
 - **Local Engine:** use `createLocalMemory` from `mnemosy-ai/local` for a SQLite store. The demonstrations below and the [local API](api.md) use this engine. The [MemoryAgent adapter](AGENT.md) runs on its local runtime.
 
-They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. From 27 October 2026 the npm `latest` channel is 2.0.0 with both engines; the older 1.x line stays installable as `mnemosy-ai@1`. The newest pre-release, 3.0.0-rc.2 on the `next` channel, ships the Local Engine only; the Vector Engine moves to `mnemosy-ai-legacy`, which is not on npm yet ([version 3 migration notes](MIGRATION-v3.md)).
+They use separate schemas; installing version 2 does not migrate or synchronize an existing store. The optional [gradual migration bridge](BRIDGE.md) can read your previous system while keeping it unchanged. From 27 October 2026 the npm `latest` channel is 2.0.0 with both engines; the older 1.x line stays installable as `mnemosy-ai@1`. The newest pre-release, 3.0.0-rc.3 on the `next` channel, ships the Local Engine only; the Vector Engine moves to `mnemosy-ai-legacy`, which is not on npm yet ([version 3 migration notes](MIGRATION-v3.md)).
 
 ## Install the package
 
@@ -17,12 +17,12 @@ In your Node.js project:
 
 ```sh
 npm install mnemosy-ai           # stable: latest = 2.0.0
-# or, instead: npm install mnemosy-ai@next   (newest pre-release: 3.0.0-rc.2)
+# or, instead: npm install mnemosy-ai@next   (newest pre-release: 3.0.0-rc.3)
 npx --no-install mnemosy demo   # runs the installed version offline
 npx --no-install mnemosy learning-demo
 ```
 
-Unqualified installation follows `latest`, which is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install. `mnemosy-ai@next` installs the 3.0.0-rc.2 pre-release; pin `mnemosy-ai@3.0.0-rc.2` to reproduce it, and read the [version 3 migration notes](MIGRATION-v3.md) before moving an application that uses `createMnemosyne`. Upgrading an existing 1.x application is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
+Unqualified installation follows `latest`, which is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install. `mnemosy-ai@next` installs the 3.0.0-rc.3 pre-release; pin `mnemosy-ai@3.0.0-rc.3` to reproduce it, and read the [version 3 migration notes](MIGRATION-v3.md) before moving an application that uses `createMnemosyne`. Upgrading an existing 1.x application is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
 
 ## Build the tagged source release
 
