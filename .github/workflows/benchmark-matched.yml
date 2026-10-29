@@ -45,8 +45,16 @@ on:
         description: Optional question cap per job (smoke runs); empty = every question
         type: string
         default: ''
+      stride:
+        description: LongMemEval-S only - score every Nth question (harness --stride, after the split, source order); above 1 runs one unsharded job per corpus x K
+        type: string
+        default: '1'
+      engine_opts:
+        description: 'JSON passed to the harness --engine-opts, merged over its Mnemosyne engine config (sections memory, hybrid, embedder, reranker); {} = the harness defaults'
+        type: string
+        default: '{}'
       lme_shard_size:
-        description: LongMemEval-S haystacks per job (0 = one job); ignored when max_questions is set
+        description: LongMemEval-S haystacks per job (0 = one job); ignored when max_questions is set or stride is above 1
         type: string
         default: '20'
       max_parallel:
@@ -60,7 +68,7 @@ on:
 
 run-name: >-
   benchmark-matched ${{ inputs.corpus }} modes=${{ inputs.modes }} competitors=${{ inputs.competitors }}
-  split=${{ inputs.split }} k=${{ inputs.top_k }}${{ inputs.max_questions != '' && format(' maxq={0}', inputs.max_questions) || '' }}
+  split=${{ inputs.split }} k=${{ inputs.top_k }}${{ inputs.max_questions != '' && format(' maxq={0}', inputs.max_questions) || '' }}${{ inputs.stride != '1' && format(' stride={0}', inputs.stride) || '' }}${{ inputs.engine_opts != '{}' && format(' engine={0}', inputs.engine_opts) || '' }}
 
 permissions:
   contents: read
@@ -104,6 +112,8 @@ jobs:
           IN_SPLIT: ${{ inputs.split }}
           IN_TOP_K: ${{ inputs.top_k }}
           IN_MAX_QUESTIONS: ${{ inputs.max_questions }}
+          IN_ENGINE_OPTS: ${{ inputs.engine_opts }}
+          IN_STRIDE: ${{ inputs.stride }}
           IN_SHARD: ${{ inputs.lme_shard_size }}
           IN_MAX_PARALLEL: ${{ inputs.max_parallel }}
         run: |
@@ -119,6 +129,12 @@ jobs:
           if (new Set(ks).size !== ks.length) fail('top_k has duplicates');
           const maxQ = env.IN_MAX_QUESTIONS.trim();
           if (maxQ && (!/^\d+$/.test(maxQ) || Number(maxQ) < 1)) fail(`max_questions must be a positive integer or empty; got "${maxQ}"`);
+          // Shape only; the harness validates every key and value itself before it loads a corpus.
+          let engineOpts;
+          try { engineOpts = JSON.parse(env.IN_ENGINE_OPTS || '{}'); } catch { fail(`engine_opts must be a JSON object; got "${env.IN_ENGINE_OPTS}"`); }
+          if (!engineOpts || typeof engineOpts !== 'object' || Array.isArray(engineOpts)) fail(`engine_opts must be a JSON object; got "${env.IN_ENGINE_OPTS}"`);
+          const stride = (env.IN_STRIDE || '1').trim();
+          if (!/^\d+$/.test(stride) || Number(stride) < 1 || Number(stride) > 1000) fail(`stride must be an integer 1..1000; got "${stride}"`);
           const maxParallel = env.IN_MAX_PARALLEL.trim();
           if (!/^\d+$/.test(maxParallel) || Number(maxParallel) < 1 || Number(maxParallel) > 256) fail(`max_parallel must be an integer 1..256; got "${maxParallel}"`);
           const shard = env.IN_SHARD.trim();
@@ -137,7 +153,8 @@ jobs:
           const include = [];
           for (const corpus of corpora) for (const k of ks) {
             const size = Number(shard);
-            if (corpus === 'longmemeval' && !maxQ && size > 0 && size < total) {
+            // A strided run is one job: shard offsets would count haystacks before the stride.
+            if (corpus === 'longmemeval' && !maxQ && stride === '1' && size > 0 && size < total) {
               for (let offset = 0; offset < total; offset += size)
                 include.push({ corpus, k, offset: String(offset), count: String(Math.min(size, total - offset)), name: `${corpus}-k${k}-part${String(offset).padStart(3, '0')}` });
             } else include.push({ corpus, k, offset: '', count: '', name: `${corpus}-k${k}` });
@@ -312,6 +329,8 @@ jobs:
           COMPETITORS: ${{ inputs.competitors }}
           SPLIT: ${{ inputs.split }}
           MAX_QUESTIONS: ${{ inputs.max_questions }}
+          ENGINE_OPTS: ${{ inputs.engine_opts }}
+          STRIDE: ${{ inputs.stride }}
           RERANKER: ${{ needs.plan.outputs.reranker }}
           EMBEDDER: ${{ needs.plan.outputs.embedder }}
           NODE_OPTIONS: --max-old-space-size=12288
@@ -322,11 +341,21 @@ jobs:
           if [ "$RERANKER" != true ]; then args+=(--no-rerank); fi
           if [ -n "$OFFSET" ]; then args+=(--corpus-offset "$OFFSET" --max-corpora "$COUNT"); fi
           if [ -n "$MAX_QUESTIONS" ]; then args+=(--max-questions "$MAX_QUESTIONS"); fi
+          # Stride is LongMemEval-S only: on LoCoMo the harness would drop whole conversations.
+          if [ "$CORPUS" = longmemeval ] && [ -n "$STRIDE" ] && [ "$STRIDE" != 1 ]; then args+=(--stride "$STRIDE"); fi
           # Older refs have no --split; a non-`all` split there fails instead of mislabelling a full-set run.
           if node dist/evaluation/matched-benchmark.js --help | grep -q -- '--split'; then
             args+=(--split "$SPLIT")
           elif [ "$SPLIT" != all ]; then
             echo "::error::split=$SPLIT requested but this harness has no --split flag; refusing to label a full-set run as $SPLIT"
+            exit 1
+          fi
+          # Same rule for --engine-opts: an older harness would silently run its defaults.
+          if node dist/evaluation/matched-benchmark.js --help | grep -q -- '--engine-opts'; then
+            if [ -z "$ENGINE_OPTS" ]; then ENGINE_OPTS='{}'; fi
+            args+=(--engine-opts "$ENGINE_OPTS")
+          elif [ -n "$ENGINE_OPTS" ] && [ "$ENGINE_OPTS" != '{}' ]; then
+            echo "::error::engine_opts=$ENGINE_OPTS requested but this harness has no --engine-opts flag; refusing to label a default run as tuned"
             exit 1
           fi
           if [ "$EMBEDDER" != true ]; then
@@ -403,6 +432,8 @@ jobs:
           IN_SPLIT: ${{ inputs.split }}
           IN_TOP_K: ${{ inputs.top_k }}
           IN_MAX_QUESTIONS: ${{ inputs.max_questions }}
+          IN_ENGINE_OPTS: ${{ inputs.engine_opts }}
+          IN_STRIDE: ${{ inputs.stride }}
           IN_SHARD: ${{ inputs.lme_shard_size }}
           IN_MAX_PARALLEL: ${{ inputs.max_parallel }}
           IN_REF: ${{ inputs.ref }}
@@ -459,18 +490,19 @@ jobs:
             reports.push({ corpus, k: Number(k), file: target.split('/').pop(), report: JSON.parse(readFileSync(target, 'utf8')) });
           }
           const order = ['lexical', 'bm25', 'hybrid-norerank', 'hybrid'];
-          const labels = { lexical: 'lexical (zero-model overlap)', bm25: 'bm25 (zero-model)', 'hybrid-norerank': 'hybrid (dense+BM25 RRF, no rerank)', hybrid: 'hybrid+rerank (cross-encoder top-50)' };
+          const labels = report => ({ lexical: 'lexical (zero-model overlap)', bm25: 'bm25 (zero-model)', 'hybrid-norerank': 'hybrid (dense+BM25 RRF, no rerank)', hybrid: `hybrid+rerank (cross-encoder top-${report.settings.rerankTopN})` });
           const pct = v => v === null || v === undefined ? 'n/a' : (v * 100).toFixed(2);
           const ms = v => v === null || v === undefined ? 'n/a' : v.toFixed(1);
           const lines = ['# benchmark-matched run', '', `- run: ${env.RUN_URL}`, `- commit: ${env.GITHUB_SHA} (${env.GITHUB_REF})`,
-            `- inputs: corpus=${env.IN_CORPUS} modes=${env.IN_MODES} competitors=${env.IN_COMPETITORS} split=${env.IN_SPLIT} top_k=${env.IN_TOP_K} max_questions=${env.IN_MAX_QUESTIONS || '(all)'} lme_shard_size=${env.IN_SHARD} max_parallel=${env.IN_MAX_PARALLEL}`,
+            `- inputs: corpus=${env.IN_CORPUS} modes=${env.IN_MODES} competitors=${env.IN_COMPETITORS} split=${env.IN_SPLIT} top_k=${env.IN_TOP_K} max_questions=${env.IN_MAX_QUESTIONS || '(all)'} stride=${env.IN_STRIDE || '1'} engine_opts=${env.IN_ENGINE_OPTS || '{}'} lme_shard_size=${env.IN_SHARD} max_parallel=${env.IN_MAX_PARALLEL}`,
             `- ref note: ${env.IN_REF || '(none)'}`, `- bench jobs: ${env.BENCH_RESULT}`, ''];
           for (const { corpus, k, file, report } of reports.sort((a, b) => a.corpus.localeCompare(b.corpus) || a.k - b.k)) {
             const annotated = report.summaries.bm25?.annotatedQuestions ?? 'n/a';
             lines.push(`## ${report.dataset.dataset} K=${k} — ${report.dataset.questions} questions, ${report.dataset.corpora} corpora, ${annotated} with positive evidence, complete=${report.complete}`, '',
               `file \`${file}\`, implementation ${report.runtime.implementationSha256}, ${report.runtime.node} ${report.runtime.platform}`, '',
+              `engine config ${JSON.stringify(report.matched?.engineConfig ?? 'harness defaults (pre --engine-opts)')}`, '',
               `| row | recall@${k} | anyHit | allHit | MRR | p50 ms | p95 ms | questions | completed |`, '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
-            const rows = [...order.filter(c => report.summaries[c]).map(c => [labels[c], report.summaries[c]]),
+            const rows = [...order.filter(c => report.summaries[c]).map(c => [labels(report)[c], report.summaries[c]]),
               ...(report.systems ?? []).map(s => [`${s.id} [${s.mode}]${s.status === 'scored' ? '' : ` NOT RUN: ${s.reason ?? s.status}`}`, report.summaries[`system:${s.id}`]])];
             for (const [label, s] of rows) lines.push(s ? `| ${label} | ${pct(s.meanRecall)} | ${pct(s.anyHitRate)} | ${pct(s.allHitRate)} | ${(s.mrr ?? 0).toFixed(4)} | ${ms(s.p50RetrievalMs)} | ${ms(s.p95RetrievalMs)} | ${s.questions} | ${s.completed} |` : `| ${label} | not run | | | | | | | |`);
             lines.push('');
@@ -480,7 +512,7 @@ jobs:
           if (problems.length) lines.push('', '## Problems', '', ...problems.map(p => `- ${p}`));
           writeFileSync(join(env.FINAL, 'SUMMARY.md'), `${lines.join('\n')}\n`);
           writeFileSync(join(env.FINAL, 'RUN.json'), `${JSON.stringify({ runUrl: env.RUN_URL, commit: env.GITHUB_SHA, ref: env.GITHUB_REF, note: env.IN_REF,
-            inputs: { corpus: env.IN_CORPUS, modes: env.IN_MODES, competitors: env.IN_COMPETITORS, split: env.IN_SPLIT, topK: env.IN_TOP_K, maxQuestions: env.IN_MAX_QUESTIONS, lmeShardSize: env.IN_SHARD, maxParallel: env.IN_MAX_PARALLEL },
+            inputs: { corpus: env.IN_CORPUS, modes: env.IN_MODES, competitors: env.IN_COMPETITORS, split: env.IN_SPLIT, topK: env.IN_TOP_K, maxQuestions: env.IN_MAX_QUESTIONS, stride: env.IN_STRIDE || '1', engineOpts: env.IN_ENGINE_OPTS || '{}', lmeShardSize: env.IN_SHARD, maxParallel: env.IN_MAX_PARALLEL },
             benchJobs: env.BENCH_RESULT, matrix: include, problems }, null, 2)}\n`);
           appendFileSync(env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
           console.log(lines.join('\n'));
