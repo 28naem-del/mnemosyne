@@ -132,8 +132,28 @@ jobs:
             --tarball "$PWD/$PACK_NAME"
           printf 'filename=%s\n' "$PACK_NAME" >> "$GITHUB_OUTPUT"
 
+      # A re-dispatch for a version npm already has (for example to retry the MCP
+      # Registry step after the wait below timed out) skips npm publish instead of
+      # failing on a version that cannot be published twice; every check above
+      # still runs, and the steps below proceed as on a first dispatch.
+      - name: Check whether npm already has this version
+        id: existing
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          published=$(npm view --prefer-online "mnemosy-ai@${version}" version 2>/dev/null || true)
+          if [ "$published" = "$version" ]; then
+            echo "mnemosy-ai@${version} is already on npm; npm publish will be skipped"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mnemosy-ai@${version} is not on npm yet; publishing"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Publish the exact tarball just installed and checked, with no rebuild.
       - name: Publish with provenance
+        if: steps.existing.outputs.published != 'true'
         run: npm publish "$PACK_FILE" --tag "$NPM_DIST_TAG" --access public --provenance
         env:
           PACK_FILE: ${{ steps.package.outputs.filename }}

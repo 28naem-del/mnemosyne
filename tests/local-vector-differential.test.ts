@@ -195,46 +195,48 @@ function forbidden(fixture: Fixture, state: State, viewer: string): Map<string, 
   return banned;
 }
 
-const MODES: DenseIndexMode[] = hnswAvailable() ? ['sqlite-vec', 'hnsw'] : ['sqlite-vec'];
+const withHnsw = gatedIt('hnsw', hnswAvailable());
+
+/**
+ * One test per dense backend: sqlite-vec always runs, hnsw runs behind the
+ * `[env:hnsw]` gate. A host without the native addon (for example after
+ * `npm ci --ignore-scripts`) therefore skips the hnsw half countably, where the
+ * env-gate guard sees it, instead of crashing or silently covering one backend
+ * fewer inside a test that still passes.
+ */
+function eachIndex(name: string, body: (mode: DenseIndexMode) => void, timeout: number): void {
+  it(`${name} (sqlite-vec)`, () => body('sqlite-vec'), timeout);
+  withHnsw(`${name} (hnsw)`, () => body('hnsw'), timeout);
+}
 
 describe('the dense index preserves every filter the exact scan enforces', () => {
-  // MODES silently drops 'hnsw' on a bare host, so the differential tests below
-  // keep passing while covering one backend fewer. That loss happens *inside*
-  // tests that still run, which no skip count can see — so state it as its own
-  // gated test, which the env-gate guard can count.
-  gatedIt('hnsw', hnswAvailable())('is differentially compared in hnsw mode too, not just sqlite-vec', () => {
-    expect(MODES).toContain('hnsw');
-  });
-
-  it('agrees with the exact scan, and leaks nothing, across 80 random states', () => {
+  eachIndex('agrees with the exact scan, and leaks nothing, across 80 random states', mode => {
     const path = location();
     const fixture = buildCorpus(path);
     const plan = states(80);
     const baseline = observe(path, 'exact', 'alice', plan);
     expect(baseline.mode).toBe('exact');
 
-    for (const mode of MODES) {
-      const candidate = observe(path, mode, 'alice', plan);
-      expect(candidate.mode).toBe(mode);
-      for (let index = 0; index < plan.length; index++) {
-        const exact = baseline.observations[index], through = candidate.observations[index];
-        const context = `${mode} state#${index} ${JSON.stringify(plan[index])}`;
-        // 1. subset — the index may narrow, never widen
-        expect(through.dense.filter(id => !exact.dense.includes(id)), `${context}: dense candidates absent from the exact scan`).toEqual([]);
-        // 2. top-k sets match, order-insensitively
-        expect([...through.dense].sort(), `${context}: dense set differs`).toEqual([...exact.dense].sort());
-        expect([...through.results].sort(), `${context}: results differ`).toEqual([...exact.results].sort());
-        // 3. independent oracle — agreement with a wrong answer is not safety
-        const banned = forbidden(fixture, plan[index], 'alice');
-        const describe = (ids: string[]): string[] => ids.filter(id => banned.has(id)).map(id => `${id} (${banned.get(id)})`);
-        expect(describe(exact.results), `${context}: LEAK through the exact scan`).toEqual([]);
-        expect(describe(through.dense), `${context}: LEAK into the index's dense channel`).toEqual([]);
-        expect(describe(through.results), `${context}: LEAK through the index`).toEqual([]);
-      }
+    const candidate = observe(path, mode, 'alice', plan);
+    expect(candidate.mode).toBe(mode);
+    for (let index = 0; index < plan.length; index++) {
+      const exact = baseline.observations[index], through = candidate.observations[index];
+      const context = `${mode} state#${index} ${JSON.stringify(plan[index])}`;
+      // 1. subset — the index may narrow, never widen
+      expect(through.dense.filter(id => !exact.dense.includes(id)), `${context}: dense candidates absent from the exact scan`).toEqual([]);
+      // 2. top-k sets match, order-insensitively
+      expect([...through.dense].sort(), `${context}: dense set differs`).toEqual([...exact.dense].sort());
+      expect([...through.results].sort(), `${context}: results differ`).toEqual([...exact.results].sort());
+      // 3. independent oracle — agreement with a wrong answer is not safety
+      const banned = forbidden(fixture, plan[index], 'alice');
+      const describe = (ids: string[]): string[] => ids.filter(id => banned.has(id)).map(id => `${id} (${banned.get(id)})`);
+      expect(describe(exact.results), `${context}: LEAK through the exact scan`).toEqual([]);
+      expect(describe(through.dense), `${context}: LEAK into the index's dense channel`).toEqual([]);
+      expect(describe(through.results), `${context}: LEAK through the index`).toEqual([]);
     }
   }, 120_000);
 
-  it('erases from the index itself, and no replay resurrects the record', () => {
+  eachIndex('erases from the index itself, and no replay resurrects the record', mode => {
     const path = location();
     const fixture = buildCorpus(path);
     const plan = states(40, 99);
@@ -261,18 +263,16 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
 
     // And no replay brings them back — including at clocks from before the erasure.
     const baseline = observe(path, 'exact', 'alice', plan);
-    for (const mode of MODES) {
-      const candidate = observe(path, mode, 'alice', plan);
-      for (let index = 0; index < plan.length; index++) {
-        const context = `${mode} state#${index}`;
-        expect(candidate.observations[index].dense.filter(id => doomed.includes(id)), `${context}: erased record resurrected in the dense channel`).toEqual([]);
-        expect(candidate.observations[index].results.filter(id => doomed.includes(id)), `${context}: erased record resurrected`).toEqual([]);
-        expect([...candidate.observations[index].results].sort(), `${context}: results differ after erasure`).toEqual([...baseline.observations[index].results].sort());
-      }
+    const candidate = observe(path, mode, 'alice', plan);
+    for (let index = 0; index < plan.length; index++) {
+      const context = `${mode} state#${index}`;
+      expect(candidate.observations[index].dense.filter(id => doomed.includes(id)), `${context}: erased record resurrected in the dense channel`).toEqual([]);
+      expect(candidate.observations[index].results.filter(id => doomed.includes(id)), `${context}: erased record resurrected`).toEqual([]);
+      expect([...candidate.observations[index].results].sort(), `${context}: results differ after erasure`).toEqual([...baseline.observations[index].results].sort());
     }
   }, 120_000);
 
-  it('agrees on the shortlist path, where the index does NOT widen to the whole store', () => {
+  eachIndex('agrees on the shortlist path, where the index does NOT widen to the whole store', mode => {
     // The cases above filter hard enough that the shortlist often widens until it
     // covers the index, which makes equality easy. This one removes the filtering
     // pressure — one agent, no validity windows, no corrections — so a shortlist
@@ -288,15 +288,13 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
 
     const plan = Array.from({ length: 40 }, () => ({ query: phrase(random, 3), limit: 10, maxCandidates: 5 }));
     const baseline = observe(path, 'exact', 'alice', plan);
-    for (const mode of MODES) {
-      const candidate = observe(path, mode, 'alice', plan);
-      for (let index = 0; index < plan.length; index++) {
-        // A budget of 5 filled from a 64-deep shortlist over 400 records: if the
-        // shortlist were being ignored these would not line up.
-        expect(baseline.observations[index].dense.length).toBe(5);
-        expect([...candidate.observations[index].dense].sort(), `${mode} state#${index}: dense set differs on the shortlist path`).toEqual([...baseline.observations[index].dense].sort());
-        expect([...candidate.observations[index].results].sort()).toEqual([...baseline.observations[index].results].sort());
-      }
+    const candidate = observe(path, mode, 'alice', plan);
+    for (let index = 0; index < plan.length; index++) {
+      // A budget of 5 filled from a 64-deep shortlist over 400 records: if the
+      // shortlist were being ignored these would not line up.
+      expect(baseline.observations[index].dense.length).toBe(5);
+      expect([...candidate.observations[index].dense].sort(), `${mode} state#${index}: dense set differs on the shortlist path`).toEqual([...baseline.observations[index].dense].sort());
+      expect([...candidate.observations[index].results].sort()).toEqual([...baseline.observations[index].results].sort());
     }
   }, 120_000);
 
@@ -366,7 +364,6 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
     expect(survived.length, 'the poisoned rows were removed, so the post-filter was never the thing under test').toBe(saved.length);
   }, 120_000);
 
-  const withHnsw = gatedIt('hnsw', hnswAvailable());
   withHnsw('withholds erased records when a pre-erasure hnsw index file is restored underneath it', () => {
     const path = location();
     const fixture = buildCorpus(path);
@@ -427,14 +424,14 @@ describe('the dense index preserves every filter the exact scan enforces', () =>
     expect(healed.count, 'reopening the index reconciled it back down to the live label count').toBe(postLabels);
   }, 120_000);
 
-  it('withholds the private records of another agent through every index', () => {
+  eachIndex('withholds the private records of another agent through every index', mode => {
     const path = location();
     const fixture = buildCorpus(path);
     const secret = new Set(fixture.records.filter(record => record.agentId === 'bob' && record.visibility === 'private').map(record => record.id));
     expect(secret.size).toBeGreaterThan(0);
     const plan = states(30, 4242);
-    for (const mode of ['exact', ...MODES] as DenseIndexMode[]) {
-      for (const observation of observe(path, mode, 'alice', plan).observations) {
+    for (const through of ['exact', mode] as DenseIndexMode[]) {
+      for (const observation of observe(path, through, 'alice', plan).observations) {
         expect(observation.results.filter(id => secret.has(id))).toEqual([]);
         expect(observation.dense.filter(id => secret.has(id))).toEqual([]);
       }

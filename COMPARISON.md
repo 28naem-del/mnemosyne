@@ -5,7 +5,7 @@ tradeoffs, not a blanket feature/novelty scorecard.
 
 > Measured 2026-09-14/15 on mnemosy-ai 2.0.0-rc builds; 3.0 leaves default retrieval unchanged
 > (regression check: [docs/BENCHMARKS-TRUST.md §6](docs/BENCHMARKS-TRUST.md#6-retrieval-regression-check-locomo-and-longmemeval-s-before-and-after)).
-> A 3.0 rerun is in progress.
+> Not re-run on 3.0 as of 2026-10-29.
 
 ## At a glance: full product against full product
 
@@ -27,8 +27,8 @@ included, follow.
 - **Speed.** p95 retrieval as measured, local and not like-for-like (our reranked p95 includes a
   cross-encoder pass): LoCoMo K = 10, 244 ms reranked, 57 ms fast mode (no reranker), 196 ms Mem0 OSS;
   LongMemEval-S K = 20, 1896 ms reranked, 60 ms fast mode, 210 ms Mem0 OSS.
-- **Zep and Graphiti.** Not in these tables. Their results are being produced now with a stored
-  Zep Cloud key; no number is claimed until the run is published.
+- **Zep and Graphiti.** Not in these tables. No Zep or Graphiti run had been published as of
+  2026-10-29; no number is claimed until one is.
 - **What retrieval tables don't measure.** These tables score whether the evidence comes back, not
   what the memory does with it afterwards. The 3.0 suites cover that: exact replay of past beliefs,
   `bisect` naming the record behind a wrong answer, the poisoning gate and corrections that retire

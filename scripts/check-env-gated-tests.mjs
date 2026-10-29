@@ -87,7 +87,7 @@ const detail = [
   ...(partial.length ? [`${partial.map(gate => `env:${gate} skipped ${gates.get(gate).skipped} of ${gates.get(gate).ran + gates.get(gate).skipped} tests`).join(', ')}`] : []),
 ].join('; ');
 const how = {
-  hnsw: 'npm install hnswlib-node  (or allow its install script)',
+  hnsw: 'npm rebuild hnswlib-node  (builds the native addon that npm ci --ignore-scripts skips)',
   model: 'npm run setup:embedder',
   reranker: 'npm run setup:reranker',
 };

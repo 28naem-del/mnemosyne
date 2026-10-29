@@ -8,6 +8,10 @@ Use Node.js ≥22.16; Node 24 is recommended. The default suite uses isolated lo
 
 ```sh
 npm ci --ignore-scripts
+npm run build
+npm rebuild hnswlib-node
+npm run setup:embedder
+npm run setup:reranker
 npm run check
 npm run check:docs
 npm run demo
@@ -15,7 +19,7 @@ npm run demo:learning
 npm run test:python
 ```
 
-The Python client tests require Python ≥3.10. `npm run check` typechecks, builds, tests and checks the examples. `npm test` builds before running Vitest. `npm run test:watch` performs an initial build; rebuild when changing code exercised through subprocesses. Use `npm run test:coverage` for coverage. No lint or formatter command is configured.
+`--ignore-scripts` skips the build of the optional `hnswlib-node` native addon, so `npm rebuild hnswlib-node` builds it, and the two `setup:` scripts fetch the pinned local embedding and reranking models (they need the build first); CI provisions the same three. Tests that need one of them are tagged `[env:hnsw]`, `[env:model]` or `[env:reranker]` and skip when it is missing, and `npm test` then fails its post-test check with the command that provides it. On a host meant to run without them, `MNEMOSYNE_ALLOW_BARE_TEST_ENV=1 npm test` reports the gap as a warning instead. The Python client tests require Python ≥3.10. `npm run check` typechecks, builds, tests and checks the examples. `npm test` builds before running Vitest. `npm run test:watch` performs an initial build; rebuild when changing code exercised through subprocesses. Use `npm run test:coverage` for coverage. No lint or formatter command is configured.
 
 ## Find the right module
 
