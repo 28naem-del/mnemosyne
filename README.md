@@ -26,7 +26,7 @@
 - **Auditable over time.** Past beliefs replay exactly. Given the records a failed retrieval should have returned, `bisect` finds the records that pushed them out. In the 3.0 pre-release, consolidation is outcome-gated and reversible.
 - **Any host.** MCP for Claude Code, Cursor and Codex; a TypeScript SDK; a CLI; and authenticated HTTP with a Python client and live inspector.
 
-**Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.2, the breakthrough release (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
+**Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.3, the breakthrough release (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
 
 [Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [Claims and evidence](docs/CLAIMS.md) · [Releases](https://github.com/28naem-del/mnemosyne/releases) · [npm](https://www.npmjs.com/package/mnemosy-ai) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/28naem-del/mnemosyne/issues)
 
@@ -35,7 +35,7 @@
 
 ## Try it
 
-The first `npx` run downloads the package; after that, the 3.0.0-rc.2 demo runs offline on synthetic corpora, with no API key and no model, and measures each claim while it runs:
+The first `npx` run downloads the package; after that, the 3.0.0-rc.3 demo runs offline on synthetic corpora, with no API key and no model, and measures each claim while it runs:
 
 ```sh
 npx -y -p mnemosy-ai@next mnemosy demo
@@ -63,11 +63,11 @@ claude mcp add mnemosyne -- npx -y -p mnemosy-ai@next mnemosy mcp --db ./.mnemos
 
 For the stable release, write `mnemosy-ai@2.0.0` in place of `mnemosy-ai@next`; on 2.0.0, `mnemosy demo` runs the earlier single-scenario demo.
 
-**Contents:** [3.0: the breakthrough release](#new-in-300-rc2-the-breakthrough-release-pre-release-on-npm-next) · [Install and connect an agent](#install-and-connect-an-agent) · [Measured results](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed) · [Choose your engine](#choose-your-engine) · [A working demonstration](#start-with-a-working-demonstration) · [Corrections in code](#a-correction-should-change-what-the-next-agent-does) · [Tune the dense index](#tune-the-dense-index) · [What you can build](#what-you-can-build) · [Entry points](#local-engine-several-entry-points) · [Migrate](#migrate-while-your-agent-keeps-working) · [Limits](#measured-with-the-limits-visible) · [Operational boundaries](#operational-boundaries) · [Build with us](#build-with-us)
+**Contents:** [3.0: the breakthrough release](#new-in-30-the-breakthrough-release-pre-release-on-npm-next) · [Install and connect an agent](#install-and-connect-an-agent) · [Measured results](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed) · [Choose your engine](#choose-your-engine) · [A working demonstration](#start-with-a-working-demonstration) · [Corrections in code](#a-correction-should-change-what-the-next-agent-does) · [Tune the dense index](#tune-the-dense-index) · [What you can build](#what-you-can-build) · [Entry points](#local-engine-several-entry-points) · [Migrate](#migrate-while-your-agent-keeps-working) · [Limits](#measured-with-the-limits-visible) · [Operational boundaries](#operational-boundaries) · [Build with us](#build-with-us)
 
-## New in 3.0.0-rc.2: the breakthrough release (pre-release on npm `next`)
+## New in 3.0: the breakthrough release (pre-release on npm `next`)
 
-3.0 is the breakthrough release. Replay and `bisect` already existed in 2.0.0. 3.0 adds four things: dependencies nobody declared, inferred and proposed for review, so that corrections reach them once accepted; a poisoning gate checked against a reproducible attack suite; outcome-gated, reversible consolidation with signed receipts; and opt-in precision controls. The kernel's `bisect` also gained the hybrid retrieval path (not a public package export in 3.0.0-rc.2; the `mnemosy bisect` CLI stays lexical). Each of these is documented and tested below, and each public claim is listed with its evidence in [Claims and evidence](docs/CLAIMS.md). 3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
+3.0 is the breakthrough release. Replay and `bisect` already existed in 2.0.0. 3.0 adds four things: dependencies nobody declared, inferred and proposed for review, so that corrections reach them once accepted; a poisoning gate checked against a reproducible attack suite; outcome-gated, reversible consolidation with signed receipts; and opt-in precision controls. The kernel's `bisect` also gained the hybrid retrieval path (not a public package export in 3.0.0-rc.3; the `mnemosy bisect` CLI stays lexical). Each of these is documented and tested below, and each public claim is listed with its evidence in [Claims and evidence](docs/CLAIMS.md). 3.0.0-rc.3 is the current release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured on 3.0.0-rc.2, offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
 
 | Measurement | Result | Protocol |
 |---|---|---|
@@ -115,12 +115,12 @@ Choose one channel:
 
 ```sh
 npm install mnemosy-ai                   # stable: latest = 2.0.0; pin mnemosy-ai@2.0.0 to reproduce
-npm install mnemosy-ai@next              # or the pre-release: next = 3.0.0-rc.2; pin mnemosy-ai@3.0.0-rc.2 to reproduce
+npm install mnemosy-ai@next              # or the pre-release: next = 3.0.0-rc.3; pin mnemosy-ai@3.0.0-rc.3 to reproduce
 ```
 
-Then, in that project, `npx --no-install mnemosy demo` runs the demo of the installed version offline (no API key, no server, no Docker); `--no-install` makes `npx` fail instead of fetching another package if none is installed. Without installing, `npx -y -p mnemosy-ai@3.0.0-rc.2 mnemosy demo` downloads and runs exactly that version.
+Then, in that project, `npx --no-install mnemosy demo` runs the demo of the installed version offline (no API key, no server, no Docker); `--no-install` makes `npx` fail instead of fetching another package if none is installed. Without installing, `npx -y -p mnemosy-ai@3.0.0-rc.3 mnemosy demo` downloads and runs exactly that version.
 
-Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The entries below run the 3.0.0-rc.2 pre-release through `mnemosy-ai@next`; for the stable release write `mnemosy-ai@2.0.0` in its place, and to pin the pre-release write `mnemosy-ai@3.0.0-rc.2`. Both versions expose the same MCP tools. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
+Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The entries below run the 3.0.0-rc.3 pre-release through `mnemosy-ai@next`; for the stable release write `mnemosy-ai@2.0.0` in its place, and to pin the pre-release write `mnemosy-ai@3.0.0-rc.3`. Both versions expose the same MCP tools. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
 
 ```json
 {
@@ -189,14 +189,14 @@ Engine choice is separate from version: `mnemosy-ai@latest` is 2.0.0 and contain
 Install the package in your project. Node 24 is recommended; the local memory engine needs no model API key, database server, or Docker.
 
 ```sh
-npm install mnemosy-ai                   # stable 2.0.0; or mnemosy-ai@next for the 3.0.0-rc.2 pre-release
+npm install mnemosy-ai                   # stable 2.0.0; or mnemosy-ai@next for the 3.0.0-rc.3 pre-release
 npx --no-install mnemosy demo            # runs the installed package offline; the install itself needs the network
 npx --no-install mnemosy learning-demo
 ```
 
-Unqualified `npm install mnemosy-ai` follows the `latest` channel, which is 2.0.0 from 27 October 2026; pin `mnemosy-ai@2.0.0` for reproducible deployments. `npm install mnemosy-ai@next` installs the 3.0.0-rc.2 pre-release; pin `mnemosy-ai@3.0.0-rc.2` to reproduce it. If you are upgrading from the 1.x line, read the [migration notes](docs/MIGRATION-v2.md) first: version 2 changes vector retrieval scoring, startup indexing and erasure, and does not migrate an existing database. Evaluate on your own workload before production. Python registry publication is separate; the bundled Python client can be installed from the checkout.
+Unqualified `npm install mnemosy-ai` follows the `latest` channel, which is 2.0.0 from 27 October 2026; pin `mnemosy-ai@2.0.0` for reproducible deployments. `npm install mnemosy-ai@next` installs the 3.0.0-rc.3 pre-release; pin `mnemosy-ai@3.0.0-rc.3` to reproduce it. If you are upgrading from the 1.x line, read the [migration notes](docs/MIGRATION-v2.md) first: version 2 changes vector retrieval scoring, startup indexing and erasure, and does not migrate an existing database. Evaluate on your own workload before production. Python registry publication is separate; the bundled Python client can be installed from the checkout.
 
-To build and run the same release from source (use `--branch v3.0.0-rc.2` for the pre-release):
+To build and run the same release from source (use `--branch v3.0.0-rc.3` for the pre-release):
 
 ```sh
 git clone --branch v2.0.0 --depth 1 https://github.com/28naem-del/mnemosyne.git

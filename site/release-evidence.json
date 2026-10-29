@@ -60,21 +60,21 @@
   },
   "dataPolicy": "Aggregate measurements only. No source conversations, private memory, credentials or local filesystem paths are included.",
   "publication": {
-    "githubRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v3.0.0-rc.2",
+    "githubRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v3.0.0-rc.3",
     "measuredSourceRelease": "https://github.com/28naem-del/mnemosyne/releases/tag/v2.0.0-rc.8",
     "npm": {
       "published": true,
       "package": "mnemosy-ai",
-      "version": "3.0.0-rc.2",
+      "version": "3.0.0-rc.3",
       "distTag": "next",
       "latestVersion": "2.0.0",
-      "url": "https://www.npmjs.com/package/mnemosy-ai/v/3.0.0-rc.2"
+      "url": "https://www.npmjs.com/package/mnemosy-ai/v/3.0.0-rc.3"
     },
     "pypi": {
       "published": false,
       "distribution": "mnemosyne-memory-client",
       "availability": "source checkout"
     },
-    "note": "Publication status is separate from the frozen rc.8 evaluation above. npm latest is 2.0.0 (stable since 2026-10-27); its measurements (LongMemEval-S answer accuracy 409/500 by an LLM judge, LoCoMo reranker MRR, the matched comparison run and the two unmet gates) are recorded in CHANGELOG.md and COMPARISON.md. 3.0.0-rc.2 is the pre-release on npm next (2026-10-28); its offline results (PrecisionMemBench, poisoning suite v1, dependency suite v1, replay and bisect) and their limits are in docs/BENCHMARKS-TRUST.md and on /trust/, not in this file."
+    "note": "Publication status is separate from the frozen rc.8 evaluation above. npm latest is 2.0.0 (stable since 2026-10-27); its measurements (LongMemEval-S answer accuracy 409/500 by an LLM judge, LoCoMo reranker MRR, the matched comparison run and the two unmet gates) are recorded in CHANGELOG.md and COMPARISON.md. 3.0.0-rc.3 is the pre-release on npm next (2026-10-29); the offline results measured on 3.0.0-rc.2 (PrecisionMemBench, poisoning suite v1, dependency suite v1, replay and bisect) and their limits are in docs/BENCHMARKS-TRUST.md and on /trust/, not in this file."
   }
 }

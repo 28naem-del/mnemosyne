@@ -9,13 +9,13 @@
     "id": "1166050099"
   },
   "websiteUrl": "https://mnemosy.ai",
-  "version": "3.0.0-rc.2",
+  "version": "3.0.0-rc.3",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "mnemosy-ai",
-      "version": "3.0.0-rc.2",
+      "version": "3.0.0-rc.3",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
