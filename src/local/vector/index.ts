@@ -6,7 +6,7 @@ import { DENSE_INDEX_MODES, type DenseIndex, type DenseIndexMode, type DenseInde
 export { DENSE_INDEX_MODES } from './types.js';
 export type { DenseIndex, DenseIndexEntry, DenseIndexMode, DenseIndexStatus } from './types.js';
 export { HnswIndex, hnswAvailable } from './hnsw.js';
-export { SqliteVecIndex, loadSqliteVec, sqliteVecPath } from './sqlite-vec.js';
+export { SqliteVecIndex, SQLITE_VEC_MAX_K, loadSqliteVec, sqliteVecPath } from './sqlite-vec.js';
 
 /**
  * Label allocation and index selection.
@@ -122,9 +122,14 @@ export function createDenseIndex(db: DatabaseSync, options: {
   if (moved) {
     // A different model or width is a different vector space. Rebuild rather
     // than mixing two spaces in one index, which would score nonsense.
+    // The erasure trigger goes first: it names local_vec_index, so clearing the
+    // labels after dropping that table would fire it against a missing table.
+    // The caller runs this in one transaction, so a failure leaves the old
+    // index, labels and identity in place.
+    syncVecTrigger(db, false);
+    db.exec('DELETE FROM local_vec_labels');
     if (vecLoaded) db.exec('DROP TABLE IF EXISTS local_vec_index');
     HnswIndex.discard(path);
-    db.exec('DELETE FROM local_vec_labels');
   }
   syncVecTrigger(db, wanted.kind === 'sqlite-vec' && vecLoaded);
 
