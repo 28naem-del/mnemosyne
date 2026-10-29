@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { createBundledEmbedder, type SyncMemoryEmbedder } from '../local/embedding/index.js';
@@ -10,6 +10,7 @@ import type { BenchmarkConditionId, CorpusBenchmarkReport, CorpusDataset, Corpus
 import { createMem0Factory } from './matched-mem0.js';
 import { createZepFactory } from './matched-zep.js';
 import { resolveCompetitorModule } from './matched-resolve.js';
+import { filterSourceBySplit, loadSplit, parseSplitName, SPLIT_FILES, type LoadedSplit } from './splits.js';
 import type { MatchedSystem, MatchedSystemFactory } from './matched-types.js';
 
 /**
@@ -37,6 +38,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
 const DATA = join(REPO, 'benchmarks', 'data');
 const COMPETITORS = join(REPO, 'benchmarks', 'competitors');
+const SPLITS = join(REPO, 'benchmarks', 'splits');
 
 const LOCOMO = {
   file: 'locomo10.json', label: 'LoCoMo (locomo10)',
@@ -61,11 +63,18 @@ interface SystemOutcome { id: string; factory: MatchedSystemFactory; system: Mat
 
 const percent = (value: number | null | undefined): string => value === null || value === undefined ? 'n/a' : (value * 100).toFixed(2);
 
-function loadCorpus(kind: 'locomo' | 'longmemeval', file: string, questionLimit?: number, stride = 1): { dataset: CorpusDataset; sha256: string; bytes: number } {
+function loadCorpus(kind: 'locomo' | 'longmemeval', file: string, questionLimit?: number, stride = 1, split?: LoadedSplit): { dataset: CorpusDataset; sha256: string; bytes: number } {
   const raw = readFileSync(file);
   const sha256 = createHash('sha256').update(raw).digest('hex');
-  const parsed = JSON.parse(raw.toString('utf8')) as unknown;
+  let parsed = JSON.parse(raw.toString('utf8')) as unknown;
   const provenance = { ...(kind === 'locomo' ? LOCOMO : LONGMEMEVAL).provenance, sourceSha256: sha256, sourceBytes: raw.byteLength };
+  // A TUNE/HOLDOUT run keeps only the ids its committed split file lists, before
+  // any stride or slice; a split drawn from different corpus bytes is refused.
+  if (split) {
+    if (split.sourceSha256 !== sha256) throw new Error(`Split file ${split.file} was drawn from corpus sha256 ${split.sourceSha256}, not ${sha256}.`);
+    if (!Array.isArray(parsed)) throw new Error(`${file} is not an array.`);
+    parsed = filterSourceBySplit(kind, parsed, split);
+  }
   if (kind === 'locomo') return { dataset: adaptLoCoMoCorpus(parsed, provenance, { onMalformedEvidence: 'skip' }), sha256, bytes: raw.byteLength };
   // The published cleaned release carries same-day history sessions that the
   // strict instant parser rejects, so the documented question-day policy is used
@@ -171,7 +180,8 @@ function mergeParts(files: string[]): CorpusBenchmarkReport {
   const key = (report: CorpusBenchmarkReport) => JSON.stringify({
     settings: { ...report.settings, corpusIndexBase: 'partition-coordinate' }, source: report.dataset.sourceSha256, adapter: report.dataset.adapter,
     embedding: report.embedding ?? null, systems: (report.systems ?? []).map(system => [system.id, system.revision, system.mode]),
-    implementation: report.runtime.implementationSha256, protocol: report.protocol });
+    implementation: report.runtime.implementationSha256, protocol: report.protocol,
+    split: (report as { matched?: { split?: unknown } }).matched?.split ?? null });
   const reference = key(parts[0]);
   for (const [index, part] of parts.entries()) {
     if (key(part) !== reference) throw new Error(`Part ${files[index]} did not run the same experiment as ${files[0]}; merging it would compare different settings under one heading.`);
@@ -206,7 +216,7 @@ export async function matchedBenchmark(args = process.argv.slice(2)): Promise<vo
     corpus: { type: 'string' }, systems: { type: 'string' }, 'top-k': { type: 'string' },
     'max-corpora': { type: 'string' }, 'max-questions': { type: 'string' }, out: { type: 'string' },
     'corpus-offset': { type: 'string' }, merge: { type: 'string' }, stride: { type: 'string' }, 'max-context-units': { type: 'string' },
-    'mem0-extraction': { type: 'string' }, 'no-rerank': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, help: { type: 'boolean' },
+    'mem0-extraction': { type: 'string' }, 'no-rerank': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, split: { type: 'string' }, help: { type: 'boolean' },
   } });
   if (values.help) {
     console.log(`node dist/evaluation/matched-benchmark.js [options]
@@ -219,6 +229,10 @@ export async function matchedBenchmark(args = process.argv.slice(2)): Promise<vo
   --stride N                         score every Nth question (LongMemEval-S is grouped by
                                      category, so a prefix subset would be one category)
   --max-questions N                  bound the question count
+  --split tune|holdout|all           keep only the ids listed in benchmarks/splits/<corpus>.json
+                                     (LoCoMo by conversation, LongMemEval-S by question; seed
+                                     20261029; see benchmarks/PROTOCOL-2026-10.md). all = every
+                                     question (default). Applied before --stride/--max-*.
   --max-context-units N              packing budget per question in UTF-8 bytes (default 8192);
                                      a budget that holds all K hits records the full ranked list
   --out DIR                          write one raw JSON report per corpus
@@ -233,11 +247,13 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
   }
   const corpus = values.corpus ?? 'locomo';
   if (!['locomo', 'longmemeval', 'both'].includes(corpus)) throw new Error('--corpus must be locomo, longmemeval or both');
+  const splitName = parseSplitName(values.split);
+  const splitTag = splitName === 'all' ? '' : `-${splitName}`;
   const topKForMerge = Number(values['top-k'] ?? 10);
   if (values.merge !== undefined) {
     const dir = resolve(values.merge);
     const strideForMerge = values.stride !== undefined ? Number(values.stride) : 1;
-    const mergeTag = strideForMerge > 1 ? `${corpus}-stride${strideForMerge}-k${topKForMerge}` : `${corpus}-k${topKForMerge}`;
+    const mergeTag = strideForMerge > 1 ? `${corpus}${splitTag}-stride${strideForMerge}-k${topKForMerge}` : `${corpus}${splitTag}-k${topKForMerge}`;
     const prefix = `${mergeTag}-part`;
     const files = readdirSync(dir).filter(name => name.startsWith(prefix) && name.endsWith('.json')).sort().map(name => join(dir, name));
     if (!files.length) throw new Error(`No ${prefix}*.json part files in ${dir}.`);
@@ -296,7 +312,8 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
     // LongMemEval gives every question its own haystack, so a bounded run must
     // stop building corpora at the end of its own window rather than at the start
     // of it — otherwise an offset run would slice away everything it needs.
-    const { dataset, sha256, bytes } = loadCorpus(kind, file, maxCorpora === undefined ? undefined : corpusOffset + maxCorpora, stride);
+    const split = splitName === 'all' ? undefined : loadSplit(join(SPLITS, SPLIT_FILES[kind]), splitName);
+    const { dataset, sha256, bytes } = loadCorpus(kind, file, maxCorpora === undefined ? undefined : corpusOffset + maxCorpora, stride, split);
     // Slicing happens here, deterministically and in source order, rather than
     // through the runner's `maxQuestions` — which is an upper bound that rejects
     // an oversized corpus, not a sampler. The slice is recorded in the report so
@@ -314,7 +331,8 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
       corpusIndexBase: corpusOffset,
     });
 
-    console.log(`\n=== MATCHED RUN — ${spec.label}${stride > 1 ? ` [every ${stride}th question, source order]` : ''} ===`);
+    console.log(`\n=== MATCHED RUN — ${spec.label}${split ? ` [split ${split.name}: ${split.ids.size} ${kind === 'locomo' ? 'conversations' : 'questions'}, seed ${split.seed}]` : ''}${stride > 1 ? ` [every ${stride}th question, source order]` : ''} ===`);
+    if (split) console.log(`split file ${split.file} sha256 ${split.sha256}`);
     console.log(`${report.dataset.questions} questions, ${report.dataset.corpora} corpora, ${report.summaries.bm25?.annotatedQuestions ?? 0} with positive evidence labels`);
     console.log(`corpus sha256 ${sha256} (${bytes} bytes)  normalized ${report.dataset.normalizedSha256}`);
     console.log(`runtime ${report.runtime.node} ${report.runtime.platform}  elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`);
@@ -327,9 +345,9 @@ scorer. Competitor SDKs are installed separately: npm run benchmark:matched:inst
     if (outDir) {
       // A partial run is written as a part file, never as the whole-run name.
       const partial = corpusOffset > 0 || maxCorpora !== undefined;
-      const tag = stride > 1 ? `${kind}-stride${stride}-k${topK}` : `${kind}-k${topK}`;
+      const tag = stride > 1 ? `${kind}${splitTag}-stride${stride}-k${topK}` : `${kind}${splitTag}-k${topK}`;
       const target = join(outDir, partial ? `${tag}-part${String(corpusOffset).padStart(3, '0')}.json` : `${tag}.json`);
-      writeFileSync(target, `${JSON.stringify({ ...report, matched: { requested, outcomes: outcomes.map(outcome => ({ id: outcome.id, available: outcome.system !== null, mode: outcome.system?.mode ?? null, reason: outcome.reason ?? null, describes: outcome.factory.describe() })) } }, null, 2)}\n`, { mode: 0o600 });
+      writeFileSync(target, `${JSON.stringify({ ...report, matched: { requested, split: split ? { name: split.name, file: relative(REPO, split.file), sha256: split.sha256, seed: split.seed, ids: split.ids.size } : { name: 'all' }, outcomes: outcomes.map(outcome => ({ id: outcome.id, available: outcome.system !== null, mode: outcome.system?.mode ?? null, reason: outcome.reason ?? null, describes: outcome.factory.describe() })) } }, null, 2)}\n`, { mode: 0o600 });
       console.log(`raw report -> ${target}`);
     }
     // Our own conditions must be complete for the run to mean anything; a
