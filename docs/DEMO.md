@@ -1,6 +1,6 @@
 # The demo: `mnemosy demo`
 
-`npx mnemosy demo` (from 3.0.0-rc.2: `npx -y -p mnemosy-ai@next mnemosy demo`, or this source tree after `npm run build`;
+`mnemosy demo` (from 3.0.0-rc.2: `npx -y -p mnemosy-ai@3.0.0-rc.2 mnemosy demo`, which needs the network once to download the package, or this source tree after `npm run build`;
 the stable 2.0.0 package on npm `latest` still ships the classic demo) walks you through five moments on bundled **synthetic** corpora, offline, and after each moment prints one `PROOF` line with a number it has just measured on your machine. None of the numbers is recorded or hard-coded: run it twice and every count is recomputed; timings will move with your machine.
 
 ```bash
@@ -46,6 +46,8 @@ A dependent is stale if `recall({ limit: 20 })` or `compile({ maxTokens: 4000 })
 
 **What it proves.** Blame precision and time-to-locate: the blame set must equal the seeded false record exactly (precision 1.00, nothing extra), the exact re-execution must confirm it, the store must hold at least 2000 records, and it must be found in under 60 s. The verifier has no model in it: "is the gold record in the top k" is deterministic.
 
+**What it needs, outside the demo.** The demo knows the right record because it seeded it. `bisect` always needs that: the ids of the expected (gold) records and the `k` they should appear in. It judges retrieval, not a generated answer. From the CLI, `mnemosy bisect --file TASKS.json --task ID` reads the task with its required `gold` ids and uses lexical retrieval only, even if your agent used hybrid retrieval. The hybrid path is implemented in the kernel (`src/local/bisect.ts`) and tested, but in 3.0.0-rc.2 `bisect` is not a public package export, so from npm the CLI is the entry point. A run can end `blamed`, `passing` (the task does not fail), `unfixable` (removing records does not restore the gold) or `unconfirmed` (the exact re-run does not confirm the blame).
+
 ### 4. Someone tried to poison it, and it caught it, visibly
 
 This moment is defensive research against our own kernel, run offline on synthetic data.
@@ -64,7 +66,7 @@ trust tiers do with a correctly labelled record, and the kernel's own catch is t
 2. The same proposer runs again; backoff drops the faulted merge. This pass is **kept**, and the demo prints its outcome delta, the replay tasks and the hold-out delta.
 3. A laundering pass folds an untrusted forum tip into a policy-tier procedure. It is **rolled back** by the invariants, which are named.
 
-Each verdict prints its signed receipt: digest, keyId, `prevDigest` (the chain link), and whether the Ed25519 signature verifies. Then `rollbackConsolidation` undoes the kept pass in one call. The demo prints `stateSha256` before the pass, after it was kept, and after the rollback, with `identical: true`. Finally `verifyConsolidationChain` checks every receipt, pinned to the demo key. See [CONSOLIDATION.md](CONSOLIDATION.md) for the gate.
+Each verdict prints its signed receipt: digest, keyId, `prevDigest` (the chain link), and whether the Ed25519 signature verifies. Then `rollbackConsolidation` undoes the kept pass in one call. Nothing is written between the pass and the rollback, so the hash can come back: the demo prints `stateSha256` before the pass, after it was kept, and after the rollback, with `identical: true`. In a store where later writes happened, the rollback still removes the pass's records but reports `restored: false` ([CONSOLIDATION.md](CONSOLIDATION.md#a-pass)). Finally `verifyConsolidationChain` checks every receipt, pinned to the demo key. See [CONSOLIDATION.md](CONSOLIDATION.md) for the gate.
 
 **What it proves.** On this store, measured in this run:
 

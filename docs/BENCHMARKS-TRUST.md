@@ -119,15 +119,16 @@ node benchmarks/precisionmembench/run.mjs --label final-ablate-nofuzzy-lexical -
 `run.mjs` exits 3 on these runs, because the single-turn ava suite exits 1 on the 7 failing cases
 (and the session suite exits 1 on turn 5, except in the no-names ablation, where it fails more).
 
-**The seven remaining failures are the single-turn protocol ceiling.** In every remaining failure,
-one belief is returned that the case expects excluded. The reason for the exclusion is lifecycle
+**Seven misses remain in our metadata-based configuration; the protocol omits explicit lifecycle
+fields.** In every remaining failure, one belief is returned that the case expects excluded. The reason for the exclusion is lifecycle
 metadata that the single-turn protocol does not send: `type`, `superseded_by` or `resolved_at`.
 Each query names the offending belief by one of its own aliases, so a names gate must admit it.
 The wire does carry lifecycle hints in natural language and identifiers ("Previously used ...",
 "Was evaluating ...", names such as `database_sqlalchemy_old`, ids such as
 `b-sqlalchemy-superseded`), but mining them would be fixture-specific, so the kernel does not.
-The 7 cases are therefore a ceiling for a provider that does not mine lifecycle language from
-names, ids or text.
+The 7 cases are therefore a limit of this configuration, which does not mine lifecycle language
+from names, ids or text. They are not a limit of the protocol: another approach could use those
+hints.
 
 The cases are:
 
@@ -159,7 +160,9 @@ record is superseded.
     predicate is passed, so open questions are returned when they match (session turn 5).
 - **The cross-encoder neither helped nor hurt.** The reranked run ties the unreranked one at
   70/77.
-- **Latency was measured only on a loaded machine.** On a synthetic store (2,000 writes and 400
+- **Latency was measured only on a loaded machine, with a scratch harness that is not committed.**
+  These figures cannot be reproduced from this repository; the protocol is stated here so that it
+  can be rebuilt. On a synthetic store (2,000 writes and 400
   corrections, so 2,400 rows with 400 superseded), with controls OFF and ON interleaved per query in
   the same process, 4 lexical and 3 hybrid rounds, on a 10-core host at 1-minute load 5.12–11.32:
   the opt-in controls (`requireNamedMatch: 'auto'`, `fuzzy: true`) added +18.2 % p50 to BM25 recall
@@ -315,8 +318,12 @@ Tests: `tests/local-promotion.test.ts` (13) and `tests/poisoning-suite.test.ts` 
 ## 3. Outcome-gated, reversible consolidation (rc.2)
 
 A consolidation pass is a signed diff. It is replayed against the agent's own recorded outcomes,
-and it is kept only when those outcomes do not regress and no invariant breaks. A kept pass can be
-undone in one call. The design is in [CONSOLIDATION.md](CONSOLIDATION.md), and the signature and
+and it is kept only when aggregate lexical coverage on that recorded replay set does not drop
+(overall, on the hold-out and for each proposal alone) and no invariant breaks. This is not
+task-level non-regression: a loss on one task can be offset by a gain on another. A kept pass that
+nothing has changed since can be undone in one call; the state hash is identical only when nothing
+was written after the pass. In the standard MCP setup the gate is off: see
+[Turn the gate on](CONSOLIDATION.md#turn-the-gate-on). The design is in [CONSOLIDATION.md](CONSOLIDATION.md), and the signature and
 receipt chain are in [CONSOLIDATION-SIGNING.md](CONSOLIDATION-SIGNING.md).
 
 The demo runs offline, on synthetic data, with lexical replay:
@@ -334,8 +341,9 @@ It seeds a store with 11 records and 10 recorded tasks, then runs four passes:
 | 3 | `rolled_back` | `no-trust-raise`, `declared-content` and `no-untrusted-to-policy` (laundering). |
 | 4 | `no_evidence` | 0 replayable tasks. |
 
-The demo then rolls back the kept pass in one call. The `replayState().stateSha256` after the
-rollback equals the hash before the pass (`identical: true`), and the receipt chain verifies.
+The demo then rolls back the kept pass in one call. Nothing is written between the pass and the
+rollback, so the `replayState().stateSha256` after the rollback equals the hash before the pass
+(`identical: true`), and the receipt chain verifies.
 
 The same flow works on a file store through `mnemosy consolidate --propose | --apply | --rollback |
 --verify-chain`. On that path:
@@ -437,20 +445,23 @@ What these numbers rest on, stated plainly:
 
 ## 5. The five-moment demo (`mnemosy demo`, rc.2)
 
-`npx mnemosy demo` runs five moments offline, on bundled synthetic corpora and the zero-model
+`npx -y -p mnemosy-ai@3.0.0-rc.2 mnemosy demo` (the download needs the network once) runs five moments offline, on bundled synthetic corpora and the zero-model
 lexical path. After each moment it prints a `PROOF` line with a number it has just measured. The
 previous single-scenario JSON demo is `mnemosy demo --classic`. What each moment shows and does
 not show is in [DEMO.md](DEMO.md).
 
-| Moment | What it proves | Bar | Measured on the merged tree (one run, 2026-10-28) |
+| Moment | What it proves | Bar | Recorded run of 2026-10-28 ([`site/demo-five.json`](../site/demo-five.json)) |
 |---|---|---|---|
 | 1. It remembers, and knows why | Replay determinism: two readers (this process and a separate cold-open process) at seeded `(asOf, knownAt)` cut points; as-of answers against ground truth taken from the plan | N/N identical hashes, every answer equal to ground truth | 1000/1000 identical (281 distinct states), 24000/24000 answers |
 | 2. A correction fixes what nobody linked | Inferred dependencies accepted through `correct()`, then the premise is corrected | undeclared dependents invalidated X/X, accepted edges true Y/Y, 0 stale | measured live in each run |
-| 3. It found the belief that made it wrong | `bisect` over a 2000-record synthetic store with one seeded false record | blame set equals the seeded record, under 60 s | precision 1.00, 1.53 s |
+| 3. It found the belief that made it wrong | `bisect` over a 2000-record synthetic store with one seeded false record; the expected record is known | blame set equals the seeded record, under 60 s | precision 1.00, 0.40 s |
 | 4. Someone tried to poison it, and it caught it | M3 refusal shown in the ledger, then suite v1 run live | 0 escapes, false quarantines below 2 %, 0 errors | 227 cases, 0 escapes, 0 false quarantines, 0 errors |
-| 5. One consolidation kept, two rolled back, the kept one undone | One consolidation pass kept, two rolled back, the kept one undone to the identical hash, chain verified | kept ≥ 1 with outcome delta ≥ 0, rolled back ≥ 1, identical hash, chain ok | measured live in each run (the 2026-10-28 run: kept 1 at delta +2, rolled back 2, chain 4 receipts) |
+| 5. One consolidation kept, two rolled back, the kept one undone | One consolidation pass kept, two rolled back, the kept one undone to the identical hash (nothing is written in between), chain verified | kept ≥ 1 with outcome delta ≥ 0, rolled back ≥ 1, identical hash, chain ok | measured live in each run (the 2026-10-28 run: kept 1 at delta +2, rolled back 2, chain 4 receipts) |
 
-Counts are recomputed on every run, and times move with the machine. The demo's poisoning moment
+Counts are recomputed on every run, and times vary by machine. The 0.40 s comes from that one
+recorded run (3.0.0-rc.2 build, on the maintainer's development machine, whose model is not
+recorded); it is the only bisect time this repository backs with a file. The bar, asserted by
+[`tests/breakthrough-demo.test.ts`](../tests/breakthrough-demo.test.ts), is under 60 s. The demo's poisoning moment
 is the same runner as `npm run poisoning`.
 
 ## 6. Retrieval regression check: LoCoMo and LongMemEval-S, before and after
@@ -500,8 +511,11 @@ retrieval coverage against a local scorer, not generated-answer accuracy.
   through these harness commits.
 - **MemSecBench is not scored and ConsolidationBench is not attempted** (sections 8 and 9).
 - **No improvement-from-experience number exists yet.** The consolidation gate keeps only passes
-  that do not regress recorded outcomes. Measured lift on held-out task families, with memory-off
+  whose aggregate lexical coverage on the recorded replay set does not drop. Measured lift on held-out task families, with memory-off
   and shuffled-ledger controls, is future work, and no such lift is claimed.
+- **A receipt signature does not prove that the gate ran.** It proves that the holder of the
+  signing key signed the receipt. The full list of public claims, with their conditions and
+  evidence files, is in [CLAIMS.md](CLAIMS.md).
 - **Recall latency has not been measured on an idle machine.** The loaded-machine figures in
   section 1.1, including the slowdown of the non-default `overlap` scorer, are indications only.
 

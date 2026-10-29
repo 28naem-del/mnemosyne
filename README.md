@@ -11,23 +11,23 @@
 
 **The next agent starts wiser.**
 
-**Mnemosyne is local-first, long-term memory for AI agents: one SQLite file that keeps what an agent learned together with the evidence it came from, served to any host over TypeScript, MCP, CLI or HTTP.** When a source is corrected, every memory that depended on it is retired, so the next agent starts from what is still true instead of repeating a stale lesson. The local engine needs no model API key, database server or Docker.
+**Mnemosyne is local-first, long-term memory for AI agents: one SQLite file that keeps what an agent learned together with the evidence it came from, served to any host over TypeScript, MCP, CLI or HTTP.** When a source is corrected, the memories recorded as depending on it are retired, so the next agent starts from what current recorded evidence still supports instead of repeating a stale lesson. The local engine needs no model API key, database server or Docker.
 
 - **Evidence on every memory.** Each record keeps its source and trust tier, and the superseded version stays inspectable after a correction.
 - **Corrections that reach dependents.** A corrected requirement retires the procedures and skills recorded as depending on it; 3.0 can also propose dependencies nobody declared, for review.
-- **Auditable over time (3.0 pre-release).** Past beliefs replay exactly, `bisect` names the record behind a wrong answer, and consolidation is outcome-gated and reversible.
+- **Auditable over time.** Past beliefs replay exactly. Given the records a failed retrieval should have returned, `bisect` finds the records that pushed them out. In the 3.0 pre-release, consolidation is outcome-gated and reversible.
 - **Any host.** MCP for Claude Code, Cursor and Codex; a TypeScript SDK; a CLI; and authenticated HTTP with a Python client and live inspector.
 
 **Stable: 2.0.0 (`npm install mnemosy-ai`) · Newest pre-release: 3.0.0-rc.2, the breakthrough release (`npm install mnemosy-ai@next`) · MIT · Node.js ≥22.16**
 
-[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [Releases](https://github.com/28naem-del/mnemosyne/releases) · [npm](https://www.npmjs.com/package/mnemosy-ai) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/28naem-del/mnemosyne/issues)
+[Website](https://mnemosy.ai) · [Quickstart](docs/quickstart.md) · [Documentation](docs/README.md) · [Examples](examples/README.md) · [Migration](docs/BRIDGE.md) · [Measured results](docs/evaluation/BENCHMARKS.md) · [Trust evidence](docs/BENCHMARKS-TRUST.md) · [Claims and evidence](docs/CLAIMS.md) · [Releases](https://github.com/28naem-del/mnemosyne/releases) · [npm](https://www.npmjs.com/package/mnemosy-ai) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/28naem-del/mnemosyne/issues)
 
 > [!NOTE]
 > **Which Mnemosyne is this?** This repository is the TypeScript package published on npm as [`mnemosy-ai`](https://www.npmjs.com/package/mnemosy-ai), with its site at [mnemosy.ai](https://mnemosy.ai). It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemosyne-oss/mnemosyne), the Python memory library published on PyPI as `mnemosyne-memory`; the two share a name, not code or maintainers. Please file issues for that project in its own repository.
 
-## Try it in 30 seconds
+## Try it
 
-The 3.0.0-rc.2 demo runs offline on synthetic corpora, with no API key and no model, and measures each claim while it runs:
+The first `npx` run downloads the package; after that, the 3.0.0-rc.2 demo runs offline on synthetic corpora, with no API key and no model, and measures each claim while it runs:
 
 ```sh
 npx -y -p mnemosy-ai@next mnemosy demo
@@ -35,7 +35,7 @@ npx -y -p mnemosy-ai@next mnemosy demo
 
 ![A real run of mnemosy demo from npm next: five moments scroll past, then the five PROOF lines, each marked PASS, and "5/5 moments proved"](assets/demo.gif)
 
-The recording above is one unedited run ([`assets/demo.tape`](assets/demo.tape) regenerates it with vhs). The last line of each of its five moments, from one run (timings vary by machine; the pass bars printed after each line are omitted here):
+The recording above is one unedited run ([`assets/demo.tape`](assets/demo.tape) regenerates it with vhs). The last line of each of its five moments, from the recorded run of 28 October 2026 ([`site/demo-five.json`](site/demo-five.json); timings vary by machine; the pass bars printed after each line are omitted here):
 
 ```text
 PROOF  replay determinism: 1000/1000 identical, 24000/24000 as-of answers = ground truth   [PASS]
@@ -59,7 +59,7 @@ For the stable release, write `mnemosy-ai@2.0.0` in place of `mnemosy-ai@next`; 
 
 ## New in 3.0.0-rc.2: the breakthrough release (pre-release on npm `next`)
 
-3.0 is the breakthrough release: past beliefs replay exactly, corrections retire what depended on them (including dependencies nobody declared, once accepted), `bisect` names the record behind a wrong answer, a poisoning gate is checked against a reproducible attack suite, and consolidation is reversible with signed receipts. Each of these is documented and tested below. 3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
+3.0 is the breakthrough release. Replay and `bisect` already existed in 2.0.0. 3.0 adds four things: dependencies nobody declared, inferred and proposed for review, so that corrections reach them once accepted; a poisoning gate checked against a reproducible attack suite; outcome-gated, reversible consolidation with signed receipts; and opt-in precision controls. The kernel's `bisect` also gained the hybrid retrieval path (the `mnemosy bisect` CLI stays lexical). Each of these is documented and tested below, and each public claim is listed with its evidence in [Claims and evidence](docs/CLAIMS.md). 3.0.0-rc.2 is a release candidate on the npm `next` channel: `npm install mnemosy-ai@next` installs it, while `npm install mnemosy-ai` still installs the stable 2.0.0. Every number below was measured offline, with no API key, no paid model and no LLM judge. Each one reproduces with the commands in [Benchmarks and trust evidence](docs/BENCHMARKS-TRUST.md), which also lists what is not claimed.
 
 | Measurement | Result | Protocol |
 |---|---|---|
@@ -67,16 +67,16 @@ For the stable release, write `mnemosy-ai@2.0.0` in place of `mnemosy-ai@next`; 
 | Poisoning suite v1, consolidation on | **0/167** escapes, **0/60** false quarantines (85/167 escape without the gate) | 227 synthetic cases, lexical path, 294 gate decisions · [protocol](docs/BENCHMARKS-TRUST.md#22-consolidation-on-rc2) |
 | Dependency suite v1 | recall **96.05 %**, precision **98.06 %**, **0** stale procedures with the premise guard (inference alone: 7/248 stale; guard false-hold rate 92.78 %) | Synthetic corpus, seed 20261028, 120 corrections, accept-all eval reviewer · [protocol](docs/BENCHMARKS-TRUST.md#4-undeclared-dependency-inference-dependency-suite-v1-synthetic-rc2) |
 | Replay determinism | **1000/1000** identical states, **24,000/24,000** as-of answers | Two readers of one store at 1000 seeded cut points; answers against ground truth from the plan · [protocol](docs/BENCHMARKS-TRUST.md#5-the-five-moment-demo-mnemosy-demo-rc2) |
-| Bisect | precision **1.00** in 1.53 s on 2,000 records (re-runs 0.6–1.2 s; bar 60 s) | One seeded false record in a synthetic store, confirmed by re-running recall without it · [protocol](docs/BENCHMARKS-TRUST.md#5-the-five-moment-demo-mnemosy-demo-rc2) |
+| Bisect | precision **1.00** on 2,000 records, 0.40 s in the recorded run of 2026-10-28 ([`site/demo-five.json`](site/demo-five.json); varies by machine; bar 60 s) | One seeded false record in a synthetic store; the expected record is known, and the blame is confirmed by re-running recall without the culprit · [protocol](docs/BENCHMARKS-TRUST.md#5-the-five-moment-demo-mnemosy-demo-rc2) |
 
-The default retrieval path did not move: LoCoMo and LongMemEval-S recall are identical before and after ([regression check](docs/BENCHMARKS-TRUST.md#6-retrieval-regression-check-locomo-and-longmemeval-s-before-and-after)). Recall latency was measured only on a loaded machine; the known limits, including a slowdown of the non-default `overlap` scorer, are in the [changelog](CHANGELOG.md).
+The default retrieval path did not move: LoCoMo and LongMemEval-S recall are identical before and after ([regression check](docs/BENCHMARKS-TRUST.md#6-retrieval-regression-check-locomo-and-longmemeval-s-before-and-after)). Recall latency was measured only on a loaded machine, with a scratch harness that is not committed, so those figures cannot be reproduced from this repository; the known limits, including a slowdown of the non-default `overlap` scorer, are in the [changelog](CHANGELOG.md).
 
 - **Precision you can switch on.** The new opt-in controls are a names gate and guarded single-edit fuzzy matching. Empty answers are native abstentions, and the ledger records why. With the controls on, the kernel scores **70/77 single-turn cases and 11/12 session turns on PrecisionMemBench** (session was 6/12 with the rc.1 filtered configuration). That run was protocol-exact, in retrieval mode, with no LLM judge, no wrapper-side filter and no wrapper `kinds` predicate, and the lexical and hybrid paths score the same. The 12th session turn needs an open-question kind policy that the kernel is not told about.
   - For comparison, the kernel scored 22/77 unfiltered and 48/77 with the fixture-tuned wrapper filters of rc.1.
   - The benchmark fixture is public, and the controls were designed against it, so this is not a held-out estimate.
-  - The 7 remaining cases need lifecycle fields that the single-turn protocol does not send.
+  - The 7 remaining misses are those of our metadata-based configuration; the single-turn protocol does not send explicit lifecycle fields.
   - The default retrieval path is unchanged: LoCoMo and LongMemEval-S recall are identical before and after.
-- **Consolidation that has to earn its keep.** A consolidation pass is a signed diff, replayed against the agent's own recorded outcomes. It is kept only when nothing regresses and no invariant breaks, and one command undoes it, back to the identical state hash. With consolidation on, the poisoning suite v1 run (227 synthetic cases, reproducible) has **zero escapes: 0 of 167 attacks escaped and 0 of 60 benign controls were falsely quarantined**, across 294 gate decisions. An ungated control lets 85 of the 167 attacks through. [Consolidation gate](docs/CONSOLIDATION.md) · [Signing and receipts](docs/CONSOLIDATION-SIGNING.md)
+- **Consolidation that has to earn its keep.** A consolidation pass is a signed diff, replayed against the agent's own recorded outcomes. It is kept only when aggregate lexical coverage on that replay set does not drop and no invariant breaks. One command undoes a kept pass that nothing has changed since; the visible-record state hash comes back identical only when nothing was written after the pass. The gate is **off by default in the standard MCP setup**: the host turns it on from the SDK by recording query text in the ledger and verifier outcomes ([how](docs/CONSOLIDATION.md#turn-the-gate-on)). With consolidation on, the poisoning suite v1 run (227 synthetic cases, reproducible) has **zero escapes: 0 of 167 attacks escaped and 0 of 60 benign controls were falsely quarantined**, across 294 gate decisions. An ungated control lets 85 of the 167 attacks through. [Consolidation gate](docs/CONSOLIDATION.md) · [Signing and receipts](docs/CONSOLIDATION-SIGNING.md)
 - **Corrections that reach what nobody linked.** Dependencies are inferred from successful co-use and proposed for review. Once accepted, they are declared through `correct()`, and runtime skills can be linked to their premises. The measurement is on a synthetic seeded corpus (dependency suite v1, seed 20261028, 120 corrections):
   - invalidation recall is **96.05 %**;
   - precision of accepted edges is **98.06 %**;
@@ -86,7 +86,7 @@ The default retrieval path did not move: LoCoMo and LongMemEval-S recall are ide
 - **A demo that measures itself.** `mnemosy demo` walks through five moments on synthetic corpora, offline, on the zero-model lexical path:
   1. a past belief replayed exactly;
   2. a correction reaching dependents nobody linked;
-  3. `bisect` naming the record that caused a wrong answer;
+  3. `bisect` finding the seeded record that pushes a known right answer out of the results;
   4. a poisoning attempt caught, with the suite run live;
   5. a consolidation kept, another rolled back, and the kept one undone.
 
@@ -103,11 +103,14 @@ From a source checkout, run `npm run build` and then `node dist/cli/index.js dem
 
 ## Install and connect an agent
 
+Choose one channel:
+
 ```sh
 npm install mnemosy-ai                   # stable: latest = 2.0.0; pin mnemosy-ai@2.0.0 to reproduce
-npm install mnemosy-ai@next              # pre-release: next = 3.0.0-rc.2; pin mnemosy-ai@3.0.0-rc.2 to reproduce
-npx --no-install mnemosy demo            # offline: no API key, no server, no Docker
+npm install mnemosy-ai@next              # or the pre-release: next = 3.0.0-rc.2; pin mnemosy-ai@3.0.0-rc.2 to reproduce
 ```
+
+Then, in that project, `npx --no-install mnemosy demo` runs the demo of the installed version offline (no API key, no server, no Docker); `--no-install` makes `npx` fail instead of fetching another package if none is installed. Without installing, `npx -y -p mnemosy-ai@3.0.0-rc.2 mnemosy demo` downloads and runs exactly that version.
 
 Give the memory to an MCP client. **Claude Code** reads `.mcp.json` in the project root and **Cursor** reads `.cursor/mcp.json`; both take the same server entry. The entries below run the 3.0.0-rc.2 pre-release through `mnemosy-ai@next`; for the stable release write `mnemosy-ai@2.0.0` in its place, and to pin the pre-release write `mnemosy-ai@3.0.0-rc.2`. Both versions expose the same MCP tools. The database file (mode `0600`) and its parent directory (mode `0700`) are created on first use. Relative paths resolve from the directory the client starts the server in; use absolute paths if your client launches servers elsewhere.
 
@@ -148,7 +151,7 @@ args = ["-y", "-p", "mnemosy-ai@next", "mnemosy", "mcp", "--db", "/absolute/path
 
 The first `npx` launch downloads the package; if a client gives up during that first start, install the package in the project first.
 
-The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory_context`, `memory_correct`, `memory_checkpoint`, `memory_resume`, `memory_observe`, `memory_skill`, …); `memory_forget` is added only when the server is launched with `--allow-destructive`. Add `--read-only` to omit every mutation tool. A model cannot switch workspace, raise its own trust or report its own skill trials through MCP. Agent-readable summaries of this repository are in [`llms.txt`](llms.txt) and [`AGENTS.md`](AGENTS.md); the full MCP contract is in [Connect through MCP](#connect-through-mcp).
+The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory_context`, `memory_correct`, `memory_checkpoint`, `memory_resume`, `memory_observe`, `memory_skill`, …); `memory_forget` is added only when the server is launched with `--allow-destructive`. Add `--read-only` to omit every mutation tool. A model cannot switch workspace, raise its own trust or report its own skill trials through MCP. The MCP tools do not include consolidation, `bisect` or outcome recording, so the 3.0 outcome gate stays off in this setup ([turn it on from the SDK](docs/CONSOLIDATION.md#turn-the-gate-on)). Agent-readable summaries of this repository are in [`llms.txt`](llms.txt) and [`AGENTS.md`](AGENTS.md); the full MCP contract is in [Connect through MCP](#connect-through-mcp).
 
 ## Measured: 409 of 500 on LongMemEval-S, with the misses printed
 
@@ -179,7 +182,7 @@ Install the package in your project. Node 24 is recommended; the local memory en
 
 ```sh
 npm install mnemosy-ai                   # stable 2.0.0; or mnemosy-ai@next for the 3.0.0-rc.2 pre-release
-npx --no-install mnemosy demo
+npx --no-install mnemosy demo            # runs the installed package offline; the install itself needs the network
 npx --no-install mnemosy learning-demo
 ```
 
@@ -293,8 +296,9 @@ the open, so it lives in the constructor and nowhere else.
 
 **`cacheSize`** — `PRAGMA cache_size`, applied on every open, in SQLite's own units: a **positive**
 value is a page count, a **negative** value is a KiB budget. Defaults to `-65536` (64 MiB), and a
-negative value is the recommended form since page size can vary. Must be a nonzero integer of
-magnitude at most 2,097,152.
+negative value is the recommended form since page size can vary. Must be a nonzero integer: a
+positive value is at most 524,288 pages, and a negative value is at most 2,097,152 in magnitude
+(2 GiB either way at the default page size).
 
 A larger page cache buys fewer trips through the OS page cache for the shortlist rescore and the
 BM25 postings that the hot recall path reads on every query. It matters once the working set stops
@@ -314,7 +318,7 @@ cost, charged per open connection, so it is set rather than guessed.
 | **Source-backed profiles** | Typed fields report supported values, unknowns or conflicts and revalidate their inputs. | [Profiles](docs/PROFILES.md) |
 | **Silent-staleness checks** | Explicit source policies, last-confirmed evidence, bounded probes and action-bound dependency checks. | [Freshness](docs/MAINTENANCE.md) |
 | **A controlled transition** | Read-only access to your previous store, gradual local preference, reconciliation and routing rollback. | [Gradual migration](docs/BRIDGE.md) |
-| **Full import and recovery** | Eleven export profiles, preview, atomic application, replay protection, guarded undo and whole-database backups. | [Import](docs/MIGRATION.md) · [Recovery](docs/OPERATIONS.md) |
+| **Full import and recovery** | Eleven export profiles, preview, atomic application, replay protection, guarded undo and whole-database backups (the consolidation signing key is a separate file to back up). | [Import](docs/MIGRATION.md) · [Recovery](docs/OPERATIONS.md) |
 | **Host-controlled processing** | Durable bounded jobs, source-backed project models, outcome traces, entity relations and staged changes. | [Runtime](docs/RUNTIME.md) |
 
 ## Local Engine, several entry points

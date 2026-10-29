@@ -1,6 +1,6 @@
 # Whole-database recovery
 
-`mnemosy-ai/operations` provides consistent local SQLite backups, integrity verification and restoration into a new database path. This is an **operator filesystem capability**: a backup contains every workspace, agent, private record, version, control, pending job, idempotency receipt and forgetting tombstone in that database. It is not a scoped agent export or a way to bypass an application's authorization.
+`mnemosy-ai/operations` provides consistent local SQLite backups, integrity verification and restoration into a new database path. A backup holds the SQLite database file only. The consolidation signing key is a separate file and is not included ([see below](#the-consolidation-signing-key)). This is an **operator filesystem capability**: a backup contains every workspace, agent, private record, version, control, pending job, idempotency receipt and forgetting tombstone in that database. It is not a scoped agent export or a way to bypass an application's authorization.
 
 Use scoped `memory.export()` when you want that agent's portable export. Use this module when you deliberately need full database recovery. Unknown options—including attempted workspace or agent filters—are rejected rather than silently producing an unfiltered backup.
 
@@ -41,6 +41,15 @@ Verification checks the exact format, strict manifest shape, declared sizes, no 
 A digest proves consistency against the supplied manifest; it is **not an authenticity signature**. An attacker able to replace the bundle and its manifest can calculate new hashes. Keep the receipt in a separately trusted location if you need an independent comparison, and use your existing protected/encrypted backup storage. Bundles contain private data in plaintext. Forgetting a source later does not remotely erase older backups; retention and deletion of those backups remain operator responsibilities.
 
 The backup covers the selected database only. A tombstone created after its snapshot cannot exist in that older snapshot. No system can infer those later deletions from the old backup alone; apply your operator's retained deletion policy before making restored data available.
+
+## The consolidation signing key
+
+A backup does **not** include the consolidation signing key. When consolidation runs on a file store, its Ed25519 private key lives in a separate file next to the database, `<db>.consolidation.key` (mode `0600`). Neither `backupLocalDatabase` nor `restoreLocalBackup` copies it. Restoring only the database therefore does not restore the ability to verify and undo earlier passes:
+
+- `mnemosy consolidate --verify-chain` pins receipts to the key file that sits next to the database it opens. With no key file there, nothing is pinned.
+- `mnemosy consolidate --rollback` trusts only that key by default. If the key file is missing, the command creates a new key, and receipts signed with the old key are refused.
+
+If you use consolidation, back up the key file separately, in protected storage with the same care as any private key. Also keep the public `keyId` from a receipt in a separately trusted place, so you can check which key signed the chain. After restoring to a new path, put the key at `<new path>.consolidation.key` before you run `--verify-chain` or `--rollback`. Do not copy the key into a backup bundle or an export. The receipts are stored in the database, so they are included.
 
 ## Filesystem safety and cancellation
 

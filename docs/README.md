@@ -17,10 +17,10 @@ Start with the [keyless local quickstart](quickstart.md), then choose the integr
 | Build typed preference or project profiles | [Profiles](PROFILES.md) | Explicit known, unknown and conflicting fields with source attribution. |
 | Use native memory tool envelopes | [Provider tools](PROVIDER-TOOLS.md) · [Virtual memory files](ANTHROPIC-MEMORY.md) | Local command handlers connected to a host-owned model loop. |
 | Recover the whole database | [Backup and restore](OPERATIONS.md) | A consistent verified snapshot restored to a new path. |
-| Consolidate memory without trusting the rewrite (3.0) | [Consolidation gate](CONSOLIDATION.md) · [Signing design](CONSOLIDATION-SIGNING.md) | Signed passes kept only when the agent's recorded outcomes do not regress, each undone in one command to the identical state hash. |
+| Consolidate memory without trusting the rewrite (3.0) | [Consolidation gate](CONSOLIDATION.md) · [Signing design](CONSOLIDATION-SIGNING.md) | Signed passes kept only when aggregate lexical coverage on the agent's recorded outcomes does not drop. An unchanged kept pass can be undone; the state hash is identical only if nothing was written after it. Off in the standard MCP setup; a host turns it on from the SDK. |
 | Let a correction reach procedures nobody linked (3.0) | [Inferred dependencies](DEPENDENCIES.md) | Dependencies proposed from successful co-use, accepted by a reviewer through `correct()`, premise-linked skills and a premise guard for the review window. |
 | See the kernel prove itself on your machine (3.0) | [The five-moment demo](DEMO.md) | `mnemosy demo`: replay, downstream correction, bisect, poisoning and consolidation, each with a PROOF line measured live on synthetic data. |
-| Assess the evidence behind a claim | [Evaluation](EVALUATION.md) · [Measurements](evaluation/BENCHMARKS.md) · [Benchmarks and trust evidence](BENCHMARKS-TRUST.md) | Reproducible retrieval reports and separate lifecycle diagnostics. |
+| Assess the evidence behind a claim | [Claims and evidence](CLAIMS.md) · [Evaluation](EVALUATION.md) · [Measurements](evaluation/BENCHMARKS.md) · [Benchmarks and trust evidence](BENCHMARKS-TRUST.md) | Reproducible retrieval reports and separate lifecycle diagnostics. |
 
 ## Integration coverage
 
