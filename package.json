@@ -151,6 +151,7 @@
   "scripts": {
     "benchmark": "node dist/evaluation/locomo-benchmark.js",
     "benchmark:agent": "node dist/cli/index.js benchmark-agent",
+    "benchmark:bisect-hybrid": "node scripts/bisect-hybrid-2k.mjs",
     "benchmark:corpus": "node dist/evaluation/corpus-cli.js",
     "benchmark:evidence": "node dist/evaluation/evidence-benchmark.js",
     "benchmark:fetch": "node scripts/fetch-benchmark-corpus.mjs",

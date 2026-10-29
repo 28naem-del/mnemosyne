@@ -14,6 +14,7 @@ import type { MemorySnapshot, StoreMemoryInput } from '../local/types.js';
 import { serveMemoryStdio, VERSION } from '../mcp/server.js';
 import { runMemoryDemo } from '../evaluation/demo.js';
 import { requireExistingDatabase, runMigrationCommand } from './migration.js';
+import { bisectRetrievalRequest, selectBisectRetrieval } from './bisect-retrieval.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseJsonWithSpans } from '../migration/json-spans.js';
 import { MemoryAgent } from '../agent/index.js';
@@ -44,7 +45,10 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy replay [scope] --known-at ISO --diff ISO [--json '{"knownAt":"ISO"}']
                    Belief diff between two cut points, with each change's source
   mnemosy bisect [scope] --file TASKS.json --task ID [--limit K] [--exact]
-                   Delta-debug memory to the minimal record set behind a retrieval failure
+                   [--retrieval auto|lexical|hybrid]
+                   Delta-debug memory to the minimal record set behind a retrieval failure;
+                   auto (default) re-executes hybrid when the store has stored vectors
+                   for the bundled model, else lexical; an hnsw dense index is refused
   mnemosy consolidate [scope] --propose [--out DIFF] | --apply [--file DIFF] | --rollback PASS_ID | --verify-chain
                    Outcome-gated, reversible consolidation; --demo [--db NEW_FILE] runs it offline
   mnemosy correct [scope] --id ID --text TEXT --source URI --reason TEXT
@@ -356,7 +360,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     record: { type: 'string' }, 'read-only': { type: 'boolean' },
     classic: { type: 'boolean' },
     'as-of': { type: 'string' }, 'known-at': { type: 'string' }, diff: { type: 'string' },
-    hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' },
+    hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' }, retrieval: { type: 'string' },
     propose: { type: 'boolean' }, apply: { type: 'boolean' }, rollback: { type: 'string' }, 'verify-chain': { type: 'boolean' }, demo: { type: 'boolean' },
     'allow-destructive': { type: 'boolean' }, 'include-untrusted': { type: 'boolean' },
     'provider-config': { type: 'string' }, 'token-file': { type: 'string' }, port: { type: 'string' },
@@ -465,6 +469,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const health = command === 'health' ? healthCommand(values) : undefined;
   const agentOptions = command === 'agent' ? agentCommand(values) : undefined;
   const dependencyOptions = command === 'dependencies' ? dependenciesCommand(values) : undefined;
+  const bisectRetrieval = command === 'bisect' ? bisectRetrievalRequest(values.retrieval) : undefined;
   if (health) requireExistingDatabase(resolve(required(values.db, '--db')));
   const memory = createLocalMemory({ path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') });
   const runtime = new MemoryRuntime(memory, { captureEnabled: !values['no-capture'], recallEnabled: !values['no-recall'] });
@@ -553,16 +558,27 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       case 'bisect': {
         if (!runtime.recallEnabled) throw new Error('Runtime recall is disabled.');
         // Loaded here, not at module scope: a caller who never bisects never pays for it.
-        const { bisect } = await import('../local/bisect.js');
+        const { bisect, HNSW_REFUSAL } = await import('../local/bisect.js');
         const task = bisectTask(values);
-        // Its own read handle, on the deterministic lexical path and with the
-        // ledger off: the oracles must re-run retrieval the same way every time,
-        // and an audit has no business writing recall entries into what it audits.
+        const store = { path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') };
+        // Oracle B re-executes whatever path the auditor retrieves with, so the
+        // auditor is opened on the store's own path: read off its stored vectors
+        // under --retrieval auto (the default), or named explicitly.
+        const selection = selectBisectRetrieval(bisectRetrieval ?? 'auto', store, HNSW_REFUSAL);
+        // Its own read handle, with the ledger off: an audit has no business
+        // writing recall entries into what it audits. Hybrid must not degrade to
+        // lexical without saying so, so a missing model is an error here.
         const auditor = createLocalMemory({
-          path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'),
-          agentId: required(values.agent, '--agent'), retrieval: 'lexical', ledger: false,
+          ...store, retrieval: selection.mode, ledger: false, ...(selection.mode === 'hybrid' ? { requireEmbedder: true } : {}),
         });
-        try { print(bisect(auditor, task, { exact: values.exact === true })); } finally { auditor.close(); }
+        try {
+          if (selection.mode === 'hybrid') {
+            try { void auditor.retrieval; } catch (error) {
+              throw new Error(`bisect needs the hybrid retriever (${selection.requested}: ${selection.signal}), but the bundled embedding model did not load: ${error instanceof Error ? error.message : String(error)}. Run npm run setup:embedder, or pass --retrieval lexical to bisect the lexical path instead.`);
+            }
+          }
+          print({ ...bisect(auditor, task, { exact: values.exact === true }), retrievalSelection: selection });
+        } finally { auditor.close(); }
         break;
       }
       case 'consolidate': {
