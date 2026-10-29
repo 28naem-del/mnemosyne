@@ -104,6 +104,11 @@ const TEMPORAL_PRIORITY_KEEP = 3;
 const FUZZY_WEIGHT = 0.5;
 /** At most this many single-edit neighbours are added per unmatched query term. */
 const FUZZY_EXPANSIONS = 8;
+/** At most this many unmatched query terms are expanded, in query order. Each
+ * one costs a few thousand candidate lookups, so this bounds the work of one
+ * recall whatever the query holds; a typed query rarely has more than one or
+ * two misspelled words. */
+const FUZZY_EXPANDED_TERMS = 16;
 /**
  * Bound for the T1.4 option-B "when-intent" prior (see `WHEN_INTENT_QUERY_RE`
  * and `#prioritizeTimeBearing`). Deliberately far shallower than
@@ -1488,8 +1493,10 @@ export class LocalMemory {
       ? (present.all(JSON.stringify(candidates), this.#workspaceId, this.#agentId) as { term: string }[]).map((row) => row.term) : [];
     const known = new Set(has(terms.filter(fuzzyEligible)));
     const expansion = new Set<string>();
+    let expanded = 0;
     for (const term of terms) {
       if (!fuzzyEligible(term) || known.has(term)) continue;
+      if (expanded++ === FUZZY_EXPANDED_TERMS) break;
       for (const neighbour of has(singleEditCandidates(term)).slice(0, FUZZY_EXPANSIONS)) if (!terms.includes(neighbour)) expansion.add(neighbour);
     }
     return [...expansion];
@@ -2504,9 +2511,17 @@ export class LocalMemory {
     const write = this.#db.prepare('INSERT INTO local_granularity_embeddings(doc_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(doc_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data');
     for (let offset = 0; offset < pending.length;) {
       this.#assertOpen(); this.#abort(options.signal);
-      const batch = pending.slice(offset, offset + batchSize);
-      offset += batch.length;
-      const vectors = await this.#boundedCall((signal) => options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }), options.signal, options.timeoutMs);
+      const queued = pending.slice(offset, offset + batchSize);
+      offset += queued.length;
+      let batch: typeof queued = [];
+      const vectors = await this.#boundedCall((signal) => {
+        // Earlier batches and the queued dispatch itself are invalidation
+        // boundaries. A member erased or changed since `pending` was read has
+        // already dropped or rewritten its documents, so only a document whose
+        // stored hash still matches is sent; a forgotten member's text never is.
+        batch = queued.filter(document => (current.get(document.id) as unknown as { sourceHash: string } | undefined)?.sourceHash === document.sourceHash);
+        return batch.length ? options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }) : Promise.resolve([]);
+      }, options.signal, options.timeoutMs);
       if (!Array.isArray(vectors) || vectors.length !== batch.length) throw new TypeError('Embedder must return one vector per input text');
       const validated = vectors.map(vector => this.#vector(vector, dimensions));
       this.#abort(options.signal);

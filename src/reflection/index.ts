@@ -114,7 +114,16 @@ export async function reflect(memory: LocalMemory, options: ReflectionOptions): 
   });
   let response: unknown;
   try {
-    response = await Promise.race([Promise.resolve().then(() => options.proposer({ ...envelope(), signal: controller.signal })), timeout]);
+    response = await Promise.race([Promise.resolve().then(() => {
+      // The proposer is called from a queued microtask, so a caller can have
+      // corrected or forgotten a source since the packet was compiled. Recheck
+      // at dispatch: erased or changed text is never sent.
+      for (const item of packet.items) {
+        const current = memory.get(item.id);
+        if (!current || revision(memory, current) !== sourceRevisions.get(item.id)) throw new Error('Reflection evidence changed or became unavailable before dispatch. Run reflection again.');
+      }
+      return options.proposer({ ...envelope(), signal: controller.signal });
+    }), timeout]);
   } finally {
     clearTimeout(timer);
     if (cancel) options.signal?.removeEventListener('abort', cancel);
