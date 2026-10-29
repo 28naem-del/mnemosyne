@@ -104,6 +104,11 @@ const TEMPORAL_PRIORITY_KEEP = 3;
 const FUZZY_WEIGHT = 0.5;
 /** At most this many single-edit neighbours are added per unmatched query term. */
 const FUZZY_EXPANSIONS = 8;
+/** At most this many unmatched query terms are expanded, in query order. Each
+ * one costs a few thousand candidate lookups, so this bounds the work of one
+ * recall whatever the query holds; a typed query rarely has more than one or
+ * two misspelled words. */
+const FUZZY_EXPANDED_TERMS = 16;
 /**
  * Bound for the T1.4 option-B "when-intent" prior (see `WHEN_INTENT_QUERY_RE`
  * and `#prioritizeTimeBearing`). Deliberately far shallower than
@@ -1491,8 +1496,10 @@ export class LocalMemory {
       ? (present.all(JSON.stringify(candidates), this.#workspaceId, this.#agentId) as { term: string }[]).map((row) => row.term) : [];
     const known = new Set(has(terms.filter(fuzzyEligible)));
     const expansion = new Set<string>();
+    let expanded = 0;
     for (const term of terms) {
       if (!fuzzyEligible(term) || known.has(term)) continue;
+      if (expanded++ === FUZZY_EXPANDED_TERMS) break;
       for (const neighbour of has(singleEditCandidates(term)).slice(0, FUZZY_EXPANSIONS)) if (!terms.includes(neighbour)) expansion.add(neighbour);
     }
     return [...expansion];
@@ -1863,19 +1870,24 @@ export class LocalMemory {
    * a too-short shortlist would silently be a different answer than the exact
    * scan's. When it still comes up short the shortlist widens, and widening
    * terminates at the index size — where the shortlist IS the whole index, so the
-   * result is exactly what the exact scan returns. Returns null only when there
-   * is nothing indexed yet, which is the caller's cue to scan.
+   * result is exactly what the exact scan returns. Returns null when there is
+   * nothing indexed yet, or when the shortlist would have to grow past what the
+   * backend can return in one search (`maxK`, 4096 for sqlite-vec): both are the
+   * caller's cue to scan, and the scan returns what the full shortlist would have.
    */
   #annVectorScan(index: DenseIndex, scan: DenseScan): ScoredId[] | null {
     const size = index.size();
     if (!size) return null;
     const query = Float32Array.from(scan.query);
-    let depth = Math.min(size, Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64));
+    const limit = Math.min(size, index.maxK ?? size);
+    let depth = Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64);
     for (;;) {
       this.#assertOpen();
+      if (depth > limit && limit < size) return null;
+      depth = Math.min(depth, size);
       const accepted = this.#authorizeLabels(index.search(query, depth), scan);
       if (accepted.length >= scan.maxCandidates || depth >= size) return accepted.slice(0, scan.maxCandidates);
-      depth = Math.min(size, depth * DENSE_WIDENING);
+      depth *= DENSE_WIDENING;
     }
   }
 
@@ -2544,9 +2556,17 @@ export class LocalMemory {
     const write = this.#db.prepare('INSERT INTO local_granularity_embeddings(doc_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(doc_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data');
     for (let offset = 0; offset < pending.length;) {
       this.#assertOpen(); this.#abort(options.signal);
-      const batch = pending.slice(offset, offset + batchSize);
-      offset += batch.length;
-      const vectors = await this.#boundedCall((signal) => options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }), options.signal, options.timeoutMs);
+      const queued = pending.slice(offset, offset + batchSize);
+      offset += queued.length;
+      let batch: typeof queued = [];
+      const vectors = await this.#boundedCall((signal) => {
+        // Earlier batches and the queued dispatch itself are invalidation
+        // boundaries. A member erased or changed since `pending` was read has
+        // already dropped or rewritten its documents, so only a document whose
+        // stored hash still matches is sent; a forgotten member's text never is.
+        batch = queued.filter(document => (current.get(document.id) as unknown as { sourceHash: string } | undefined)?.sourceHash === document.sourceHash);
+        return batch.length ? options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }) : Promise.resolve([]);
+      }, options.signal, options.timeoutMs);
       if (!Array.isArray(vectors) || vectors.length !== batch.length) throw new TypeError('Embedder must return one vector per input text');
       const validated = vectors.map(vector => this.#vector(vector, dimensions));
       this.#abort(options.signal);
