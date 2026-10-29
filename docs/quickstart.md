@@ -17,12 +17,12 @@ In your Node.js project:
 
 ```sh
 npm install mnemosy-ai           # stable: latest = 2.0.0
-npm install mnemosy-ai@next      # newest pre-release: 3.0.0-rc.2
+npm install mnemosy-ai@next      # newest pre-release: 3.0.0-rc.3
 npx --no-install mnemosy demo
 npx --no-install mnemosy learning-demo
 ```
 
-Unqualified installation follows `latest`, which is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install. `mnemosy-ai@next` installs the 3.0.0-rc.2 pre-release; pin `mnemosy-ai@3.0.0-rc.2` to reproduce it, and read the [version 3 migration notes](MIGRATION-v3.md) before moving an application that uses `createMnemosyne`. Upgrading an existing 1.x application is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
+Unqualified installation follows `latest`, which is 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install. `mnemosy-ai@next` installs the 3.0.0-rc.3 pre-release; pin `mnemosy-ai@3.0.0-rc.3` to reproduce it, and read the [version 3 migration notes](MIGRATION-v3.md) before moving an application that uses `createMnemosyne`. Upgrading an existing 1.x application is a breaking change; read the [version 2 migration notes](MIGRATION-v2.md) first. The commands below use a source checkout; with an npm installation, replace `node dist/cli/index.js` with `npx --no-install mnemosy`. SDK imports such as `mnemosy-ai/local` work from the installed package.
 
 ## Build the tagged source release
 
