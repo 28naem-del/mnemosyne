@@ -85,6 +85,11 @@ jobs:
       needs_locomo: ${{ steps.plan.outputs.needs_locomo }}
       needs_lme: ${{ steps.plan.outputs.needs_lme }}
     steps:
+      - name: Checkout the split files
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: benchmarks/splits
+
       - name: Validate inputs and expand the job matrix
         id: plan
         env:
@@ -97,7 +102,7 @@ jobs:
           IN_SHARD: ${{ inputs.lme_shard_size }}
         run: |
           node --input-type=module <<'NODE'
-          import { appendFileSync } from 'node:fs';
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs';
           const env = process.env;
           const fail = message => { console.error(`::error::${message}`); process.exit(1); };
           const modes = env.IN_MODES.split(',').map(m => m.trim()).filter(Boolean);
@@ -110,7 +115,16 @@ jobs:
           if (maxQ && (!/^\d+$/.test(maxQ) || Number(maxQ) < 1)) fail(`max_questions must be a positive integer or empty; got "${maxQ}"`);
           const shard = env.IN_SHARD.trim();
           if (!/^\d+$/.test(shard)) fail(`lme_shard_size must be a non-negative integer; got "${shard}"`);
-          const total = Number(env.LME_HAYSTACKS);
+          // A TUNE/HOLDOUT run filters the haystacks before --corpus-offset applies, so
+          // shards are cut over the split's own size, read from the committed split file.
+          const splitFile = 'benchmarks/splits/longmemeval_s.json';
+          let total = Number(env.LME_HAYSTACKS);
+          if (env.IN_SPLIT !== 'all') {
+            if (!existsSync(splitFile)) fail(`split=${env.IN_SPLIT} needs ${splitFile}, which this ref does not have`);
+            const ids = JSON.parse(readFileSync(splitFile, 'utf8'))[env.IN_SPLIT];
+            if (!Array.isArray(ids) || !ids.length) fail(`${splitFile} has no "${env.IN_SPLIT}" id list`);
+            total = ids.length;
+          }
           const corpora = env.IN_CORPUS === 'both' ? ['locomo', 'longmemeval'] : [env.IN_CORPUS === 'longmemeval_s' ? 'longmemeval' : env.IN_CORPUS];
           const include = [];
           for (const corpus of corpora) for (const k of ks) {
@@ -299,10 +313,10 @@ jobs:
           if [ "$RERANKER" != true ]; then args+=(--no-rerank); fi
           if [ -n "$OFFSET" ]; then args+=(--corpus-offset "$OFFSET" --max-corpora "$COUNT"); fi
           if [ -n "$MAX_QUESTIONS" ]; then args+=(--max-questions "$MAX_QUESTIONS"); fi
+          # Older refs have no --split; a non-`all` split there fails instead of mislabelling a full-set run.
           if node dist/evaluation/matched-benchmark.js --help | grep -q -- '--split'; then
             args+=(--split "$SPLIT")
           elif [ "$SPLIT" != all ]; then
-            # TODO: remove this branch once the harness on main accepts --split.
             echo "::error::split=$SPLIT requested but this harness has no --split flag; refusing to label a full-set run as $SPLIT"
             exit 1
           fi
@@ -422,7 +436,8 @@ jobs:
             } else {
               const tmp = mkdtempSync(join(env.RUNNER_TEMP, 'merge-'));
               for (const file of files) copyFileSync(file.from, join(tmp, file.name));
-              const args = ['dist/evaluation/matched-benchmark.js', '--merge', tmp, '--corpus', corpus, '--top-k', k];
+              // The harness tags split runs (`<corpus>-<split>-k<K>`), so the merge needs the same --split.
+              const args = ['dist/evaluation/matched-benchmark.js', '--merge', tmp, '--corpus', corpus, '--top-k', k, ...(env.IN_SPLIT !== 'all' ? ['--split', env.IN_SPLIT] : [])];
               console.log(`node ${args.join(' ')}`);
               console.log(execFileSync('node', args, { encoding: 'utf8' }));
               const merged = readdirSync(tmp).filter(name => name.endsWith('.json') && !/-part\d+\.json$/.test(name));
