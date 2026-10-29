@@ -1,6 +1,6 @@
 # The demo: `mnemosy demo`
 
-`mnemosy demo` (from 3.0.0-rc.2: `npx -y -p mnemosy-ai@3.0.0-rc.2 mnemosy demo`, which needs the network once to download the package, or this source tree after `npm run build`;
+`mnemosy demo` (from 3.0.0-rc.2: `npx -y -p mnemosy-ai@next mnemosy demo`, which needs the network once to download the package, or this source tree after `npm run build`;
 the stable 2.0.0 package on npm `latest` still ships the classic demo) walks you through five moments on bundled **synthetic** corpora, offline, and after each moment prints one `PROOF` line with a number it has just measured on your machine. None of the numbers is recorded or hard-coded: run it twice and every count is recomputed; timings will move with your machine.
 
 ```bash

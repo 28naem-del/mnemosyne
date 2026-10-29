@@ -26,6 +26,13 @@ hermes plugins enable mnemosy-ai
 ```
 Needs Node.js >= 22.16 and npm (`npx`) on `PATH`.
 
+The first start downloads the package with `npx`, which can take longer than
+Hermes's default 60 s MCP connect timeout, and a portable plugin cannot raise
+it. If the server fails to connect on first start, run
+`npx -y -p mnemosy-ai@3.0.0-rc.3 mnemosy --help` once to fill the npm cache, or
+use the `~/.hermes/config.yaml` route with `connect_timeout: 120` (see the
+project README).
+
 ## Disclosures
 - **Package download.** The first start runs `npx`, which downloads the pinned
   `mnemosy-ai@3.0.0-rc.3` and its dependencies from the npm registry. These
@@ -49,8 +56,9 @@ Needs Node.js >= 22.16 and npm (`npx`) on `PATH`.
 
 ## Untested status
 This package follows the Hermes Portable Agent Plugin format as documented for
-Hermes v0.22.5. Hermes runs stdio MCP servers on its own managed Node.js; the
-server has not yet been run under that runtime by the maintainers.
+Hermes v0.22.5. The maintainers have not yet run this plugin under Hermes. In
+particular, it is unverified which Node.js runtime Hermes uses to start stdio
+MCP servers, and whether the package's native addons load under it.
 
 ## License
 MIT, see [LICENSE](LICENSE).
