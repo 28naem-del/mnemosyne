@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { writeModelFile } from './model-file.js';
 
 /**
  * The pinned CPU embedding model for the default hybrid recall path.
@@ -92,7 +93,8 @@ export function verifyBundledModel(cacheDir?: string): void {
 /**
  * One-time setup download of the pinned artifacts. Retrieval never calls this:
  * it exists so a build or install step can populate the cache once. Each file is
- * written to a temporary name, digest-verified, then renamed into place, so an
+ * digest-verified, written to an unpredictable temporary name created
+ * exclusively (see `writeModelFile`), then renamed into place, so an
  * interrupted download can never be mistaken for a valid cache entry.
  */
 export async function fetchBundledModel(options: { cacheDir?: string; signal?: AbortSignal; onProgress?: (message: string) => void } = {}): Promise<BundledModelStatus> {
@@ -110,11 +112,8 @@ export async function fetchBundledModel(options: { cacheDir?: string; signal?: A
     if (bytes.byteLength !== spec.bytes) throw new Error(`Downloaded ${spec.local} has ${bytes.byteLength} bytes, expected ${spec.bytes}`);
     const actual = createHash('sha256').update(bytes).digest('hex');
     if (actual !== spec.sha256) throw new Error(`Downloaded ${spec.local} digest ${actual} does not match the pinned ${spec.sha256}`);
-    const staging = `${target}.partial`;
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
-    writeFileSync(staging, bytes, { mode: 0o600 });
-    renameSync(staging, target);
-    chmodSync(target, 0o600);
+    writeModelFile(target, bytes);
     options.onProgress?.(`verified ${spec.local}`);
   }
   return bundledModelStatus(options.cacheDir);

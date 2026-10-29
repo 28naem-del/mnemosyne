@@ -15,9 +15,28 @@ The design draws on established work rather than claiming exclusive invention:
 
 These references describe research influences, not performance rankings or proof of production parity. The original license and authorship remain intact.
 
-Runtime third-party dependencies: the official MCP TypeScript server SDK (MIT), Zod (MIT), and uuid (MIT, legacy backend). SQLite is supplied by Node.js; the local entry point uses Node built-ins. Each dependency retains its own license. Research discussion of OpenViking does not import its AGPL server code into this distribution.
+Runtime third-party dependencies, as declared in `package.json` and recorded in `package-lock.json`:
 
-Optional CPU inference uses separately installed third-party software and separately provisioned models. Their identities, pinned revisions, Apache-2.0 licenses and source model cards are listed in [local-model attribution](docs/LOCAL-MODELS.md#reproducibility-and-attribution). Mnemosyne supplies the integration and memory lifecycle; it does not claim authorship of those inference libraries or model weights.
+| Package | Role | License | Upstream |
+|---|---|---|---|
+| `@modelcontextprotocol/server` | MCP server SDK | Apache-2.0 (earlier contributions not yet relicensed remain MIT; see the package's LICENSE) | <https://github.com/modelcontextprotocol/typescript-sdk> |
+| `zod` | schema validation | MIT | <https://github.com/colinhacks/zod> |
+| `uuid` | declared dependency; the 3.x kernel in `src/` does not import it | MIT | <https://github.com/uuidjs/uuid> |
+| `onnxruntime-node` (required) | CPU inference for the local embedder and reranker; ships prebuilt native binaries | MIT | <https://github.com/microsoft/onnxruntime> |
+| `hnswlib-node` (optional) | HNSW index for `indexMode: 'hnsw'`; compiles the bundled hnswlib C++ library | Apache-2.0 (hnswlib: Apache-2.0) | <https://github.com/yoshoku/hnswlib-node>, <https://github.com/nmslib/hnswlib> |
+| `sqlite-vec` (optional) | `vec0` SQLite extension for `indexMode: 'auto'` and `'sqlite-vec'`; ships a prebuilt per-platform binary | MIT or Apache-2.0, at your option | <https://github.com/asg017/sqlite-vec> |
+
+SQLite is supplied by Node.js; the local entry point uses Node built-ins. Each dependency retains its own license. Research discussion of OpenViking does not import its AGPL server code into this distribution.
+
+Model weights are not included in the npm package. They are downloaded once, on request, from Hugging Face at a pinned commit and checked against pinned SHA-256 digests:
+
+| Model | Used by | License | Source |
+|---|---|---|---|
+| `Xenova/bge-small-en-v1.5`, int8 ONNX (from `BAAI/bge-small-en-v1.5`) | default local embedder (`mnemosy-ai/local/embedding`) | MIT | <https://huggingface.co/BAAI/bge-small-en-v1.5> |
+| `Xenova/ms-marco-MiniLM-L-6-v2`, int8 ONNX (from `cross-encoder/ms-marco-MiniLM-L-6-v2`) | default local reranker (`mnemosy-ai/local/reranking`) | Apache-2.0 | <https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2> |
+| `Xenova/all-MiniLM-L6-v2` and `Xenova/ms-marco-MiniLM-L-6-v2` via `@huggingface/transformers` (Apache-2.0, optional peer) | optional subprocess providers (`mnemosy-ai/providers/local`) | Apache-2.0 | [model cards](docs/LOCAL-MODELS.md#reproducibility-and-attribution) |
+
+Pinned revisions, the Transformers.js runtime and its patched `sharp` dependency are listed in [local-model attribution](docs/LOCAL-MODELS.md#reproducibility-and-attribution). Mnemosyne supplies the integration and memory lifecycle; it does not claim authorship of those inference libraries or model weights.
 
 Evaluation reports retain dataset attribution, revisions and result metadata. The public benchmark conversation corpora are not bundled; users acquire them separately under their upstream terms. See the [corpus protocol](docs/evaluation/CORPUS_PROTOCOL.md) for dataset sources and license distinctions. Included synthetic fixtures and recorded demonstrations are first-party examples, not user memory exports.
 

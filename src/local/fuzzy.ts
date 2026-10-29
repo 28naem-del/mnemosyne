@@ -8,7 +8,9 @@
  * - optimal string alignment (OSA) distance of at most 1, so one insertion,
  *   deletion, substitution, or one swap of two adjacent letters ("typsecript");
  * - both tokens at least {@link FUZZY_MIN_LENGTH} characters, so abbreviations
- *   such as "k8s"/"k9s" never fuzz into each other;
+ *   such as "k8s"/"k9s" never fuzz into each other, and at most
+ *   {@link FUZZY_MAX_LENGTH}, so the work one query token can cause stays bounded
+ *   (candidate generation and checking grow with the token's length);
  * - the first {@link FUZZY_PREFIX} characters equal, so an edit can never change
  *   what a word starts with ("mango" does not reach "mongo");
  * - letters only — a token carrying a digit is an identifier, a version or a
@@ -23,35 +25,45 @@
 export const FUZZY_MIN_LENGTH = 4;
 export const FUZZY_PREFIX = 2;
 export const FUZZY_MIN_DISTINCT = 3;
+/** Longer tokens are matched exactly only. Longer than any ordinary word, so a
+ * typo is still forgiven in long compounds, while one pathological token can no
+ * longer cost seconds of synchronous work. */
+export const FUZZY_MAX_LENGTH = 48;
 
 const LETTERS = /^\p{L}+$/u;
 
 /** Whether a token may take part in a fuzzy match at all. */
 export function fuzzyEligible(token: string): boolean {
-  if (token.length < FUZZY_MIN_LENGTH || !LETTERS.test(token)) return false;
+  if (token.length < FUZZY_MIN_LENGTH || token.length > FUZZY_MAX_LENGTH || !LETTERS.test(token)) return false;
   return new Set(token).size >= FUZZY_MIN_DISTINCT;
 }
 
 /**
  * OSA distance, bounded: returns the exact distance when it is at most `limit`
- * and `limit + 1` otherwise. The band keeps this O(n·limit) rather than O(n·m),
- * which matters because expansion runs against a vocabulary, not one word.
+ * and `limit + 1` otherwise. Only the diagonal band |i - j| <= limit is computed
+ * (a cell outside it is already more than `limit` edits away), so this is
+ * O(n·limit) rather than O(n·m), which matters because expansion runs against a
+ * vocabulary, not one word.
  */
 export function boundedOsaDistance(a: string, b: string, limit = 1): number {
   if (a === b) return 0;
   if (Math.abs(a.length - b.length) > limit) return limit + 1;
-  const n = a.length, m = b.length;
-  let previous2 = new Array<number>(m + 1).fill(0);
-  let previous = Array.from({ length: m + 1 }, (_, j) => j);
-  let current = new Array<number>(m + 1).fill(0);
+  const n = a.length, m = b.length, outside = limit + 1;
+  let previous2 = new Array<number>(m + 1).fill(outside);
+  let previous = Array.from({ length: m + 1 }, (_, j) => Math.min(j, outside));
+  let current = new Array<number>(m + 1).fill(outside);
   for (let i = 1; i <= n; i++) {
-    current[0] = i;
-    let rowMin = current[0];
-    for (let j = 1; j <= m; j++) {
+    const from = Math.max(1, i - limit), to = Math.min(m, i + limit);
+    // Cells just outside the band are read by the next row; keep them saturated.
+    current[0] = Math.min(i, outside);
+    if (from > 1) current[from - 1] = outside;
+    if (to < m) current[to + 1] = outside;
+    let rowMin = from === 1 ? current[0] : outside;
+    for (let j = from; j <= to; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       let value = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
       if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) value = Math.min(value, previous2[j - 2] + 1);
-      current[j] = value;
+      current[j] = Math.min(value, outside);
       if (value < rowMin) rowMin = value;
     }
     if (rowMin > limit) return limit + 1;
@@ -98,8 +110,9 @@ export function singleEditCandidates(token: string): string[] {
     const head = characters.slice(0, index).join(''), tail = characters.slice(index).join('');
     for (const letter of letters) out.add(head + letter + tail);
     if (index < characters.length) {
-      out.add(head + characters.slice(index + 1).join(''));
-      for (const letter of letters) if (letter !== characters[index]) out.add(head + letter + characters.slice(index + 1).join(''));
+      const rest = characters.slice(index + 1).join('');
+      out.add(head + rest);
+      for (const letter of letters) if (letter !== characters[index]) out.add(head + letter + rest);
       if (index + 1 < characters.length) out.add(head + characters[index + 1] + characters[index] + characters.slice(index + 2).join(''));
     }
   }

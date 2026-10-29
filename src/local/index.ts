@@ -104,6 +104,11 @@ const TEMPORAL_PRIORITY_KEEP = 3;
 const FUZZY_WEIGHT = 0.5;
 /** At most this many single-edit neighbours are added per unmatched query term. */
 const FUZZY_EXPANSIONS = 8;
+/** At most this many unmatched query terms are expanded, in query order. Each
+ * one costs a few thousand candidate lookups, so this bounds the work of one
+ * recall whatever the query holds; a typed query rarely has more than one or
+ * two misspelled words. */
+const FUZZY_EXPANDED_TERMS = 16;
 /**
  * Bound for the T1.4 option-B "when-intent" prior (see `WHEN_INTENT_QUERY_RE`
  * and `#prioritizeTimeBearing`). Deliberately far shallower than
@@ -209,6 +214,9 @@ export class LocalMemory {
   #denseIndex: DenseIndex | null = null;
   #denseResolved = false;
   #denseStatus?: DenseIndexStatus;
+  /** `PRAGMA data_version` when the in-process HNSW graph last caught up with
+   * labels other connections assigned; see `#catchUpDenseIndex`. */
+  #denseSeenVersion = -1;
   /** Bumped by every mutation that can put a record back in the pending set. */
   #writeSeq = 0;
   #vectorsDrained?: { model: string; writeSeq: number; dataVersion: number };
@@ -1488,8 +1496,10 @@ export class LocalMemory {
       ? (present.all(JSON.stringify(candidates), this.#workspaceId, this.#agentId) as { term: string }[]).map((row) => row.term) : [];
     const known = new Set(has(terms.filter(fuzzyEligible)));
     const expansion = new Set<string>();
+    let expanded = 0;
     for (const term of terms) {
       if (!fuzzyEligible(term) || known.has(term)) continue;
+      if (expanded++ === FUZZY_EXPANDED_TERMS) break;
       for (const neighbour of has(singleEditCandidates(term)).slice(0, FUZZY_EXPANSIONS)) if (!terms.includes(neighbour)) expansion.add(neighbour);
     }
     return [...expansion];
@@ -1818,7 +1828,8 @@ export class LocalMemory {
     // lookup for a row already in hand.
     const stored = JSON.parse(row.record) as MemoryRecord, memory = this.#at(stored, scan.time);
     if (!memory || row.source_hash !== this.#textHash(memory.text)) return null;
-    const vector = this.#decodeVector(row.vector, scan.dimensions);
+    const vector = this.#storedVector(row.id, scan.model, row.vector, scan.dimensions);
+    if (!vector) return null;
     let score = 0;
     for (let index = 0; index < scan.dimensions; index++) score += vector[index] * scan.query[index];
     // Nonpositive cosine is not affirmative semantic evidence, and neither is
@@ -1859,19 +1870,24 @@ export class LocalMemory {
    * a too-short shortlist would silently be a different answer than the exact
    * scan's. When it still comes up short the shortlist widens, and widening
    * terminates at the index size — where the shortlist IS the whole index, so the
-   * result is exactly what the exact scan returns. Returns null only when there
-   * is nothing indexed yet, which is the caller's cue to scan.
+   * result is exactly what the exact scan returns. Returns null when there is
+   * nothing indexed yet, or when the shortlist would have to grow past what the
+   * backend can return in one search (`maxK`, 4096 for sqlite-vec): both are the
+   * caller's cue to scan, and the scan returns what the full shortlist would have.
    */
   #annVectorScan(index: DenseIndex, scan: DenseScan): ScoredId[] | null {
     const size = index.size();
     if (!size) return null;
     const query = Float32Array.from(scan.query);
-    let depth = Math.min(size, Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64));
+    const limit = Math.min(size, index.maxK ?? size);
+    let depth = Math.max(scan.maxCandidates * DENSE_OVERFETCH, 64);
     for (;;) {
       this.#assertOpen();
+      if (depth > limit && limit < size) return null;
+      depth = Math.min(depth, size);
       const accepted = this.#authorizeLabels(index.search(query, depth), scan);
       if (accepted.length >= scan.maxCandidates || depth >= size) return accepted.slice(0, scan.maxCandidates);
-      depth = Math.min(size, depth * DENSE_WIDENING);
+      depth *= DENSE_WIDENING;
     }
   }
 
@@ -1916,15 +1932,57 @@ export class LocalMemory {
    * quiet substitution naming a backend explicitly is supposed to refuse.
    */
   #resolveDenseIndex(model: string, dimensions: number): DenseIndex | null {
-    if (this.#denseResolved) return this.#denseIndex;
+    if (this.#denseResolved) {
+      if (this.#denseIndex?.kind === 'hnsw') this.#catchUpDenseIndex(this.#denseIndex as HnswIndex, model, dimensions);
+      return this.#denseIndex;
+    }
     const selection = this.#transaction(() => createDenseIndex(this.#db, {
       mode: this.#indexMode, model, dimensions, databasePath: this.#path, vecLoaded: this.#vecLoaded, ...(this.#vecError ? { vecError: this.#vecError } : {}),
     }));
+    this.#denseSeenVersion = this.#dataVersion();
     this.#denseResolved = true;
     this.#denseIndex = selection.index;
     this.#denseStatus = selection.status;
     if (selection.index && selection.rebuild) this.#syncDenseIndex(selection.index, model, dimensions);
     return this.#denseIndex;
+  }
+
+  /**
+   * Add to an open HNSW graph the vectors another connection indexed since.
+   *
+   * sqlite-vec lives in the database file, so every connection sees the same
+   * index. An HNSW graph lives in this process: when another connection (or
+   * process) on the same file embeds new records, it assigns their labels and
+   * adds them to ITS graph, and this one never hears of them — its dense channel
+   * would miss those records for as long as it stayed open, because to this
+   * connection they are no longer pending. Labels are AUTOINCREMENT, so
+   * everything new sits above this graph's watermark. The check costs one
+   * `PRAGMA data_version` per recall, which only moves when another connection
+   * commits, plus one indexed `max(label)` when it has.
+   *
+   * Only additions are caught up here. An erasure elsewhere needs nothing: its
+   * label is gone, so the authorization join withholds the record whatever this
+   * graph still proposes.
+   */
+  #catchUpDenseIndex(index: HnswIndex, model: string, dimensions: number): void {
+    const version = this.#dataVersion();
+    if (version === this.#denseSeenVersion) return;
+    this.#denseSeenVersion = version;
+    const top = this.#db.prepare('SELECT max(label) AS label FROM local_vec_labels WHERE model=?').get(model) as { label: number | bigint | null };
+    if (top.label === null || Number(top.label) <= index.watermark) return;
+    const statement = this.#db.prepare(`SELECT l.label, e.data AS vector FROM local_vec_labels l
+      JOIN local_embeddings e ON e.memory_id=l.memory_id AND e.model=l.model
+      WHERE l.model=? AND e.dimensions=? AND l.label>? ORDER BY l.label`);
+    let batch: DenseIndexEntry[] = [];
+    for (const row of statement.iterate(model, dimensions, index.watermark) as Iterable<{ label: number | bigint; vector: string | Uint8Array }>) {
+      // An undecodable row is left to the recall that reads it, which marks it
+      // for re-embedding; it only costs this graph that one vector meanwhile.
+      let vector: number[];
+      try { vector = this.#decodeVector(row.vector, dimensions); } catch { continue; }
+      batch.push({ label: Number(row.label), vector: Float32Array.from(vector) });
+      if (batch.length === 512) { index.upsert(batch); batch = []; }
+    }
+    if (batch.length) index.upsert(batch);
   }
 
   /**
@@ -1949,13 +2007,18 @@ export class LocalMemory {
       FROM local_embeddings e LEFT JOIN local_vec_labels l ON l.memory_id=e.memory_id AND l.model=e.model
       WHERE e.model=? AND e.dimensions=? AND (l.label IS NULL OR l.label>?) ORDER BY e.memory_id`);
     let batch: DenseIndexEntry[] = [];
+    const corrupt: { id: string; vector: unknown }[] = [];
     this.#transaction(() => {
       for (const row of statement.iterate(model, dimensions, after) as Iterable<{ id: string; vector: string | Uint8Array; label: number | bigint | null }>) {
+        let vector: number[];
+        try { vector = this.#decodeVector(row.vector, dimensions); } catch { corrupt.push(row); continue; }
         const label = row.label === null ? this.#assignLabel(row.id, model) : Number(row.label);
-        batch.push({ label, vector: Float32Array.from(this.#decodeVector(row.vector, dimensions)) });
+        batch.push({ label, vector: Float32Array.from(vector) });
         if (batch.length === 512) { index.upsert(batch); batch = []; }
       }
       if (batch.length) index.upsert(batch);
+      // Marked after the walk, never while its statement is still iterating.
+      for (const row of corrupt) this.#storedVector(row.id, model, row.vector, dimensions);
     });
     if (index.kind === 'hnsw') {
       const live = new Set((this.#db.prepare('SELECT label FROM local_vec_labels WHERE model=?').all(model) as { label: number | bigint }[])
@@ -2298,6 +2361,21 @@ export class LocalMemory {
     return new Uint8Array(packed.buffer, packed.byteOffset, packed.byteLength);
   }
 
+  /**
+   * A stored vector for search, or null when the row cannot be decoded (a
+   * non-finite value, a zero norm, a wrong width or unreadable JSON). Such a row
+   * is skipped rather than failing the query, and its source hash is cleared so
+   * the pending-vector pass re-embeds it on the next recall: a stale hash is
+   * exactly what that pass looks for.
+   */
+  #storedVector(memoryId: string, model: string, value: unknown, dimensions: number): number[] | null {
+    try { return this.#decodeVector(value, dimensions); } catch {
+      this.#db.prepare("UPDATE local_embeddings SET source_hash='' WHERE memory_id=? AND model=?").run(memoryId, model);
+      this.#writeSeq++;
+      return null;
+    }
+  }
+
   #decodeVector(value: unknown, dimensions: number): number[] {
     if (typeof value === 'string') return this.#vector(JSON.parse(value), dimensions); // written before T1.2
     if (!(value instanceof Uint8Array) || value.byteLength !== dimensions * 4) throw new TypeError('Stored embedding does not match the declared number of dimensions');
@@ -2478,9 +2556,17 @@ export class LocalMemory {
     const write = this.#db.prepare('INSERT INTO local_granularity_embeddings(doc_id,model,dimensions,source_hash,data) VALUES(?,?,?,?,?) ON CONFLICT(doc_id,model) DO UPDATE SET dimensions=excluded.dimensions,source_hash=excluded.source_hash,data=excluded.data');
     for (let offset = 0; offset < pending.length;) {
       this.#assertOpen(); this.#abort(options.signal);
-      const batch = pending.slice(offset, offset + batchSize);
-      offset += batch.length;
-      const vectors = await this.#boundedCall((signal) => options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }), options.signal, options.timeoutMs);
+      const queued = pending.slice(offset, offset + batchSize);
+      offset += queued.length;
+      let batch: typeof queued = [];
+      const vectors = await this.#boundedCall((signal) => {
+        // Earlier batches and the queued dispatch itself are invalidation
+        // boundaries. A member erased or changed since `pending` was read has
+        // already dropped or rewritten its documents, so only a document whose
+        // stored hash still matches is sent; a forgotten member's text never is.
+        batch = queued.filter(document => (current.get(document.id) as unknown as { sourceHash: string } | undefined)?.sourceHash === document.sourceHash);
+        return batch.length ? options.embedder!.embed(Object.freeze(batch.map(document => document.text)), { signal }) : Promise.resolve([]);
+      }, options.signal, options.timeoutMs);
       if (!Array.isArray(vectors) || vectors.length !== batch.length) throw new TypeError('Embedder must return one vector per input text');
       const validated = vectors.map(vector => this.#vector(vector, dimensions));
       this.#abort(options.signal);
@@ -3253,9 +3339,10 @@ export class LocalMemory {
    * cache, unchanged. A row is taken only when its record exists in this owner
    * scope and its `sourceHash` still matches that record's text; anything else
    * is skipped, and a skipped record is simply embedded on the next hybrid
-   * recall as it would have been anyway. The vectors are trusted as given, so
-   * only import ones exported from a store you trust. Writes no memory, outcome
-   * or ledger entry.
+   * recall as it would have been anyway. Every vector must hold finite values
+   * with a nonzero norm, or the whole call is rejected before anything is
+   * written. Beyond that the vectors are trusted as given, so only import ones
+   * exported from a store you trust. Writes no memory, outcome or ledger entry.
    */
   importEmbeddings(rows: readonly StoredEmbedding[]): { imported: number; skipped: number } {
     this.#assertOpen();
@@ -3265,7 +3352,11 @@ export class LocalMemory {
       v.keys(value, ['memoryId', 'model', 'dimensions', 'sourceHash', 'data'], 'embedding');
       const dimensions = v.limit(value.dimensions, 0, 4096);
       const data = value.data;
-      if (data instanceof Uint8Array) { if (data.byteLength !== dimensions * 4) throw new TypeError('Embedding data does not match its declared dimensions'); }
+      if (data instanceof Uint8Array) {
+        if (data.byteLength !== dimensions * 4) throw new TypeError('Embedding data does not match its declared dimensions');
+        // The same check search applies to a stored row, so an imported vector can never make it throw.
+        try { this.#decodeVector(data, dimensions); } catch { throw new TypeError('Embedding data must contain finite float32 values with a nonzero norm'); }
+      }
       else if (typeof data === 'string') this.#vector(JSON.parse(data), dimensions);
       else throw new TypeError('Embedding data must be packed float32 bytes or JSON text');
       return { memoryId: v.string(value.memoryId, 'memoryId', 160), model: v.string(value.model, 'model', 512), dimensions, sourceHash: v.string(value.sourceHash, 'sourceHash', 128), data };

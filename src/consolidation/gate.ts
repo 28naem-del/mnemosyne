@@ -26,6 +26,8 @@ export const CONSOLIDATION_VERIFIER_SHA256 = createHash('sha256').update([
   CONSOLIDATION_GATE_VERSION,
   'score: per task, gold ids covered by the lexical top-k minus harmful ids covered; a derived record covers a source whose tokens it contains',
   'replay: export -> fresh :memory: lexical store -> import -> (apply diff); recorded query, limit and lexical scoring',
+  'view: a task whose gold, harmful or recorded result ids include a record live recall can read but the export lacks is unreplayable',
+  'apply: the replay set is rebuilt inside the apply transaction; any change to it since scoring is a conflict',
   'holdout: 20% by sha256(holdout\\n<sequence>\\n<taskId>) when at least 10 tasks; must not regress',
   'keep: invariants hold, at least 2 replayable tasks, delta >= 0, holdout delta >= 0, every proposal alone delta >= 0 over all tasks',
 ].join('\n')).digest('hex');
@@ -234,6 +236,29 @@ function scoreTask(store: LocalMemory, task: ReplayTask): number {
 const total = (store: LocalMemory, tasks: readonly ReplayTask[]): number => tasks.reduce((sum, task) => sum + scoreTask(store, task), 0);
 const tasksTotal = (scores: ConsolidationScores): number => scores.tasks + (scores.holdout?.tasks ?? 0);
 
+/**
+ * Splits the replay set into the tasks a scratch copy can replay faithfully
+ * and the rest. The scratch copy holds only this agent's exported records, so
+ * a task whose gold, harmful or recorded result ids include a record that live
+ * recall can read but the snapshot lacks (a record another agent shared with
+ * the workspace, or an own record the export omitted because it depends on
+ * one) was ranked live against records the replay cannot see. Such a task is
+ * counted as unreplayable instead of being scored as a miss under S and S+D.
+ */
+function replayableTasks(memory: LocalMemory, snapshot: Snapshot, tasks: readonly ReplayTask[]): { tasks: ReplayTask[]; outside: number } {
+  const present = new Set(snapshot.memories.map((record) => record.id));
+  const missing = (id: string): boolean => !present.has(id) && memory.get(id) !== null;
+  const replayable: ReplayTask[] = [];
+  let outside = 0;
+  for (const task of tasks) {
+    const entry = memory.ledger({ after: task.sequence - 1, limit: 1 }).entries[0];
+    if (entry?.id !== task.ledgerId) { outside++; continue; }
+    const ids = [...task.gold, ...task.harmful, ...(entry.retrieval?.results ?? []).map((result) => result.memoryId)];
+    if (ids.some(missing)) outside++; else replayable.push(task);
+  }
+  return { tasks: replayable, outside };
+}
+
 interface Replay { scores: ConsolidationScores | null; error?: string; applyError?: string }
 
 type Snapshot = ReturnType<LocalMemory['export']>;
@@ -347,6 +372,7 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
   const { snapshot, cut } = snapshotAt(memory);
   const stateNow = stateAt(memory, cut);
   const replaySet = buildReplaySet(memory);
+  const view = replayableTasks(memory, snapshot, replaySet.tasks);
   let verdict: ConsolidationVerdict, reason: string;
   let invariants: ConsolidationInvariant[] = [];
   let scores: ConsolidationScores | null = null;
@@ -368,13 +394,14 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
     invariants = report.invariants;
     faults = report.faults;
     const broken = invariants.filter((invariant) => !invariant.ok);
-    const result = replay(memory, snapshot, cut, diff, provisional, replaySet.tasks, replaySet.unreplayable);
+    const result = replay(memory, snapshot, cut, diff, provisional, view.tasks, replaySet.unreplayable + view.outside);
     scores = result.scores;
-    const evidence = scores ? tasksTotal(scores) : replaySet.tasks.length;
+    const evidence = scores ? tasksTotal(scores) : view.tasks.length;
+    const outside = view.outside ? `; ${view.outside} task(s) read records outside this agent's own records (shared by another agent, or omitted from its export) and were not replayed` : '';
     if (broken.length) { verdict = 'rolled_back'; reason = `invariant violated: ${broken.map((invariant) => invariant.name).join(', ')}`; }
     else if (result.error) { verdict = 'invalid_run'; reason = `scorer failed: ${result.error}`; }
     else if (result.applyError || !scores) { verdict = 'invalid_run'; reason = `scratch apply failed: ${result.applyError ?? 'no scores'}`; }
-    else if (evidence < MIN_REPLAY_TASKS) { verdict = 'no_evidence'; reason = `${evidence} replayable task(s); at least ${MIN_REPLAY_TASKS} are required, and no evidence is not a keep`; }
+    else if (evidence < MIN_REPLAY_TASKS) { verdict = 'no_evidence'; reason = `${evidence} replayable task(s); at least ${MIN_REPLAY_TASKS} are required, and no evidence is not a keep${outside}`; }
     else if (scores.delta < 0) { verdict = 'rolled_back'; reason = `regression: outcome delta ${scores.delta} over ${scores.tasks} replayed task(s)`; }
     else if (scores.holdout && scores.holdout.delta < 0) { verdict = 'rolled_back'; reason = `hold-out regression: delta ${scores.holdout.delta} over ${scores.holdout.tasks} held-out task(s)`; }
     else if (scores.perProposal.some((delta) => delta < 0)) {
@@ -382,7 +409,7 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
       verdict = 'rolled_back';
       reason = `regression: ${worst.map(({ index, delta }) => `proposal ${index} alone delta ${delta}`).join(', ')} over ${tasksTotal(scores)} task(s)`;
     }
-    else { verdict = 'kept'; reason = `outcome delta ${scores.delta} >= 0 over ${scores.tasks} replayed task(s)${scores.holdout ? `, hold-out delta ${scores.holdout.delta}` : ''}; all invariants hold`; }
+    else { verdict = 'kept'; reason = `outcome delta ${scores.delta} >= 0 over ${scores.tasks} replayed task(s)${scores.holdout ? `, hold-out delta ${scores.holdout.delta}` : ''}; all invariants hold${outside}`; }
   }
   const fingerprints = new Map(Array.isArray(diff?.candidateSet) ? diff.candidateSet.map((candidate) => [candidate.id, candidate.fingerprint] as const) : []);
   const regressed = (index: number): boolean => verdict === 'rolled_back' && scores !== null && (scores.perProposal[index] ?? 0) < 0;
@@ -403,6 +430,8 @@ export function gateConsolidation(memory: LocalMemory, diff: ConsolidationDiff, 
       const later = writesAfter(memory, scoringMark);
       const { cut: applyAt } = snapshotAt(memory);
       if (later.count) { verdict = 'conflict'; reason = `the store changed while this pass was scored: ${later.count}${later.capped ? '+' : ''} ledger write(s) after scoring`; }
+      // A verifier outcome fills a recall entry in place and appends nothing, so only the rebuilt replay set shows it.
+      else if (buildReplaySet(memory).sha256 !== replaySet.sha256) { verdict = 'conflict'; reason = 'the replay set changed while this pass was scored (a verifier outcome was recorded); the scores no longer describe it'; }
       else if (stateAt(memory, applyAt) !== stateNow || stateAt(memory, cut) !== stateNow || changedCandidates(memory, diff)) { verdict = 'conflict'; reason = 'the store changed while this pass was scored'; }
       else {
         created = applyDiff(memory, diff, passId, false);
@@ -513,17 +542,30 @@ export interface ConsolidationChainReport {
   errors: { sequence: number; passId: string | null; error: string }[];
 }
 
-/** Walks the receipts in ledger order and checks digests, links, signatures and rollback references. */
-export function verifyConsolidationChain(memory: LocalMemory, options: { pinnedKeyIds?: string[] } = {}): ConsolidationChainReport {
+/**
+ * Walks the receipts in ledger order and checks digests, links, signatures and rollback references.
+ *
+ * Links prove nothing about the end of the chain: deleting the last receipts,
+ * or all of them, leaves a shorter chain that still verifies. `expectedHead` is
+ * the `head` of an earlier verification, kept where the database writer cannot
+ * reach it; verification then fails unless a receipt with that digest is still
+ * in the chain, so truncation at or before that checkpoint is detected.
+ * Receipts appended after it are accepted. Without it, `ok` says the chain
+ * present is intact, not that it is complete.
+ */
+export function verifyConsolidationChain(memory: LocalMemory, options: { pinnedKeyIds?: string[]; expectedHead?: string } = {}): ConsolidationChainReport {
   const input = v.object(options, 'consolidation chain options');
-  v.keys(input, ['pinnedKeyIds'], 'consolidation chain options');
+  v.keys(input, ['pinnedKeyIds', 'expectedHead'], 'consolidation chain options');
   const pinned = options.pinnedKeyIds === undefined ? undefined : v.strings(options.pinnedKeyIds, 'pinnedKeyIds', 64, 64);
+  const expectedHead = options.expectedHead === undefined ? undefined : v.string(options.expectedHead, 'expectedHead', 64);
+  if (expectedHead !== undefined && !/^[0-9a-f]{64}$/.test(expectedHead)) throw new TypeError('expectedHead must be a receipt digest: 64 lowercase hex characters');
   const errors: ConsolidationChainReport['errors'] = [];
   const keyChanges: ConsolidationChainReport['keyChanges'] = [];
   const kept = new Set<string>(), undone = new Set<string>();
-  let previous: string | null = null, key: string | null = null, count = 0;
+  let previous: string | null = null, key: string | null = null, count = 0, last = 0, checkpointed = false;
   for (const { sequence, receipt } of consolidationReceipts(memory)) {
     count++;
+    last = sequence;
     const fail = (error: string): void => { errors.push({ sequence, passId: typeof receipt?.passId === 'string' ? receipt.passId : null, error }); };
     if (!receipt || receipt.schema !== 'mnemosyne-consolidation-receipt-v1') { fail('unknown receipt schema'); previous = null; continue; }
     if (receiptDigest(receipt) !== receipt.digest) fail('digest does not match the receipt');
@@ -543,7 +585,11 @@ export function verifyConsolidationChain(memory: LocalMemory, options: { pinnedK
         undone.add(receipt.rollbackOf);
       }
     }
+    if (receipt.digest === expectedHead) checkpointed = true;
     previous = receipt.digest;
+  }
+  if (expectedHead !== undefined && !checkpointed) {
+    errors.push({ sequence: last, passId: null, error: 'expected head is not in the chain: receipts up to it were deleted (tail truncation) or replaced' });
   }
   return { ok: errors.length === 0, receipts: count, head: previous, keyChanges, errors };
 }

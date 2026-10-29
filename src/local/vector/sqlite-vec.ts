@@ -44,8 +44,12 @@ export function loadSqliteVec(db: DatabaseSync, path = sqliteVecPath()): string 
   return (db.prepare('SELECT vec_version() AS version').get() as { version: string }).version;
 }
 
+/** vec0 rejects a KNN query with `k` above this ("k value in knn query too large"). */
+export const SQLITE_VEC_MAX_K = 4096;
+
 export class SqliteVecIndex implements DenseIndex {
   readonly kind = 'sqlite-vec' as const;
+  readonly maxK = SQLITE_VEC_MAX_K;
   readonly #db: DatabaseSync;
   readonly #dimensions: number;
 
@@ -79,7 +83,7 @@ export class SqliteVecIndex implements DenseIndex {
   search(query: Float32Array, k: number): number[] {
     if (k <= 0) return [];
     const rows = this.#db.prepare('SELECT rowid AS label FROM local_vec_index WHERE embedding MATCH ? AND k=?')
-      .all(new Uint8Array(query.buffer, query.byteOffset, query.byteLength), BigInt(k)) as { label: number | bigint }[];
+      .all(new Uint8Array(query.buffer, query.byteOffset, query.byteLength), BigInt(Math.min(k, SQLITE_VEC_MAX_K))) as { label: number | bigint }[];
     return rows.map((row) => Number(row.label));
   }
 

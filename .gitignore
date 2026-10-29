@@ -44,9 +44,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Temp
+# Temp and scratch work (probes that are needed belong in scripts/ or benchmarks/)
 tmp/
 .tmp/
+scratch/
 
 # Package manager locks (we use npm)
 yarn.lock

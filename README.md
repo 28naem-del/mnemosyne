@@ -5,9 +5,17 @@
 [![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
 [![npm latest](https://img.shields.io/npm/v/mnemosy-ai?label=npm%20latest&color=b8f6dd&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai)
 [![npm next](https://img.shields.io/npm/v/mnemosy-ai/next?label=npm%20next&color=9abfff&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai?activeTab=versions)
+[![npm downloads/month](https://img.shields.io/npm/dm/mnemosy-ai?label=downloads&color=b8f6dd&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai)
 [![Node.js ≥22.16](https://img.shields.io/badge/node-%E2%89%A522.16-b8f6dd?labelColor=111b2a)](https://nodejs.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-9abfff?labelColor=111b2a)](#install-and-connect-an-agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
+
+[![LongMemEval-S: 409/500](https://img.shields.io/badge/LongMemEval--S-409%2F500-b8f6dd?labelColor=111b2a)](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed)
+[![LoCoMo recall@10: 73.57 vs Mem0 OSS 63.72](https://img.shields.io/badge/LoCoMo%20recall%4010-73.57%20vs%20Mem0%20OSS%2063.72-9abfff?labelColor=111b2a)](COMPARISON.md)
+[![GitHub stars](https://img.shields.io/github/stars/28naem-del/mnemosyne?label=stars&color=b8f6dd&labelColor=111b2a)](https://github.com/28naem-del/mnemosyne)
+[![GitHub Discussions](https://img.shields.io/github/discussions/28naem-del/mnemosyne?label=discussions&color=9abfff&labelColor=111b2a)](https://github.com/28naem-del/mnemosyne/discussions)
+
+<!-- [![MCP Registry](https://img.shields.io/badge/MCP-Registry-9abfff?labelColor=111b2a)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.28naem-del/mnemosyne) — enable once io.github.28naem-del/mnemosyne is listed -->
 
 **The next agent starts wiser.**
 
@@ -159,7 +167,7 @@ The server exposes 16 `memory_*` tools (`memory_store`, `memory_recall`, `memory
 |---|---|---|
 | **Answer accuracy**, LongMemEval-S, all 500 questions | **409 / 500 correct (81.8%)**, Wilson 95% CI 78.2–84.9; exact match 7.6% | Mnemosyne reranked retrieval, top-20 hits packed to 16 KB, read by `claude-sonnet-4.6`, judged by `claude-haiku-4.5`. Prompt and budget were chosen on 100 of the questions; the other 400 score 82.3%. |
 | **Reranker gain**, LoCoMo, 1,531 annotated questions | MRR@10 0.461 → 0.624, **+0.163** (paired bootstrap 95% CI 0.146–0.181; 599 wins, 133 losses) | The same hybrid candidate set with and without the bundled cross-encoder, on the shipped build. |
-| **Against Mem0 OSS**, same corpus, chunks, K, packing budget, scorer, one process | LoCoMo recall@10 **73.57 vs 63.72** with reranking; our *unreranked* path **loses to Mem0 at every K**; on LongMemEval-S the two tie on recall@20 and Mem0 takes MRR | [COMPARISON.md](COMPARISON.md), every loss in the same tables |
+| **Against Mem0 OSS**, same corpus, chunks, K, packing budget, scorer, one process | LoCoMo recall@10 **73.57 vs 63.72** for Mem0 OSS with Mnemosyne's reranker; LongMemEval-S recall@20 **tied** at 96.67. Fast mode without the reranker trails Mem0 on LoCoMo by under 1 point at every K, and Mem0 has the higher LongMemEval-S MRR | [COMPARISON.md](COMPARISON.md), every loss in the same tables |
 
 **What these numbers do not say.** The 81.8% is not a paired gain over the earlier 71.2%: that baseline used a different 250-question sample, prompt and budget, so the improvement belongs to the whole bundle of changes. The reader is nondeterministic; rerunning one configuration moved its score by about a point. Retrieval numbers measure coverage, not answers. Two Tier 1 targets of 2.0.0 are **not met** and ship disclosed: recall latency at one million records is p95 139–223 ms against a 50 ms goal (opt-in `indexMode: 'hnsw'`, see [Tune the dense index](#tune-the-dense-index)), and contextual reranking ships at 71.98% all-evidence hit against a 72.80% gate, 0.82 points (13 of 1,531 questions) short; the best variant tried was still four short and was not merged. Commands and raw outputs are in [`reports/t1-targets/evidence/`](reports/t1-targets/evidence/); the answer-accuracy and gate results are restated with their commits in the [changelog](CHANGELOG.md), and the Mem0 and reranker retrieval tables are in [COMPARISON.md](COMPARISON.md).
 
@@ -406,7 +414,7 @@ These results measure retrieval coverage against the earlier local scorer. They 
 
 ### Against another memory system
 
-A **matched competitor benchmark** against Mem0 OSS is published in **[COMPARISON.md](COMPARISON.md)** — same corpus, same chunks, same K, same packing budget, all scored inside one process, with the results where Mem0 beats us printed in the same tables as the results where it does not. In short: our reranked path takes the LoCoMo headline at 73.57 recall@10 against Mem0's 63.72, our *unreranked* hybrid loses to Mem0 at every K on both recall and MRR, and on LongMemEval-S the two tie on recall@20 while Mem0 takes MRR. Zep and Graphiti carry a reason rather than a number: neither could be run without paid credentials. These are retrieval-coverage numbers with no reader and no judge, not answer accuracy.
+A **matched competitor benchmark** against Mem0 OSS is published in **[COMPARISON.md](COMPARISON.md)** — same corpus, same chunks, same K, same packing budget, all scored inside one process, with the results where Mem0 beats us printed in the same tables as the results where it does not. In short: with its reranker, Mnemosyne takes the LoCoMo headline at 73.57 recall@10 against Mem0's 63.72, and on LongMemEval-S the two tie on recall@20. Fast mode without the reranker trails Mem0 at every K on LoCoMo, by under 1 point of recall and on MRR, and Mem0 has the higher LongMemEval-S MRR. Zep and Graphiti carry a reason rather than a number in the published run; a run with a stored Zep Cloud key is in progress and no number is claimed until it is published. These are retrieval-coverage numbers with no reader and no judge, not answer accuracy.
 
 A separate [evidence lifecycle diagnostic](docs/evaluation/EVIDENCE-PROTOCOL.md) tests correction, time, conflicts, failure, erasure and scope behavior. It deliberately retains a failing case: changing an unrelated field can retire a still-valid dependent rule. The [engineering review](docs/EXTERNAL-REVIEW.md) and [release status](docs/UPGRADE-STATUS.md) track this and other remaining work.
 
