@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { request } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -200,5 +200,34 @@ describe('authenticated memory HTTP service', () => {
     const server = await startMemoryHttp({ principals: [{ token, memory: db }, { token: secondToken, memory: db }], requestsPerMinute: 1 }); servers.push(server);
     expect((await post(server.url, 'inspect', {})).status).toBe(200); expect((await post(server.url, 'inspect', {})).status).toBe(429);
     expect((await post(server.url, 'inspect', {}, secondToken)).status).toBe(200);
+  });
+
+  it('charges unauthenticated traffic to its own bucket so authorized clients keep working', async () => {
+    // Pin the minute window; only Date is faked, so sockets and timers stay real.
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-29T10:00:05.000Z'));
+    try {
+      const db = memory(); const { url } = await serve(db);
+      const statuses: number[] = [];
+      // 1,000 unauthenticated requests used to exhaust the shared server budget.
+      for (let batch = 0; batch < 20; batch++) statuses.push(...await Promise.all(Array.from({ length: 50 }, () => fetch(`${url}/v1/capabilities`).then(response => response.status))));
+      expect((await fetch(`${url}/v1/capabilities`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200);
+      expect(statuses.slice(0, 60).every(status => status === 401)).toBe(true); expect(statuses.slice(60).every(status => status === 429)).toBe(true);
+      expect((await post(url, 'inspect', {})).status).toBe(200);
+      // A wrong token and the inspector shell are unauthenticated too.
+      expect((await post(url, 'inspect', {}, 'wrong-'.padEnd(48, 'z'))).status).toBe(429); expect((await fetch(url)).status).toBe(429);
+      vi.setSystemTime(new Date('2026-10-29T10:01:05.000Z'));
+      expect((await fetch(`${url}/v1/capabilities`)).status).toBe(401);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('does not let a principal over its own limit exhaust the server budget for another', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-29T10:00:05.000Z'));
+    try {
+      const db = memory(), server = await startMemoryHttp({ principals: [{ token, memory: db }, { token: secondToken, memory: db }], requestsPerMinute: 1 }); servers.push(server);
+      const headers = { Authorization: `Bearer ${token}` }, statuses: number[] = [];
+      for (let batch = 0; batch < 20; batch++) statuses.push(...await Promise.all(Array.from({ length: 50 }, () => fetch(`${server.url}/v1/capabilities`, { headers }).then(response => response.status))));
+      expect(statuses.filter(status => status === 200)).toHaveLength(1); expect(statuses.filter(status => status === 429)).toHaveLength(999);
+      expect((await fetch(`${server.url}/v1/capabilities`, { headers: { Authorization: `Bearer ${secondToken}` } })).status).toBe(200);
+    } finally { vi.useRealTimers(); }
   });
 });
