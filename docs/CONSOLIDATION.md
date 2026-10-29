@@ -1,6 +1,8 @@
 # Consolidation gate
 
-A consolidation pass rewrites memory, for example by merging two near-duplicate procedures into one. In Mnemosyne such a pass is a **signed diff**. The diff is replayed against the agent's own recorded outcomes. It is kept only when the outcomes do not get worse and no invariant breaks, and a kept pass can be undone exactly. The gate is outcome-gated and reversible. It is not a quality judge: no model scores the result, and the verdict is computed from what the ledger recorded.
+A consolidation pass rewrites memory, for example by merging two near-duplicate procedures into one. In Mnemosyne such a pass is a **signed diff**. The diff is replayed against the agent's own recorded outcomes. It is kept only when aggregate lexical coverage on that recorded replay set does not drop and no invariant breaks. A kept pass that nothing has changed since can be undone; the state hash comes back identical only when nothing was written after the pass. The gate is outcome-gated and reversible. It is not a quality judge: no model scores the result, and the verdict is computed from what the ledger recorded.
+
+**Off by default in the standard MCP setup.** The MCP server exposes no consolidation or outcome tools, and a store opened with default settings records no query text, so every pass on it is `no_evidence`. [Turn the gate on](#turn-the-gate-on) explains what a host has to do.
 
 The design of the signature and the receipt chain is in [the signing design note](CONSOLIDATION-SIGNING.md).
 
@@ -37,6 +39,16 @@ Key pinning in the library:
 - `trustedKeyIds: 'any'` turns pinning off. **It is unsafe**: anyone can mint a key, so an unpinned signature proves only that the diff was not changed after signing, never who wrote it. A diff signed by a foreign key is then judged like the store's own.
 - `verifyConsolidationChain` pins only when it is given `pinnedKeyIds`; without them it checks digests, links and signatures and lists key changes.
 
+## Turn the gate on
+
+The gate needs judged, replayable retrievals, and the standard MCP setup produces none. A host turns the gate on from the SDK:
+
+1. Open the store with query text in the ledger: `createLocalMemory({ path, workspaceId, agentId, ledger: { queries: 'text' } })`. The default is `queries: 'digest'`, which stores only a hash of each query. With `'text'`, the ledger keeps the text of every query, so plan its privacy and retention like any stored memory text.
+2. After each task, record a verdict from a verifier the controller trusts: `memory.recordRetrievalOutcome({ taskId, success, verifier, evidence, retrievalId? })`. A model judging its own work is not that verifier. `recordOutcome` marks the ids that were used, and they become the gold ids.
+3. Once at least two such tasks exist, run `consolidate(memory, { signer })` from code, or `mnemosy consolidate --db FILE --workspace W --agent A --apply`. Fewer tasks give `no_evidence`, which is never a keep.
+
+Retrievals made through the MCP server use the default ledger, so they do not enter the replay set. The CLI has no option to change that.
+
 ## A pass
 
 1. **Propose.** The proposer reads a candidate set: live, visible, usable records, excluding the untouchable ones. It returns proposals from a closed menu: `merge | supersede | split | delete | abstract`, with a cap per kind. The bundled `deterministicProposer` is model-free: it merges lexical near-duplicates of the same kind. The diff binds `{ workspaceId, agentId, cut, stateBefore, candidateSet (id + fingerprint), proposals, proposer }`. It is digested and signed.
@@ -66,7 +78,7 @@ Key pinning in the library:
 
    | Verdict | When |
    |---|---|
-   | `kept` | Invariants hold, there are at least 2 replayable tasks, `delta >= 0`, the hold-out delta is `>= 0`, and every proposal alone is `>= 0`. The pass is applied in the same transaction as its receipt. |
+   | `kept` | Invariants hold, there are at least 2 replayable tasks, `delta >= 0`, the hold-out delta is `>= 0`, and every proposal alone is `>= 0`. The pass is applied in the same transaction as its receipt. Each delta is a sum over tasks, so a loss on one task can be offset by a gain on another. |
    | `rolled_back` | An invariant failed, or there was a regression, a hold-out regression or a single-proposal regression. Nothing is applied. |
    | `no_evidence` | Fewer than 2 replayable tasks. This is **not** a keep. |
    | `invalid_run` | The digest or signature does not verify, the key is not trusted (by default: any key other than the gate's own signer), the diff is malformed, or the scorer failed. |
@@ -133,6 +145,7 @@ Each line has the rejection class, the reason, the outcome deltas, the failed in
 
 ## Honest limits
 
+- The keep rule is nonnegative aggregate lexical coverage on this replay set. It is not task-level or meaning-level non-regression: totals can hide a loss on one task, and token-set coverage ignores negation and word order.
 - The replay set is the agent's own recorded outcomes, and nothing else. A pass can only be judged on the tasks the agent actually did and a verifier judged. A store with default ledger settings (`queries: 'digest'`) records no query text, so every pass on it is `no_evidence`. Recording query text (`ledger: { queries: 'text' }`) is an explicit host choice.
 - `no_evidence` is not a keep. In the suite, 99 of 294 passes had too few judged tasks.
 - **Paraphrase laundering is not caught.** An untrusted record is caught in two cases: a proposal cites it as a source or dependency, or the output text carries a token found only in untrusted records.
@@ -144,4 +157,4 @@ Each line has the rejection class, the reason, the outcome deltas, the failed in
 - The scratch copy is built from `export()`. Records shared from other agents are absent from it, so a task that read one is unreplayable: an agent whose judged tasks mostly read shared records gets `no_evidence`. A shared record that a task's recorded results did not include, for example one shared after the recall, is also absent, so it cannot compete in the replayed ranking. The export size cap bounds the store size the gate can judge.
 - `supersede` and `delete` are scored on the scratch copy but never kept: the kernel has no exact inverse for them yet. Live passes only add records.
 - The suite, the demo and their keys are synthetic. The demo and suite keys are fixed public seeds and must never sign a real store. The result is stated as "zero escapes on suite v1 (227 cases, reproducible)" and says nothing about attacks outside the suite.
-- A signature binds the gate's inputs to its output. It says nothing about the truth of a merged text. See the [design note](CONSOLIDATION-SIGNING.md#what-a-signature-means).
+- A signature binds the gate's inputs to its output and shows that the key holder signed them. It does not prove that the gate ran, and it says nothing about the truth of a merged text. See the [design note](CONSOLIDATION-SIGNING.md#what-a-signature-means).
