@@ -1,0 +1,8 @@
+# The uncompressed raw reports are regenerable and large (88.3 MB for the three merged
+# reports). What is committed is the gzipped merged report for each K, which contains every
+# per-question attempt record, plus summary.json and the score-sorted diagnostic parts.
+#
+#   gunzip -k locomo-k10.json.gz     # restore a full raw report
+#
+*.json
+!summary.json
