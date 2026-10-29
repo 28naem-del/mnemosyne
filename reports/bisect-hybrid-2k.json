@@ -3,9 +3,9 @@
   "description": "Seeded 2,000-record bisect case on the hybrid retrieval path: one false record displaces the verified answer at k = 1; bisect must blame exactly that record, confirmed by Oracle B re-executing the hybrid retriever.",
   "seed": 20261028,
   "records": 2000,
-  "measuredAt": "2026-10-29T15:28:49.977Z",
-  "commit": "af014a7095e19d7574dd033bd76e067f33d2c094",
-  "dirty": true,
+  "measuredAt": "2026-10-29T15:35:32.107Z",
+  "commit": "295cbd0fcdac6585378455c12104afd3d879a237",
+  "dirty": false,
   "host": {
     "node": "v26.12.1",
     "platform": "darwin",
@@ -49,8 +49,8 @@
         "index": "exact"
       },
       "reembeddedPassages": 0,
-      "bisectSeconds": 3.9116625000000003,
-      "totalSeconds": 7.701198208
+      "bisectSeconds": 0.793714792,
+      "totalSeconds": 1.18229075
     },
     {
       "seed": 20261028,
@@ -87,8 +87,8 @@
         "index": "sqlite-vec"
       },
       "reembeddedPassages": 0,
-      "bisectSeconds": 9.820499541,
-      "totalSeconds": 14.372603209000001
+      "bisectSeconds": 1.169330708,
+      "totalSeconds": 1.8671436670000001
     }
   ]
 }
