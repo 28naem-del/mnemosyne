@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `importEmbeddings` checked only the byte length of a packed float32 vector, so a vector holding NaN, an infinity or only zeros was stored. Dense search then threw on that row, and re-embedding never replaced it because its source hash still matched. Such a vector is now rejected, with nothing written. A stored row that cannot be decoded (for example one written before this check) is skipped by exact, sqlite-vec and hnsw search instead of failing the query, and is marked so the next recall re-embeds it.
 
+### Security
+
+- `AdaptiveContext.build` ran a custom `tokenCounter` inside the database transaction that reads the context evidence. A `forget` made from inside the counter was therefore rolled back when the build then failed, which it does when a selected source disappears, and the erased text stayed stored. The counter now runs outside that transaction, so a deletion it makes commits on its own; the builder still revalidates every selected source afterwards and rejects a packet whose evidence changed. `MemoryBridge` already counted outside its transaction.
+
 ### Development
 
 - Builds with TypeScript 7 (`typescript` ^7.0.2, devDependency). Two tests transpiled `src` files into a subprocess fixture through the TypeScript compiler API, which the TypeScript 7 package no longer exports; they now use Node's built-in `stripTypeScriptTypes` (`node:module`), so the fixtures add no dependency. The emitted JavaScript is byte-identical to the TypeScript 6 build; 16 declaration files differ only in quote style and member order, and the published declarations typecheck under both TypeScript 6 and 7.
