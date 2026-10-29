@@ -38,5 +38,7 @@ harness's own `--merge`. Every job logs and stores its runner's CPU model, core 
 because latency numbers mean something only together with the machine that produced them. The
 assembled artifact holds the raw JSON reports, the per-slice parts and logs, a `SUMMARY.md` table
 and a `MANIFEST.sha256` of every file. Mem0 runs with `infer:false` only, because the workflow has no
-API keys. The `split` input is passed to the harness's `--split` flag when the harness has one;
-until then any value other than `all` fails the run instead of mislabelling a full-set result.
+API keys. The `split` input is passed to the harness's `--split` flag
+([`benchmarks/PROTOCOL-2026-10.md`](../PROTOCOL-2026-10.md)); LongMemEval-S shards are cut over the
+split's own question count, and on a ref without `--split` any value other than `all` fails the run
+instead of mislabelling a full-set result.
