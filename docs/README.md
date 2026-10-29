@@ -40,7 +40,7 @@ Start with the [keyless local quickstart](quickstart.md), then choose the integr
 
 Read the [architecture](../ARCHITECTURE.md) for storage, ranking and trust boundaries; the [feature map](features.md) for supported behavior and limits; and the [capability comparison](comparison.md) to choose a deployment path. The [local API](api.md) and [configuration reference](configuration.md) provide lower-level details.
 
-Memory scopes and evidence labels are host assertions, not proof of authenticity. Databases and backup bundles are plaintext. Automatic cloud synchronization and universal framework hooks are outside this release, and the only generated-answer result is a single LongMemEval-S accuracy run made with a separate driver (see the [changelog](../CHANGELOG.md)). For matched task experiments use the [agent evaluation guide](AGENT-EVALUATION.md); retrieval coverage alone cannot show how well an agent answers.
+Memory scopes and evidence labels are host assertions, not proof of authenticity. Databases and plain backup bundles are plaintext; `--encrypt` bundles are passphrase-encrypted ([Operations](OPERATIONS.md#encrypted-bundles)). Automatic cloud synchronization and universal framework hooks are outside this release, and the only generated-answer result is a single LongMemEval-S accuracy run made with a separate driver (see the [changelog](../CHANGELOG.md)). For matched task experiments use the [agent evaluation guide](AGENT-EVALUATION.md); retrieval coverage alone cannot show how well an agent answers.
 
 ## Contribute or report a problem
 

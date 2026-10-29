@@ -67,7 +67,8 @@ describe('encrypted backups carry the consolidation signing key', { timeout: 60_
 
     const restored = await restoreLocalBackup({ backupPath: f.backup, targetPath: f.target, encryption: { passphrase: PASSPHRASE } });
     const restoredKey = `${f.target}.consolidation.key`;
-    expect(restored.signingKey).toEqual({ keyId: f.keyId, path: restoredKey });
+    // The receipt names the parent-resolved path (macOS tmpdir is a /private symlink).
+    expect(restored.signingKey).toEqual({ keyId: f.keyId, path: `${restored.targetPath}.consolidation.key` });
     expect(restored.sha256).toBe(receipt.database.sha256);
     expect(lstatSync(f.target).mode & 0o777).toBe(0o600); expect(lstatSync(restoredKey).mode & 0o777).toBe(0o600);
     expect(readFileSync(restoredKey).equals(originalKey)).toBe(true);

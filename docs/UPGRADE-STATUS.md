@@ -18,7 +18,7 @@ Mnemosyne 2.0.0 is the stable release of the version 2 line: the 2.0.0-rc.10 can
 | Gradual migration | Read-only legacy adapter, used-record capture, paired coverage checks, staged preference and routing rollback. | Observed workload coverage is not complete-store migration; legacy reconciliation continues. |
 | Full migration | Eleven explicit export profiles, exact originals, preview, atomic apply, retries, guarded undo and replay tombstones. | Foreign embeddings, graphs and unsupported policy semantics are not automatically converted. |
 | Freshness | Explicit source recheck policies, last-confirmed evidence, bounded probes and dependency validation before actions. | Age does not rewrite facts; the host supplies verification, scheduling and complete dependencies. |
-| Operations | Scope-bound HTTP credentials, revocation, live inspector, Python client and verified whole-database recovery. | Backups are plaintext; remote identity, TLS and deployment isolation remain application work. |
+| Operations | Scope-bound HTTP credentials, revocation, live inspector, Python client and verified whole-database recovery. | Backups are plaintext unless made with `--encrypt`; remote identity, TLS and deployment isolation remain application work. |
 
 Follow the [runtime](RUNTIME.md), [agent](AGENT.md), [context](CONTEXT.md), [profile](PROFILES.md), [migration](MIGRATION.md), [bridge](BRIDGE.md), [freshness](MAINTENANCE.md), [local model](LOCAL-MODELS.md) and [operator](OPERATIONS.md) guides for the actual interfaces. Existing backend users should read [version migration](MIGRATION-v2.md); no existing database is automatically moved or deleted.
 
@@ -35,7 +35,7 @@ The synthetic [evidence lifecycle diagnostic](evaluation/EVIDENCE-PROTOCOL.md) s
 - **More precise retention:** reconcile changed assertions inside a source and represent alternative sufficient evidence, so an unrelated edit need not retire every dependent rule.
 - **Semantic and answer evaluation:** run pinned local semantic providers and stronger summary baselines on held-out tasks, measuring quality, cost, latency and negative transfer together.
 - **Native integration validation:** generic protocols and explicit event adapters are available; six native framework lifecycle integrations have not been validated end to end.
-- **Managed operations:** database/backup encryption, enterprise identity, bidirectional synchronization and a hosted service are not included.
+- **Managed operations:** database encryption at rest, enterprise identity, bidirectional synchronization and a hosted service are not included.
 - **Larger collections:** measure the new BM25 default on representative large workloads. The ANN path is no longer outstanding work: `indexMode` now offers `sqlite-vec` and `hnsw` as opt-in dense indexes that preserve scope, time and erasure behavior because every candidate is re-authorized and rescored against the stored vector before return. Its Tier 1 latency target, p95 under 50 ms at 1,000,000 records, is not met: hybrid recall through `hnsw` on a synthetic 1M-record fixture measured p95 139–223 ms (see the [changelog](../CHANGELOG.md)). Historical 100,000-record overlap timings do not describe BM25 performance.
 
 ## Evaluate before adopting

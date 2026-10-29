@@ -76,6 +76,7 @@ describe('mnemosy operations --encrypt', { timeout: 120_000 }, () => {
       [['--encrypt'], {}, /passphrase/i],
       [['--encrypt', '--passphrase-file', open], {}, /group or others/],
       [['--include-signing-key'], {}, /--encrypt/],
+      [['--encrypt', '--include-signing-key', '--db', join(f.root, 'nokey.sqlite')], { [ENV]: PASSPHRASE }, /no consolidation key file/],
       [['--passphrase-file', open], {}, /--encrypt/],
       [['--encrypt', '--passphrase-file', open], { [ENV]: PASSPHRASE }, /not both|group or others/],
     ];
@@ -115,6 +116,7 @@ describe('mnemosy operations --encrypt', { timeout: 120_000 }, () => {
     ok(['store', '--db', empty, '--workspace', 'w', '--agent', 'a', '--text', 'hello', '--source', 'test:x']);
     const emptyBackup = join(f.root, 'empty.mnemo-backup');
     ok(['operations', '--action', 'backup', '--db', empty, '--out', emptyBackup]);
-    expect(ok(['operations', '--action', 'restore', '--file', emptyBackup, '--out', join(f.root, 'empty-restored.sqlite')]).stderr).toBe('');
+    // (stderr may carry Node 22's SQLite ExperimentalWarning, so assert the warning is absent rather than stderr empty)
+    expect(ok(['operations', '--action', 'restore', '--file', emptyBackup, '--out', join(f.root, 'empty-restored.sqlite')]).stderr).not.toMatch(/consolidation receipt/);
   });
 });
