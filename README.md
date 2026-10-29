@@ -33,7 +33,9 @@ The 3.0.0-rc.2 demo runs offline on synthetic corpora, with no API key and no mo
 npx -y -p mnemosy-ai@next mnemosy demo
 ```
 
-The last line of each of its five moments, from one run (timings vary by machine; the pass bars printed after each line are omitted here):
+![A real run of mnemosy demo from npm next: five moments scroll past, then the five PROOF lines, each marked PASS, and "5/5 moments proved"](assets/demo.gif)
+
+The recording above is one unedited run ([`assets/demo.tape`](assets/demo.tape) regenerates it with vhs). The last line of each of its five moments, from one run (timings vary by machine; the pass bars printed after each line are omitted here):
 
 ```text
 PROOF  replay determinism: 1000/1000 identical, 24000/24000 as-of answers = ground truth   [PASS]
