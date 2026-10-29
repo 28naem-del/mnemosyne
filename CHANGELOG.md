@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The optional `ioredis` peer dependency accepts `^5.0.0 || ^6.0.0` (in `mnemosy-ai` and `packages/legacy`); before, npm refused to install the package next to `ioredis` 6 (`ERESOLVE`). No code changed. Against both ioredis 5.11.1 and 6.0.0, the legacy broadcast, Redis cache and user-model paths passed on a RESP3-capable Redis (6.0.0 negotiates RESP3 by default) and on a Redis without `HELLO` (6.0.0 falls back to RESP2), and the FalkorDB `GRAPH.QUERY` path returned the same reply shapes on a FalkorDB server. The repository now develops against ioredis 6 (`ioredis` ^6.0.0, devDependency). ioredis 6 requires Node.js 20 or newer; this package already requires 22.16.
 
+### Security
+
+- `AdaptiveContext.build` ran a custom `tokenCounter` inside the database transaction that reads the context evidence. A `forget` made from inside the counter was therefore rolled back when the build then failed, which it does when a selected source disappears, and the erased text stayed stored. The counter now runs outside that transaction, so a deletion it makes commits on its own; the builder still revalidates every selected source afterwards and rejects a packet whose evidence changed. `MemoryBridge` already counted outside its transaction.
+
 ### Development
 
 - Builds with TypeScript 7 (`typescript` ^7.0.2, devDependency). Two tests transpiled `src` files into a subprocess fixture through the TypeScript compiler API, which the TypeScript 7 package no longer exports; they now use Node's built-in `stripTypeScriptTypes` (`node:module`), so the fixtures add no dependency. The emitted JavaScript is byte-identical to the TypeScript 6 build; 16 declaration files differ only in quote style and member order, and the published declarations typecheck under both TypeScript 6 and 7.
