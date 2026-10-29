@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AdaptiveContext, type AdaptiveContextPacket } from '../context/index.js';
-import { MemoryMaintenance } from '../maintenance/index.js';
+import { MemoryMaintenance, type MemoryReadSet } from '../maintenance/index.js';
 import { canonical, metadata } from '../local/validation.js';
 import { MemoryRuntime, parseTranscriptJsonl, type CaptureInput, type RuntimeProposer } from '../runtime/index.js';
 import { messagesFromAgentEvents } from './events.js';
@@ -71,6 +71,7 @@ export class MemoryAgent {
   readonly #trust: NonNullable<CaptureInput['trust']>;
   readonly #budgets: AgentJobBudgets;
   readonly #contextChecks = new WeakMap<AgentContext, () => boolean>();
+  readonly #contextTickets = new WeakMap<AgentContext, MemoryReadSet>();
   readonly #actions = new WeakMap<AgentAction, { key: string; used: boolean }>();
   #draining?: Promise<AgentDrainReport>;
   #drainController?: AbortController;
@@ -115,7 +116,8 @@ export class MemoryAgent {
         if (signal.aborted) throw new AgentOperationError('cancelled');
         if (typeof packet.text !== 'string' || !Number.isSafeInteger(packet.tokens) || packet.tokens < 0 || packet.tokens > maxTokens || packet.tokenBudget !== maxTokens || !Array.isArray(packet.memoryIds) || packet.memoryIds.length > 64) throw new Error();
         // Validate complete dependencies again after any asynchronous context builder.
-        if (packet.memoryIds.length) this.maintenance.createReadSet({ memoryIds: packet.memoryIds, actionKey: 'agent:context', dependenciesComplete: true, requireWatched: input.requireWatched });
+        // runTurn revalidates this same ticket, with the same requireWatched, at dispatch.
+        if (packet.memoryIds.length) this.#contextTickets.set(packet, this.maintenance.createReadSet({ memoryIds: packet.memoryIds, actionKey: 'agent:context', dependenciesComplete: true, requireWatched: input.requireWatched }));
         if (this.#provider) {
           const provider = this.#provider;
           const contextIdentity = () => hash({ text: packet.text, tokens: packet.tokens, tokenBudget: packet.tokenBudget, memoryIds: packet.memoryIds, abstained: packet.abstained });
@@ -268,13 +270,16 @@ export class MemoryAgent {
     const visibility = z.enum(['private', 'workspace']).parse(input.visibility ?? 'private'), trust = z.enum(['untrusted', 'observed']).parse(input.trust ?? this.#trust);
     const identity = hash([input.sessionId, input.turnId]);
     const before = await this.beforeTurn({ query: input.query, maxTokens: input.maxTokens, taskId: input.taskId, requireWatched: input.requireWatched, signal: input.signal });
-    const contextTicket = before.context.memoryIds.length ? this.maintenance.createReadSet({ memoryIds: before.context.memoryIds, actionKey: `agent:turn:${identity}`, dependenciesComplete: true }) : undefined;
+    // Keep the ticket beforeTurn validated. A new one would record the current state
+    // and drop requireWatched, so a change in between (a removed watch) would pass.
+    const contextTicket = this.#contextTickets.get(before.context);
+    if (before.context.memoryIds.length && !contextTicket) throw new AgentOperationError('context-failed');
     let response: string;
     try {
       response = await bounded(signal => {
         this.#write();
         if (this.#contextChecks.has(before.context) && !this.#contextChecks.get(before.context)!()) throw new AgentOperationError('context-failed');
-        if (contextTicket && !this.maintenance.validateReadSet(contextTicket, `agent:turn:${identity}`).valid) throw new AgentOperationError('context-failed');
+        if (contextTicket && !this.maintenance.validateReadSet(contextTicket, 'agent:context').valid) throw new AgentOperationError('context-failed');
         try {
           // A fresh nonce makes a repeated idempotency key fail closed, even after restart.
           // The retained reservation contains hashes only, and no raw request or response.
