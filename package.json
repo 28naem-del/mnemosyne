@@ -139,7 +139,9 @@
     "!**/*.sqlite3",
     "!**/*.sqlite3-*",
     "!**/*.db",
-    "!**/*.db-*"
+    "!**/*.db-*",
+    "!assets/demo.gif",
+    "!assets/demo.tape"
   ],
   "scripts": {
     "benchmark": "node dist/evaluation/locomo-benchmark.js",
@@ -237,7 +239,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.3.1",
-    "@types/node": "^25.9.6",
+    "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^5.0.0",
     "ioredis": "^5.11.1",
     "typescript": "^6.0.3",
