@@ -40,7 +40,7 @@ Action read sets bind the proposed action, arguments and declared supporting mem
 - [Full migration](MIGRATION.md) supports eleven explicit export profiles with preview, source inspection, completeness reports, atomic apply, retry recognition and guarded undo. Imports are private and untrusted by default; unsupported foreign policies and embeddings are not silently converted.
 - [MCP and HTTP](deployment.md) expose scoped interfaces. HTTP uses bearer authentication and configured capabilities; the Python client accesses the same service. [Provider tool adapters](PROVIDER-TOOLS.md) support explicit native envelopes without selecting a model or discovering credentials.
 - [Profiles](PROFILES.md) retain typed known, unknown and conflicting fields. [Relations and branches](RUNTIME.md#time-entities-and-branches) support evidence-backed traversal and reviewed staged changes.
-- [Recovery](OPERATIONS.md) creates consistent whole-database backup bundles, verifies integrity and restores to a new path. Bundles include all owners and are plaintext. A digest is not an authenticity signature.
+- [Recovery](OPERATIONS.md) creates consistent whole-database backup bundles, verifies integrity and restores to a new path. Bundles include all owners. Plain bundles are plaintext; `--encrypt` bundles are passphrase-encrypted ([encrypted bundles](OPERATIONS.md#encrypted-bundles)). A digest is not an authenticity signature.
 
 The `createMnemosyne` compatibility API (the separate `mnemosy-ai-legacy` package from 3.0, see [3.0 migration](MIGRATION-v3.md)) retains its separately configured vector, graph and broadcast integrations. It does not automatically gain every local lifecycle behavior; follow the [existing-installation migration guide](MIGRATION-v2.md).
 
