@@ -227,7 +227,7 @@
   },
   "peerDependencies": {
     "@huggingface/transformers": "3.8.1",
-    "ioredis": "^5.0.0"
+    "ioredis": "^5.0.0 || ^6.0.0"
   },
   "peerDependenciesMeta": {
     "@huggingface/transformers": {
@@ -241,7 +241,7 @@
     "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^5.0.0",
-    "ioredis": "^5.11.1",
+    "ioredis": "^6.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
   },
