@@ -1,0 +1,65 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.28naem-del/mnemosyne",
+  "title": "Mnemosyne",
+  "description": "Evidence-tracked local memory MCP server: one SQLite file; corrections retire dependent memories.",
+  "repository": {
+    "url": "https://github.com/28naem-del/mnemosyne",
+    "source": "github",
+    "id": "1166050099"
+  },
+  "websiteUrl": "https://mnemosy.ai",
+  "version": "3.0.0-rc.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "mnemosy-ai",
+      "version": "3.0.0-rc.2",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        },
+        {
+          "type": "named",
+          "name": "--db",
+          "description": "Path to the SQLite memory file; it and its parent directory are created on first use",
+          "isRequired": true,
+          "format": "filepath",
+          "placeholder": "/absolute/path/project/.mnemosyne/memory.sqlite"
+        },
+        {
+          "type": "named",
+          "name": "--workspace",
+          "description": "Workspace name that scopes the stored memories",
+          "isRequired": true,
+          "format": "string",
+          "placeholder": "my-project"
+        },
+        {
+          "type": "named",
+          "name": "--agent",
+          "description": "Agent name recorded with the memories this server writes",
+          "isRequired": true,
+          "format": "string",
+          "placeholder": "assistant"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "MNEMOSYNE_INDEX_MODE",
+          "description": "Dense index used for semantic recall; defaults to auto",
+          "isRequired": false,
+          "format": "string",
+          "default": "auto",
+          "choices": ["exact", "auto", "sqlite-vec", "hnsw"]
+        }
+      ]
+    }
+  ]
+}
