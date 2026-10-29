@@ -89,7 +89,7 @@ are 79 and 43 annotated questions and are small — they are stated, not buried.
 | Mem0 OSS, LLM extraction (`infer:true`) | 76.58 | 81.01 | **72.15** | 0.5648 | 237.5 ms | 402.9 s |
 | Zep / Graphiti | not run | not run | not run | not run | not run | not run |
 
-**Mem0's paid extraction path takes `allHit` here** — 72.15 against our reranked 70.89.
+**Mem0's LLM extraction path takes `allHit` here** — 72.15 against our reranked 70.89.
 
 **Part B** — conversation 1, 11/19 sessions, 212 turns, 57 questions (43 annotated):
 
@@ -105,7 +105,7 @@ are 79 and 43 annotated questions and are small — they are stated, not buried.
 
 Our unreranked hybrid loses to Mem0 in both parts and in both of Mem0's extraction modes — by 8.65
 and 5.49 in part A, 1.74 and 2.91 in part B. Our reranked margin is thin: +1.27 and +1.94 over
-Mem0's paid path, and only **+0.78** over Mem0's free path in part B. On these two
+Mem0's LLM-extraction path, and only **+0.78** over Mem0's extraction-off path in part B. On these two
 conversations, extraction was not consistently better than no extraction: +3.16 in part A,
 **−1.16** in part B, at roughly 65× the ingest time; it did lift MRR in both.
 

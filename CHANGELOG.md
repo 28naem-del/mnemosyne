@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Builds with TypeScript 7 (`typescript` ^7.0.2, devDependency). Two tests transpiled `src` files into a subprocess fixture through the TypeScript compiler API, which the TypeScript 7 package no longer exports; they now use Node's built-in `stripTypeScriptTypes` (`node:module`), so the fixtures add no dependency. The emitted JavaScript is byte-identical to the TypeScript 6 build; 16 declaration files differ only in quote style and member order, and the published declarations typecheck under both TypeScript 6 and 7.
 - Removed tracked clutter: `.Codex/evals/*` (already ignored) and the unreferenced `scratch/t14/*.mjs` probes; `scratch/` is now ignored.
-- The npm package no longer ships `python/tests`, `site/README.md` or the two raw LongMemEval report JSON files under `docs/evaluation` (6.4 MB); they stay in the repository. The root README entry in `files` is anchored (`/README.md`), because an unanchored entry made npm ship every `README.md` regardless of negations. Packed size 2.0 MB to 1.6 MB, unpacked 12.4 MB to 6.0 MB.
+- The npm package no longer ships `python/tests`, `site/README.md` or the two raw LongMemEval report JSON files under `docs/evaluation` (6.4 MB); they stay in the repository. The root README entry in `files` is anchored (`/README.md`), because an unanchored entry made npm ship every `README.md` regardless of negations. Packed size 2.0 MB to 1.6 MB, unpacked 12.4 MB to 6.0 MB. `docs/EVALUATION.md` and `docs/evaluation/LONGMEMEVAL-S-BASELINE.md` now link the 499-case raw report by its repository URL; the generated `docs/evaluation/BENCHMARKS.md` still links its reports relatively.
 
 ## [3.0.0-rc.2] - 2026-10-28
 
