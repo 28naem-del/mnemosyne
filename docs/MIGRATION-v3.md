@@ -64,6 +64,6 @@ If you relied on `dream()` to keep a Qdrant store small, keep using it through `
    npm install /path/to/mnemosyne/packages/legacy
    ```
 
-3. Replace imports as in the table above, for example `import { createMnemosyne } from 'mnemosy-ai-legacy'`. Install `ioredis` yourself if you use the graph, broadcast or Redis cache features (it is an optional peer dependency, as before).
+3. Replace imports as in the table above, for example `import { createMnemosyne } from 'mnemosy-ai-legacy'`. Install `ioredis` yourself if you use the graph, broadcast or Redis cache features (it is an optional peer dependency, as before; 5.x and 6.x are both supported).
 
 The legacy package has no dependency on `mnemosy-ai`; you can install both side by side and migrate incrementally with the [bridge](BRIDGE.md). Staying on `mnemosy-ai@2` also keeps both engines in one package.

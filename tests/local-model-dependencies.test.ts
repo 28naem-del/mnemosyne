@@ -2,10 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync, fork } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { createRequire } from 'node:module';
+import { createRequire, stripTypeScriptTypes } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ModuleKind, ScriptTarget, transpileModule } from 'typescript';
 import { assertLocalModelDependencies } from '../src/providers/local-model-dependencies.js';
 
 const roots: string[] = [];
@@ -33,7 +32,7 @@ async function workerMessage(root: string): Promise<unknown> {
   writeFileSync(join(root, 'package.json'), '{"type":"module"}');
   for (const name of ['local-model-worker', 'local-model-dependencies', 'local-model-spec']) {
     const source = readFileSync(new URL(`../src/providers/${name}.ts`, import.meta.url), 'utf8');
-    writeFileSync(join(root, `${name}.js`), transpileModule(source, { compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 } }).outputText);
+    writeFileSync(join(root, `${name}.js`), stripTypeScriptTypes(source));
   }
   return new Promise((resolve, reject) => {
     const child = fork(join(root, 'local-model-worker.js'), [JSON.stringify({ kind: 'embed', cacheDir: root, allowDownload: false })], { execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });

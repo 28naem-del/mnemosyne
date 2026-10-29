@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { stripTypeScriptTypes } from 'node:module';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import ts from 'typescript';
 import { CheckpointConflictError, LOCAL_SNAPSHOT_LIMITS, createLocalMemory, type LocalMemory, type MemorySnapshot, type StoreMemoryInput } from '../src/local/index.js';
 
 const source = { uri: 'test://fixture', author: 'test-controller' };
@@ -37,7 +37,7 @@ describe('local persistence and ownership', () => {
       'reranking/shared', 'reranking/onnx-reranker', 'reranking/model-assets', 'reranking/context',
       'vector/index', 'vector/types', 'vector/sqlite-vec', 'vector/hnsw']) {
       const code = readFileSync(new URL(`../src/local/${file}.ts`, import.meta.url), 'utf8');
-      writeFileSync(join(runtime, `${file}.js`), ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText);
+      writeFileSync(join(runtime, `${file}.js`), stripTypeScriptTypes(code));
     }
     const run = (agentId: string): Promise<void> => new Promise((resolve, reject) => {
       const code = `import { createLocalMemory } from ${JSON.stringify(join(runtime, 'index.js'))};
