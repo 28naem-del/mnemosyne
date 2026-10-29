@@ -189,6 +189,24 @@ describe('listPremiseHolds', () => {
     expect(listPremiseHolds(w.db).holds).toEqual([]);
   });
 
+  it('accepts a held skill by linking the premise\'s current version; the next correction retires it', async () => {
+    const w = world();
+    const evidence = w.store('The release checklist has five steps.', 'fact');
+    const premise = w.store('Release tags are signed with the project key.', 'fact');
+    const created = w.runtime.createSkill({ name: 'Release', prerequisites: [], steps: ['Run the checklist', 'Sign the tag'], parameters: {}, evidenceIds: [evidence.id] });
+    const active = await w.runtime.trialSkill({ id: created.id, validation: { passed: true, evidence: 'Synthetic trial passed.', verifier: 'harness', taskId: 'trial-1', prerequisitesSatisfied: true } });
+    w.task([w.db.get(active.recordId)!, premise, evidence]);
+    const v2 = w.db.correct(premise.id, { text: 'Release tags are signed with the release key.', source: { uri: 'test:tags-v2' }, reason: 'Key rotated.' });
+    expect(createPremiseGuard(w.db).skill(w.runtime.getSkill(created.id))?.state).toBe('retired');
+    const [hold] = listPremiseHolds(w.db).holds;
+    expect(hold).toMatchObject({ from: active.recordId, to: premise.id, skillId: created.id, support: 1, hold: { linkTo: v2.id } });
+    const review = reviewDependency(w.db, hold, 'accept', 'ops-lead', { runtime: w.runtime, now: w.now });
+    expect(w.runtime.getSkill(created.id)).toMatchObject({ state: 'active', recordId: review.dependentId, premises: [{ memoryId: v2.id, receiptId: review.receiptId }] });
+    expect(createPremiseGuard(w.db).skill(w.runtime.getSkill(created.id))?.state).toBe('active');
+    w.db.correct(v2.id, { text: 'Release tags are unsigned.', source: { uri: 'test:tags-v3' }, reason: 'Policy changed.' });
+    expect(w.runtime.getSkill(created.id)).toMatchObject({ state: 'retired' });
+  });
+
   it('refuses to accept a hold whose premise has no current version, and requires a note to release one', () => {
     const w = world();
     const base = w.store('The fleet uses region codes from the cloud catalogue.', 'fact');

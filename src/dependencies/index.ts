@@ -22,8 +22,8 @@ import * as v from '../local/validation.js';
 import { MemoryRuntime, type RuntimeSkill } from '../runtime/index.js';
 import type {
   DependencyDecision, DependencyReceipt, DependencyReview, DependencyRule, InferDependenciesOptions, InferenceEvidence,
-  InferenceRejection, InferenceResult, InferenceThresholds, InferredDependency, PremiseGuard, PremiseGuardOptions, PremiseHold,
-  ReviewDependencyOptions,
+  HoldContext, InferenceRejection, InferenceResult, InferenceThresholds, InferredDependency, PremiseGuard, PremiseGuardOptions, PremiseHold,
+  PremiseHoldList, ReviewDependencyOptions,
 } from './types.js';
 export type * from './types.js';
 
@@ -39,7 +39,8 @@ const EVIDENCE_IDS = 16;
 const CLOSURE_LIMIT = 4096;
 const PAGE = 1000;
 const OPTION_KEYS = ['minSupport', 'minReliance', 'minLift', 'minConfidence', 'z', 'maxLedgerPages', 'maxRecords', 'dependentKinds', 'premiseKinds', 'maxProposals'] as const;
-const PROPOSAL_KEYS = ['rule', 'from', 'to', 'fromKind', 'toKind', 'skillId', 'support', 'runs', 'premiseRuns', 'tasks', 'reliance', 'lift', 'pmi', 'confidence', 'ignored', 'returnedSupport', 'candidateOnly', 'failedCoUse', 'taskIds', 'ledgerIds', 'traceIds', 'digest'] as const;
+const PROPOSAL_KEYS = ['rule', 'from', 'to', 'fromKind', 'toKind', 'skillId', 'support', 'runs', 'premiseRuns', 'tasks', 'reliance', 'lift', 'pmi', 'confidence', 'ignored', 'returnedSupport', 'candidateOnly', 'failedCoUse', 'taskIds', 'ledgerIds', 'traceIds', 'hold', 'digest'] as const;
+const HOLD_KEYS = ['reason', 'premiseStatus', 'changedAt', 'correctionId', 'correctionReason', 'linkTo'] as const;
 const COUNT_KEYS = ['support', 'runs', 'premiseRuns', 'tasks', 'ignored', 'returnedSupport', 'candidateOnly', 'failedCoUse'] as const;
 const RATIO_KEYS = ['reliance', 'lift', 'pmi', 'confidence'] as const;
 const ID_KEYS = ['taskIds', 'ledgerIds', 'traceIds'] as const;
@@ -362,6 +363,16 @@ class EvidenceIndex {
     return current;
   }
 
+  /** The current version of a record whatever its text: itself while active, else
+   * its newest active successor over `supersedes`, else null. */
+  versionOf(record: MemoryRecord): MemoryRecord | null {
+    return newestVersion(record, id => this.successorsOf(id));
+  }
+
+  successorsOf(id: string): MemoryRecord[] {
+    return this.#successors.get(id) ?? [];
+  }
+
   /** Declared dependency closure of a record (ids), bounded. */
   closure(record: MemoryRecord): Set<string> {
     const cached = this.#closures.get(record.id);
@@ -391,6 +402,35 @@ function parseTrace(text: string): { taskId: string; used: string[]; retrieved: 
     const success = value.outcome?.success;
     return { taskId: value.taskId, used, retrieved, ...(typeof success === 'boolean' ? { success } : {}) };
   } catch { return null; }
+}
+
+function statistics(index: EvidenceIndex, pair: Pair, z: number) {
+  const runs = index.runs.get(pair.dependent) ?? 0, premiseRuns = index.premiseRuns.get(pair.premise) ?? 0;
+  const reliance = pair.support / runs, lift = (pair.support * index.tasks) / (runs * premiseRuns);
+  return { runs, premiseRuns, reliance, lift, confidence: wilsonLower(pair.support, runs + pair.candidateOnly, z) };
+}
+
+/** The reviewable body of one pair, shared by inference and the hold listing. */
+function proposalBody(index: EvidenceIndex, pair: Pair, dependent: MemoryRecord, premise: MemoryRecord, skillId: string | undefined, z: number): Omit<InferredDependency, 'digest'> {
+  const { runs, premiseRuns, reliance, lift, confidence } = statistics(index, pair, z);
+  return {
+    rule: DEPENDENCY_RULE, from: dependent.id, to: premise.id, fromKind: dependent.kind, toKind: premise.kind, ...(skillId === undefined ? {} : { skillId }),
+    support: pair.support, runs, premiseRuns, tasks: index.tasks,
+    reliance: round(reliance), lift: round(lift), pmi: round(Math.log2(lift)), confidence: round(confidence),
+    ignored: pair.ignored, returnedSupport: pair.returnedSupport, candidateOnly: pair.candidateOnly, failedCoUse: pair.failedCoUse,
+    taskIds: sorted(pair.taskIds).slice(0, EVIDENCE_IDS), ledgerIds: sorted(pair.ledgerIds).slice(0, EVIDENCE_IDS), traceIds: sorted(pair.traceIds).slice(0, EVIDENCE_IDS),
+  };
+}
+
+/** Newest active version over `supersedes`, whatever its text; null if none. */
+function newestVersion(record: MemoryRecord, successors: (id: string) => MemoryRecord[]): MemoryRecord | null {
+  let current = record;
+  for (let step = 0; current.status !== 'active' && step < CLOSURE_LIMIT; step++) {
+    const next = [...successors(current.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0];
+    if (!next) return null;
+    current = next;
+  }
+  return current.status === 'active' ? current : null;
 }
 
 /**
@@ -429,20 +469,12 @@ export function inferDependencies(memory: LocalMemory, options: InferDependencie
     if (index.closureNodes(dependent).has(pair.premise)) { reject('declared'); continue; }
     if (index.closureNodes(premise).has(pair.dependent)) { reject('cycle'); continue; }
     if (dependent.visibility === 'workspace' && premise.visibility !== 'workspace') { reject('incompatible'); continue; }
-    const runs = index.runs.get(pair.dependent) ?? 0, premiseRuns = index.premiseRuns.get(pair.premise) ?? 0;
-    const reliance = pair.support / runs, lift = (pair.support * index.tasks) / (runs * premiseRuns);
-    const confidence = wilsonLower(pair.support, runs + pair.candidateOnly, thresholds.z);
+    const { reliance, lift, confidence } = statistics(index, pair, thresholds.z);
     if (pair.support < thresholds.minSupport) { reject('support'); continue; }
     if (reliance < thresholds.minReliance) { reject('reliance'); continue; }
     if (lift < thresholds.minLift) { reject('lift'); continue; }
     if (confidence < thresholds.minConfidence) { reject('confidence'); continue; }
-    const body: Omit<InferredDependency, 'digest'> = {
-      rule: DEPENDENCY_RULE, from: dependent.id, to: premise.id, fromKind: dependent.kind, toKind: premise.kind, ...(skillId === undefined ? {} : { skillId }),
-      support: pair.support, runs, premiseRuns, tasks: index.tasks,
-      reliance: round(reliance), lift: round(lift), pmi: round(Math.log2(lift)), confidence: round(confidence),
-      ignored: pair.ignored, returnedSupport: pair.returnedSupport, candidateOnly: pair.candidateOnly, failedCoUse: pair.failedCoUse,
-      taskIds: sorted(pair.taskIds).slice(0, EVIDENCE_IDS), ledgerIds: sorted(pair.ledgerIds).slice(0, EVIDENCE_IDS), traceIds: sorted(pair.traceIds).slice(0, EVIDENCE_IDS),
-    };
+    const body = proposalBody(index, pair, dependent, premise, skillId, thresholds.z);
     const proposal = { ...body, digest: proposalDigest(body) };
     proposals.push(proposal);
     age.set(proposal, `${dependent.createdAt}\u0000${premise.createdAt}`);
@@ -452,17 +484,23 @@ export function inferDependencies(memory: LocalMemory, options: InferDependencie
   return { proposals: kept, evidence: { ...index.evidence, pairs: { considered, proposed: kept.length, rejected } } };
 }
 
-/** Follows same-text successors (a re-versioned dependent) to the current record. */
-function currentHead(memory: LocalMemory, record: MemoryRecord, maxRecords: number): MemoryRecord {
-  if (record.status === 'active') return record;
+/** Successors over `supersedes` among records of one kind, bounded. */
+function successorMap(memory: LocalMemory, kind: MemoryKind, maxRecords: number): Map<string, MemoryRecord[]> {
   const successors = new Map<string, MemoryRecord[]>();
   let cursor: string | undefined, scanned = 0;
   do {
-    const page = memory.list({ kinds: [record.kind], includeInactive: true, includeUntrusted: true, limit: Math.min(PAGE, maxRecords - scanned), ...(cursor === undefined ? {} : { cursor }) });
+    const page = memory.list({ kinds: [kind], includeInactive: true, includeUntrusted: true, limit: Math.min(PAGE, maxRecords - scanned), ...(cursor === undefined ? {} : { cursor }) });
     scanned += page.items.length;
     for (const item of page.items) if (item.supersedes) successors.set(item.supersedes, [...(successors.get(item.supersedes) ?? []), item]);
     cursor = scanned < maxRecords ? page.nextCursor : undefined;
   } while (cursor !== undefined);
+  return successors;
+}
+
+/** Follows same-text successors (a re-versioned dependent) to the current record. */
+function currentHead(memory: LocalMemory, record: MemoryRecord, maxRecords: number): MemoryRecord {
+  if (record.status === 'active') return record;
+  const successors = successorMap(memory, record.kind, maxRecords);
   let current = record;
   for (let step = 0; step < CLOSURE_LIMIT; step++) {
     const from = current;
@@ -494,6 +532,16 @@ function parseProposal(proposal: unknown): InferredDependency {
   for (const key of COUNT_KEYS) number(input[key], Number.NaN, 0, Number.MAX_SAFE_INTEGER, key, true);
   for (const key of RATIO_KEYS) number(input[key], Number.NaN, -1e9, 1e9, key);
   for (const key of ID_KEYS) v.strings(input[key], key, EVIDENCE_IDS, 160);
+  if (input.hold !== undefined) {
+    const hold = v.object(input.hold, 'hold');
+    v.keys(hold, HOLD_KEYS, 'hold');
+    v.enumeration(hold.reason, ['premise-changed', 'premise-ineligible'] as const, 'hold reason');
+    v.enumeration(hold.premiseStatus, ['active', 'superseded', 'invalidated'] as const, 'hold premiseStatus');
+    if (hold.changedAt !== undefined) v.string(hold.changedAt, 'changedAt', 64);
+    if (hold.correctionId !== undefined) v.string(hold.correctionId, 'correctionId', 160);
+    if (hold.correctionReason !== undefined) v.string(hold.correctionReason, 'correctionReason', 4096);
+    if (hold.linkTo !== undefined) v.string(hold.linkTo, 'linkTo', 160);
+  }
   const digest = v.string(input.digest, 'digest', 64);
   if (digest !== proposalDigest(input)) throw new Error('Proposal digest does not match its content; re-run inferDependencies.');
   return input as unknown as InferredDependency;
@@ -509,6 +557,11 @@ function parseProposal(proposal: unknown): InferredDependency {
  * pair out of later proposals. The digest binds the receipt to exactly the
  * proposal the reviewer saw; the dependent, the premise and the declared graph
  * are re-checked here, so a stale proposal is refused instead of applied.
+ *
+ * A proposal from `listPremiseHolds` (it carries `hold`) is decided the same way,
+ * and its receipt releases the guard's hold. Its premise has changed, so accept
+ * links the premise's current version (`hold.linkTo`, re-derived and compared
+ * here), and reject needs a `note`.
  */
 export function reviewDependency(memory: LocalMemory, proposal: InferredDependency, decision: DependencyDecision, reviewer: string, options: ReviewDependencyOptions = {}): DependencyReview {
   const parsed = parseProposal(proposal);
@@ -522,6 +575,8 @@ export function reviewDependency(memory: LocalMemory, proposal: InferredDependen
   if (options.runtime !== undefined && (!(options.runtime instanceof MemoryRuntime) || options.runtime.memory !== memory)) throw new TypeError('runtime must wrap the same memory');
   const time = (options.now ?? (() => new Date()))();
   if (!(time instanceof Date) || !Number.isFinite(time.getTime())) throw new TypeError('now must return a valid Date');
+  const hold = parsed.hold;
+  if (hold && verdict === 'reject' && note === undefined) throw new Error('Releasing a guard hold requires a note: why the dependent does not rely on the premise.');
   const receipt: DependencyReceipt = { ...parsed, decision: verdict, reviewer: by, recordedAt: time.toISOString(), ...(note === undefined ? {} : { note }) };
   const append = (memoryId: string) => {
     const id = memory.appendLedgerReceipt({ event: 'dependency', dependency: receipt as unknown as LedgerDependency, memoryId });
@@ -529,9 +584,23 @@ export function reviewDependency(memory: LocalMemory, proposal: InferredDependen
     return id;
   };
   const premise = () => {
+    if (hold) return linkTarget(hold);
     const record = memory.get(parsed.to);
     if (!record || record.status !== 'active' || record.trust === 'untrusted' || record.kind !== parsed.toKind || !memory.isEligible(record.id)) throw new Error('Premise changed or is no longer eligible; re-run inferDependencies.');
     return record;
+  };
+  // A held premise has changed, so accept links its current version: the reviewer
+  // states the dependent relies on this premise as it now stands, and the next
+  // correction of it cascades. An ineligible current version stays linked as is,
+  // so the kernel itself then withholds the dependent.
+  const linkTarget = (context: HoldContext) => {
+    if (context.linkTo === undefined) throw new Error('The held premise has no current version to link; reject the hold, or revise the dependent with correct().');
+    const held = memory.get(parsed.to);
+    if (!held || held.kind !== parsed.toKind) throw new Error('Held premise not found in this scope; list holds again.');
+    const successors = successorMap(memory, held.kind, maxRecords);
+    const current = newestVersion(held, id => successors.get(id) ?? []);
+    if (!current || current.id !== context.linkTo) throw new Error('The held premise changed again; list holds again.');
+    return current;
   };
   const original = memory.get(parsed.from);
   if (!original || original.agentId !== memory.agentId || original.kind !== parsed.fromKind) throw new Error('Dependent not found in this scope; re-run inferDependencies.');
@@ -542,10 +611,10 @@ export function reviewDependency(memory: LocalMemory, proposal: InferredDependen
     const skill = runtime.getSkill(parsed.skillId);
     if (!skill || skill.state === 'retired') throw new Error('Skill is missing, retired or has stale evidence.');
     if (verdict === 'reject') return memory.atomic(() => ({ receiptId: append(skill.recordId), decision: verdict, digest: parsed.digest, dependentId: skill.recordId, skillId: parsed.skillId }));
-    premise();
+    const target = premise();
     return memory.atomic(() => {
       const receiptId = append(skill.recordId);
-      const linked = runtime.linkPremise(parsed.skillId!, parsed.to, receiptId);
+      const linked = runtime.linkPremise(parsed.skillId!, target.id, receiptId);
       if (linked.recordId === skill.recordId) throw new Error('Premise is already linked to this skill.');
       return { receiptId, decision: verdict, digest: parsed.digest, dependentId: linked.recordId, supersededId: skill.recordId, skillId: parsed.skillId };
     });
@@ -579,6 +648,19 @@ export function reviewDependency(memory: LocalMemory, proposal: InferredDependen
  * few runs is never evidence of independence.
  */
 export function createPremiseGuard(memory: LocalMemory, options: PremiseGuardOptions = {}): PremiseGuard {
+  const { holds } = buildGuard(memory, options);
+  const allows = (input: MemoryRecord | string) => holds(input).length === 0;
+  return {
+    holds, allows,
+    filter: <T extends MemoryRecord | { memory: MemoryRecord }>(items: T[]) => items.filter(item => allows('memory' in item && typeof item.memory === 'object' ? item.memory : item as MemoryRecord)),
+    skill: (skill: RuntimeSkill | null) => {
+      if (!skill || skill.state === 'retired') return skill;
+      return holds(skill.recordId).length ? { ...skill, state: 'retired', reason: 'Held for review: a premise this skill was used with changed.' } : skill;
+    },
+  };
+}
+
+function buildGuard(memory: LocalMemory, options: PremiseGuardOptions) {
   const settings = parseSettings(options, true);
   const index = new EvidenceIndex(memory, settings);
   const watched = new Map<string, { premise: string; premiseId: string; support: number; runs: number; reliance: number }[]>();
@@ -608,15 +690,51 @@ export function createPremiseGuard(memory: LocalMemory, options: PremiseGuardOpt
     }
     return result;
   };
-  const allows = (input: MemoryRecord | string) => holds(input).length === 0;
-  return {
-    holds, allows,
-    filter: <T extends MemoryRecord | { memory: MemoryRecord }>(items: T[]) => items.filter(item => allows('memory' in item && typeof item.memory === 'object' ? item.memory : item as MemoryRecord)),
-    skill: (skill: RuntimeSkill | null) => {
-      if (!skill || skill.state === 'retired') return skill;
-      return holds(skill.recordId).length ? { ...skill, state: 'retired', reason: 'Held for review: a premise this skill was used with changed.' } : skill;
-    },
-  };
+  return { settings, index, watched, holds };
+}
+
+/**
+ * Lists every hold the premise guard (built with the same options) would apply to
+ * a current dependent this agent owns, as a reviewable proposal: the pair's
+ * co-use statistics and evidence ids, a `hold` context naming the change and what
+ * `accept` would link, and a digest. Reads only. Support may be 1: these are pairs
+ * the guard holds, not inference results, and each stays the reviewer's decision.
+ * `reviewDependency` decides one; its receipt releases the hold either way.
+ */
+export function listPremiseHolds(memory: LocalMemory, options: PremiseGuardOptions = {}): PremiseHoldList {
+  const { settings, index, watched, holds } = buildGuard(memory, options);
+  const listed: (InferredDependency & { hold: HoldContext })[] = [];
+  const age = new Map<InferredDependency, string>();
+  for (const [node, entries] of watched) {
+    const dependent = index.headOf(node);
+    const skillId = node.startsWith('skill:') ? node.slice('skill:'.length) : undefined;
+    if (!dependent || dependent.status !== 'active' || dependent.agentId !== memory.agentId || (skillId !== undefined && dependent.metadata.skillState === 'retired')) continue;
+    for (const held of holds(dependent)) {
+      const entry = entries.find(item => item.premiseId === held.premiseId)!;
+      const premise = memory.get(held.premiseId);
+      if (!premise) continue;
+      const body = { ...proposalBody(index, index.pairs.get(pairKey(node, entry.premise))!, dependent, premise, skillId, settings.thresholds.z), hold: holdContext(memory, index, premise, held.reason) };
+      const proposal = { ...body, digest: proposalDigest(body) };
+      listed.push(proposal);
+      age.set(proposal, `${dependent.createdAt}\u0000${premise.createdAt}`);
+    }
+  }
+  listed.sort((a, b) => age.get(a)!.localeCompare(age.get(b)!) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  return { holds: listed, evidence: index.evidence };
+}
+
+function holdContext(memory: LocalMemory, index: EvidenceIndex, premise: MemoryRecord, reason: PremiseHold['reason']): HoldContext {
+  const context: HoldContext = { reason, premiseStatus: premise.status };
+  const correction = premise.status === 'superseded' ? [...index.successorsOf(premise.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0]
+    : premise.status === 'invalidated' && premise.invalidation ? memory.get(premise.invalidation.correctionId) ?? undefined : undefined;
+  if (premise.status !== 'active') context.changedAt = premise.updatedAt;
+  if (correction) {
+    context.correctionId = correction.id;
+    if (typeof correction.metadata.correctionReason === 'string') context.correctionReason = correction.metadata.correctionReason;
+  }
+  const current = index.versionOf(premise);
+  if (current) context.linkTo = current.id;
+  return context;
 }
 
 /** Narrow JSON view of a proposal for tables and CLIs. */

@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A Claude Code plugin marketplace: `.claude-plugin/marketplace.json` (marketplace `mnemosy-ai`) lists one plugin, `mnemosyne`, in `integrations/claude-code/`. The plugin version is 3.0.0-rc.3 and it starts `npx -y -p mnemosy-ai@next mnemosy mcp` with one database per project at `${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite`. Validated with `claude plugin validate` and installed with Claude Code 2.1.301 from a local checkout and from the GitHub marketplace (`claude plugin marketplace add 28naem-del/mnemosyne`).
+- `mnemosy dependencies --holds` and `listPremiseHolds` (from `mnemosy-ai/dependencies`) list what the premise guard holds: each held dependent with the changed premise, the correction that changed it, the co-use count and the task, ledger and trace ids, as a proposal with a digest. `--review DIGEST` (and `reviewDependency`) now decide a hold as well as an inferred proposal, so a pair with a single successful co-use can be reviewed from the CLI. Accept links the dependent to the premise's current version through `correct()` (or `linkPremise` for a skill), so the next correction cascades; reject releases the hold and needs `--reason`. Either decision writes a `dependency` receipt that releases the hold. Automatic inference still needs two co-uses. See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#the-premise-guard).
 - `integrations/hermes/`: a Hermes portable plugin (`mnemosy-ai`: one MCP server pinned to `mnemosy-ai@3.0.0-rc.3` and one skill). Not tested under Hermes and not listed in the Hermes plugin catalog.
 
 ### Changed
 
+- `mnemosy dependencies`: a `--review` digest that matches nothing now fails with "No current proposal or hold has that digest", and a missing mode with "exactly one of --infer, --holds or --review DIGEST".
 - Publish workflow: a re-dispatch for a version npm already has skips `npm publish` and runs the remaining steps, so the MCP Registry step can be retried. The 3.0.0-rc.3 run failed at the `mcpName` wait after `npm publish` succeeded and could not be re-run.
 
 ### Fixed
