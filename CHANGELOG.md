@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With `indexMode: 'hnsw'`, a connection's dense channel missed records that another connection (or process) on the same database file embedded after the first one opened its graph. The graph lives in each process, and to the first connection those records were no longer pending, so it never added them. Before each search the graph now checks `PRAGMA data_version`, which moves only when another connection commits, and when it has moved adds every vector whose label is above its watermark. Erasures by another connection were already withheld, because each proposed label is re-authorized against the database.
 - `importEmbeddings` checked only the byte length of a packed float32 vector, so a vector holding NaN, an infinity or only zeros was stored. Dense search then threw on that row, and re-embedding never replaced it because its source hash still matched. Such a vector is now rejected, with nothing written. A stored row that cannot be decoded (for example one written before this check) is skipped by exact, sqlite-vec and hnsw search instead of failing the query, and is marked so the next recall re-embeds it.
 
 ### Security
