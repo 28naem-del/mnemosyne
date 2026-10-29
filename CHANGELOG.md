@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - `AdaptiveContext.build` ran a custom `tokenCounter` inside the database transaction that reads the context evidence. A `forget` made from inside the counter was therefore rolled back when the build then failed, which it does when a selected source disappears, and the erased text stayed stored. The counter now runs outside that transaction, so a deletion it makes commits on its own; the builder still revalidates every selected source afterwards and rejects a packet whose evidence changed. `MemoryBridge` already counted outside its transaction.
+- `MemoryAgent.runTurn` checked context freshness at dispatch with a new read set that dropped `requireWatched` and recorded the state at that moment. A change between `beforeTurn` and dispatch, such as a removed watch, could therefore pass, and the host responder ran on a source that `requireWatched: true` should have withheld. This affected a host `contextBuilder` and a `contextProvider` whose `validate` does not recheck watches; the built-in builder revalidated its own packet. `runTurn` now revalidates the read set that `beforeTurn` created, with the same `requireWatched`, and fails with `context-failed` when it no longer holds.
 
 ### Development
 

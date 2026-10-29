@@ -155,6 +155,28 @@ describe('action-bound freshness and host turn dispatch', () => {
     const host = vi.fn(async () => true); await expect(value.executeAction(action, host)).rejects.toMatchObject({ code: 'action-rejected' }); expect(host).not.toHaveBeenCalled();
   });
 
+  it('runTurn keeps requireWatched from context validation through dispatch', async () => {
+    const memory = db(), runtime = new MemoryRuntime(memory), maintenance = new MemoryMaintenance(runtime);
+    const source = memory.store({ text: 'Atlas deployment needs two reviewers.', source: { uri: 'fixture:source' }, trust: 'observed' });
+    const watch = maintenance.watchMemory({ memoryId: source.id, maxAgeMs: 60000 });
+    maintenance.recordCheck({ memoryId: source.id, expectedStateHash: watch.stateHash, observation: { status: 'confirmed', evidence: 'Synthetic file checked.', verifier: 'fixture' } });
+    const builder = vi.fn(async (request: { maxTokens: number }) => ({ text: 'Atlas deployment needs two reviewers.', tokens: 10, tokenBudget: request.maxTokens, memoryIds: [source.id], abstained: false }));
+    const value = new MemoryAgent(runtime, { maintenance, contextBuilder: builder, captureTrust: 'observed' }); agents.push(value);
+    // The watch is removed straight after the context passed its strict check.
+    const createReadSet = maintenance.createReadSet.bind(maintenance);
+    const spy = vi.spyOn(maintenance, 'createReadSet').mockImplementation(input => {
+      const ticket = createReadSet(input);
+      if (input.actionKey === 'agent:context') memory.forget(watch.watchId!);
+      return ticket;
+    });
+    const host = vi.fn(async () => 'Output');
+    await expect(value.runTurn({ query: 'Atlas', input: 'Deploy Atlas.', sessionId: 's', turnId: 'watched', requireWatched: true }, host)).rejects.toMatchObject({ code: 'context-failed' });
+    expect(maintenance.assess(source.id).status).toBe('unwatched'); expect(host).not.toHaveBeenCalled();
+    // Without the requirement an unwatched source is acceptable.
+    spy.mockRestore();
+    await expect(value.runTurn({ query: 'Atlas', input: 'Deploy Atlas.', sessionId: 's', turnId: 'unwatched' }, host)).resolves.toMatchObject({ response: 'Output' });
+  });
+
   it('runTurn calls host once, captures input/output, then durably blocks callback replay after reopening', async () => {
     const file = path(), value = agent(db(file)); const call = vi.fn(async () => '  Atlas visible output\n');
     const input = { query: 'Atlas', input: '  Atlas visible input\n', sessionId: 's', turnId: 't' };
