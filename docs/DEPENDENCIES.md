@@ -81,8 +81,8 @@ the same store gives the same list. Each proposal carries:
 
 ## What is never done silently
 
-- `inferDependencies` and `createPremiseGuard` only read. Proposals are stored
-  nowhere until a reviewer decides.
+- `inferDependencies`, `createPremiseGuard` and `listPremiseHolds` only read.
+  Proposals are stored nowhere until a reviewer decides.
 - `reviewDependency(memory, proposal, 'accept' | 'reject', reviewer)` is the
   only write path. It appends a `dependency` ledger receipt carrying:
   - the full proposal;
@@ -119,19 +119,45 @@ reviewDependency(memory, proposals[0], 'accept', 'ops-lead', { runtime, note: 'C
 
 ```sh
 mnemosy dependencies --db memory.sqlite --workspace atlas --agent author --infer [--min-support N] [--json '{"minReliance":0.5}']
+mnemosy dependencies --db memory.sqlite --workspace atlas --agent author --holds [--json '{"holdReliance":0}']
 mnemosy dependencies --db memory.sqlite --workspace atlas --agent author --review DIGEST --accept|--reject --reviewer NAME [--reason TEXT]
 ```
 
-`--infer` needs only the read capability. It runs under `--read-only` and
-`--no-capture`, and is refused under `--no-recall`.
+Output is JSON. `--json` passes options in: inference thresholds for `--infer`
+and `--review`, premise guard options for `--holds`.
 
-`--review` needs read and write. It is refused under `--read-only`,
-`--no-capture` or `--no-recall` before SQLite opens. It re-infers and looks up
-the digest, so a decision is always taken on current evidence. A digest that
-names no current proposal is an error.
+`--infer` and `--holds` need only the read capability. They run under
+`--read-only` and `--no-capture`, and are refused under `--no-recall`.
+
+`--holds` lists what the premise guard holds (see [The premise guard](#the-premise-guard)),
+one entry per held pair, each with a digest. Each entry has the same fields as an
+inferred proposal (support, runs, reliance, lift, confidence, task, ledger and
+trace ids), plus `hold`: why it is held, the premise's status, when it changed,
+the correction that changed it and that correction's reason, and `linkTo`, the
+record an accept would link.
+
+`--review` takes a digest from either `--infer` or `--holds`. It needs read and
+write, and is refused under `--read-only`, `--no-capture` or `--no-recall` before
+SQLite opens. It re-infers and re-lists the holds and looks up the digest, so a
+decision is always taken on current evidence. A digest that names no current
+proposal or hold is an error: a pair already decided, or a hold whose premise
+changed again since it was listed. Rejecting (releasing) a hold also needs
+`--reason`.
 
 `--min-support` below 2 is refused, because one co-use cannot tell a premise from
-a coincidence.
+a coincidence. That minimum applies to proposals made automatically. A hold can
+have support 1: it is listed because the guard holds it, and accepting or
+rejecting it is the reviewer's decision.
+
+A single-co-use hold, end to end:
+
+```sh
+mnemosy dependencies --db memory.sqlite --workspace atlas --agent author --holds
+# {"holds":[{"from":"<deploy>","to":"<region>","support":1,"taskIds":["task-5"],
+#   "hold":{"reason":"premise-changed","correctionReason":"Region moved.","linkTo":"<region-v2>"},"digest":"9f2c…"}], …}
+mnemosy dependencies --db memory.sqlite --workspace atlas --agent author --review 9f2c… --accept --reviewer ops-lead
+mnemosy dependencies --db memory.sqlite --workspace atlas --agent author --review 9f2c… --reject --reviewer ops-lead --reason "Reads the region at run time."
+```
 
 ## Premise-linked skills (M6)
 
@@ -171,6 +197,29 @@ It holds a dependent when all of the following are true:
 - the dependent version predates the change.
 
 A hold is a reason to review; it is not an invalidation.
+
+`listPremiseHolds(memory, options)` lists every hold the guard, built with the
+same options, would apply to a current dependent this agent owns. Each hold is a
+proposal object with a digest and a `hold` context, and it is reviewed with
+`reviewDependency` like an inferred proposal; the CLI does the same with
+`dependencies --holds` and `--review`. Either decision ledgers a `dependency`
+receipt, and the receipt releases the hold:
+
+- **Accept** links the dependent through `correct()` (or `linkPremise` for a skill)
+  in the same transaction. Because the held premise has changed, the link goes to
+  its current version (`hold.linkTo`): the newest active successor of a corrected
+  premise, or the premise itself while it is active but ineligible. The reviewer
+  is stating that the dependent relies on the premise as it now stands. The
+  dependent runs again, and the next correction of that premise cascades to it.
+  An ineligible linked premise makes the kernel withhold the dependent. A premise
+  that was invalidated has no current version; accepting its hold is refused.
+- **Reject** releases the hold: the reviewer states that the dependent does not
+  rely on the premise. It needs a note (`--reason` in the CLI), which the receipt
+  keeps.
+
+If the dependent is wrong under the corrected premise, revise it with
+`correct()` (`mnemosy correct`) instead. A dependent version created after the
+premise changed is not held either.
 
 By default (`holdReliance: 0`) every successful co-use holds. Said plainly, the
 default guard is a blanket hold: it holds every dependent that was used in at
@@ -385,6 +434,8 @@ numbers can be weighed.
   become meaningless. Precision on real traces is unmeasured.
 - **One co-use is invisible to inference.** Such pairs are covered only by the
   guard, and only if the executor uses it. The kernel alone does not hold them.
+  A reviewer finds them with `listPremiseHolds` (`dependencies --holds`) and
+  decides them one by one; the suite does not measure that review.
 - **Stale = 0 is a property of the guard and of the corpus floor.** The guard
   alone gives it with zero accepted edges; inference alone leaves 7 stale of
   248. Without the generator's observability floor the guarded executor has 1

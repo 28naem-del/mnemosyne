@@ -83,7 +83,7 @@ describe('mnemosy dependencies', () => {
 
     // Reviewed pairs leave the queue; a stale digest is refused rather than guessed.
     expect(infer(f).proposals).toEqual([]);
-    fails(['dependencies', ...scope(f), '--review', backup.digest, '--accept', '--reviewer', 'ops-lead'], 'No current proposal has that digest');
+    fails(['dependencies', ...scope(f), '--review', backup.digest, '--accept', '--reviewer', 'ops-lead'], 'No current proposal or hold has that digest');
 
     const memory = createLocalMemory({ path: f.db, workspaceId: 'dependencies-test', agentId: 'controller', retrieval: 'lexical' });
     try {
@@ -111,8 +111,8 @@ describe('mnemosy dependencies', () => {
   it('rejects malformed invocations before SQLite is created', () => {
     const f = fixture(), digest = 'b'.repeat(64);
     const cases: [string[], string][] = [
-      [[], 'exactly one of --infer or --review'],
-      [['--infer', '--review', digest], 'exactly one of --infer or --review'],
+      [[], 'exactly one of --infer, --holds or --review'],
+      [['--infer', '--review', digest], 'exactly one of --infer, --holds or --review'],
       [['--infer', '--reviewer', 'ops-lead'], 'Unsupported option'],
       [['--infer', '--action', 'infer'], 'does not support --action'],
       [['--infer', '--min-support', '1'], 'at least 2'],
@@ -129,7 +129,7 @@ describe('mnemosy dependencies', () => {
 
   it('refuses a review digest that names no current proposal', () => {
     const f = fixture(); seed(f);
-    fails(['dependencies', ...scope(f), '--review', 'c'.repeat(64), '--accept', '--reviewer', 'ops-lead'], 'No current proposal has that digest');
+    fails(['dependencies', ...scope(f), '--review', 'c'.repeat(64), '--accept', '--reviewer', 'ops-lead'], 'No current proposal or hold has that digest');
     const memory = createLocalMemory({ path: f.db, workspaceId: 'dependencies-test', agentId: 'controller', retrieval: 'lexical' });
     try { expect(memory.ledger({ events: ['dependency'] }).entries).toEqual([]); } finally { memory.close(); }
   });

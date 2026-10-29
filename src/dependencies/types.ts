@@ -1,4 +1,4 @@
-import type { MemoryKind, MemoryRecord } from '../local/types.js';
+import type { MemoryKind, MemoryRecord, MemoryStatus } from '../local/types.js';
 import type { MemoryRuntime, RuntimeSkill } from '../runtime/index.js';
 
 /** The only inference rule this module implements. Recorded on every proposal and
@@ -77,8 +77,37 @@ export interface InferredDependency {
   ledgerIds: string[];
   /** Up to 16 runtime trace records behind the support, sorted. */
   traceIds: string[];
+  /** Present only on a proposal built from a premise-guard hold (`listPremiseHolds`):
+   * `to` is the held premise, which has changed since the co-use. */
+  hold?: HoldContext;
   /** sha256 of the canonical proposal without this field; the review handle. */
   digest: string;
+}
+
+/** Why a pair is held, and what accepting it would link. Part of the digest. */
+export interface HoldContext {
+  reason: 'premise-changed' | 'premise-ineligible';
+  /** Status of the held premise when listed. */
+  premiseStatus: MemoryStatus;
+  /** When a superseded or invalidated premise changed. */
+  changedAt?: string;
+  /** The correction that changed it: the premise's successor, or for an
+   * invalidated premise the upstream correction that invalidated it. */
+  correctionId?: string;
+  /** The reason recorded on that correction, when the store has it. */
+  correctionReason?: string;
+  /** What `accept` links the dependent to: the current version of the premise (its
+   * newest active successor, or the premise itself while it is active but
+   * ineligible). Absent when the premise has no current version; then a reviewer
+   * can only reject, or revise the dependent with `correct()`. */
+  linkTo?: string;
+}
+
+/** `listPremiseHolds` output: every hold the guard would apply, as a reviewable proposal. */
+export interface PremiseHoldList {
+  /** Held dependents this agent owns, one entry per held pair, oldest dependent first. */
+  holds: (InferredDependency & { hold: HoldContext })[];
+  evidence: Omit<InferenceEvidence, 'pairs'>;
 }
 
 export type InferenceRejection = 'reviewed' | 'declared' | 'support' | 'reliance' | 'lift' | 'confidence' | 'inactive' | 'incompatible' | 'cycle';

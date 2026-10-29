@@ -575,7 +575,9 @@ export class MemoryRuntime {
       const entry = page.entries.find(candidate => candidate.id === receiptId);
       if (entry) {
         const receipt = entry.dependency;
-        if (!receipt || receipt.decision !== 'accept' || receipt.to !== memoryId || receipt.skillId !== skillId) throw new Error('Receipt does not accept this skill premise.');
+        // A reviewed guard hold names the changed premise in `to` and links its current version.
+        const hold = receipt?.hold, linkTo = hold && typeof hold === 'object' && !Array.isArray(hold) ? hold.linkTo : undefined;
+        if (!receipt || receipt.decision !== 'accept' || (linkTo === undefined ? receipt.to : linkTo) !== memoryId || receipt.skillId !== skillId) throw new Error('Receipt does not accept this skill premise.');
         return;
       }
       scanned += page.entries.length;

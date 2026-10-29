@@ -17,7 +17,7 @@ import { requireExistingDatabase, runMigrationCommand } from './migration.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseJsonWithSpans } from '../migration/json-spans.js';
 import { MemoryAgent } from '../agent/index.js';
-import { inferDependencies, reviewDependency, type InferDependenciesOptions } from '../dependencies/index.js';
+import { inferDependencies, listPremiseHolds, reviewDependency, type InferDependenciesOptions, type PremiseGuardOptions } from '../dependencies/index.js';
 
 const HELP = `Mnemosyne ${VERSION} — portable agent memory
 
@@ -62,8 +62,11 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy health [scope] --action scan|watch|check|recall [--id ID] [--json JSON]
   mnemosy dependencies [scope] --infer [--min-support N] [--json JSON]
                    Surface undeclared dependencies inferred from successful co-use (reads only)
+  mnemosy dependencies [scope] --holds [--json JSON]
+                   List dependents the premise guard holds, as proposals with digests (reads only)
   mnemosy dependencies [scope] --review DIGEST --accept|--reject --reviewer NAME [--reason TEXT]
-                   Ledger a review decision; accept links the edge through correct()
+                   Ledger a review decision on a proposal or a hold; accept links the edge
+                   through correct(); rejecting (releasing) a hold requires --reason
   mnemosy serve [scope] --token-file FILE [--port 8765]
   mnemosy capture [scope] --file FILE --adapter text|generic|codex|claude
                    [--session NAME] [--trust observed] [--watch --interval 1000]
@@ -193,7 +196,7 @@ const COMMAND_ACCESS: Readonly<Record<string, readonly CliAccess[]>> = {
   mcp: [], serve: [],
   // Isolated evaluations create and read temporary memory, even without an output file.
   demo: ['read', 'write'], 'learning-demo': ['read', 'write'], evaluate: ['read', 'write'], 'benchmark-agent': ['read', 'write'],
-  // Inference only reads; --review also writes (receipt, and correct() on accept),
+  // Inference and --holds only read; --review also writes (receipt, and correct() on accept),
   // which dependenciesCommand checks before SQLite opens.
   dependencies: ['read'],
 };
@@ -271,13 +274,15 @@ function healthCommand(values: Record<string, string | boolean | undefined>) {
 }
 
 /** Validates `dependencies` before SQLite opens: one mode, its flags only, and the
- * review's write capability (infer reads; review reads and writes). */
+ * review's write capability (infer and holds read; review reads and writes). */
 function dependenciesCommand(values: CliValues) {
   const review = values.review as string | undefined;
-  if (!!values.infer === (review !== undefined)) throw new Error('dependencies requires exactly one of --infer or --review DIGEST.');
+  if ([!!values.infer, !!values.holds, review !== undefined].filter(Boolean).length !== 1) throw new Error('dependencies requires exactly one of --infer, --holds or --review DIGEST.');
   const shared = ['db', 'workspace', 'agent', 'read-only', 'no-capture', 'no-recall', 'json'];
-  const allowed = [...shared, ...(review === undefined ? ['infer', 'min-support'] : ['review', 'accept', 'reject', 'reviewer', 'reason', 'min-support'])];
+  const allowed = [...shared, ...(values.holds ? ['holds'] : review === undefined ? ['infer', 'min-support'] : ['review', 'accept', 'reject', 'reviewer', 'reason', 'min-support'])];
   if (Object.entries(values).some(([key, value]) => value !== undefined && !allowed.includes(key))) throw new Error('Unsupported option for this dependencies mode.');
+  // --holds takes premise guard options (for example holdReliance) and never inference thresholds.
+  if (values.holds) return { holds: jsonInput(values.json as string | undefined) as PremiseGuardOptions } as const;
   const settings = jsonInput(values.json as string | undefined) as InferDependenciesOptions;
   const minSupport = values['min-support'] === undefined ? undefined : integer(values['min-support'] as string, 2, 1_000_000);
   if (minSupport !== undefined && minSupport < 2) throw new Error('--min-support must be at least 2: one co-use cannot tell a premise from a coincidence.');
@@ -285,7 +290,7 @@ function dependenciesCommand(values: CliValues) {
   if (review === undefined) return { options } as const;
   if (values['read-only']) throw new Error('dependencies review: memory mutations are disabled by --read-only.');
   if (values['no-capture']) throw new Error('dependencies review: memory writes are disabled by --no-capture.');
-  if (!/^[a-f0-9]{64}$/.test(review)) throw new Error('--review takes a proposal digest (64 lowercase hex characters) from dependencies --infer.');
+  if (!/^[a-f0-9]{64}$/.test(review)) throw new Error('--review takes a proposal digest (64 lowercase hex characters) from dependencies --infer or --holds.');
   if (!!values.accept === !!values.reject) throw new Error('dependencies --review requires exactly one of --accept or --reject.');
   const reviewer = required(values.reviewer as string | undefined, '--reviewer');
   const note = values.reason as string | undefined;
@@ -363,7 +368,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     profile: { type: 'string' }, 'source-store': { type: 'string' }, 'source-owner': { type: 'string' },
     'assume-missing-owner': { type: 'boolean' }, 'acknowledge-partial': { type: 'boolean' },
     collection: { type: 'string' }, 'logical-path': { type: 'string' }, 'qdrant-text-field': { type: 'string' },
-    infer: { type: 'boolean' }, 'min-support': { type: 'string' }, review: { type: 'string' },
+    infer: { type: 'boolean' }, holds: { type: 'boolean' }, 'min-support': { type: 'string' }, review: { type: 'string' },
     accept: { type: 'boolean' }, reject: { type: 'boolean' }, reviewer: { type: 'string' },
   } });
   if (values.version) { process.stdout.write(`${VERSION}\n`); return; }
@@ -689,12 +694,16 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         print(memory.import(readSnapshot(path))); break;
       }
       case 'dependencies': {
+        if (dependencyOptions!.holds) { print(listPremiseHolds(memory, dependencyOptions!.holds)); break; }
         const { options, review } = dependencyOptions!;
         if (!review) { print(inferDependencies(memory, options)); break; }
-        // The digest names a proposal as it was shown; re-infer and match it, so a
-        // reviewer can only decide on evidence that is still current.
-        const proposal = inferDependencies(memory, { ...options, maxProposals: 100_000 }).proposals.find(item => item.digest === review.digest);
-        if (!proposal) throw new Error('No current proposal has that digest; run dependencies --infer again.');
+        // The digest names a proposal or hold as it was shown; re-derive both and match
+        // it, so a reviewer can only decide on evidence that is still current. Held
+        // pairs have a changed premise, so they are never also inferred proposals.
+        const proposal = inferDependencies(memory, { ...options, maxProposals: 100_000 }).proposals.find(item => item.digest === review.digest)
+          ?? listPremiseHolds(memory, options).holds.find(item => item.digest === review.digest);
+        if (!proposal) throw new Error('No current proposal or hold has that digest; run dependencies --infer or --holds again.');
+        if (proposal.hold && review.decision === 'reject' && review.note === undefined) throw new Error('Releasing a guard hold requires --reason: why the dependent does not rely on the premise.');
         print(reviewDependency(memory, proposal, review.decision, review.reviewer, { runtime, ...(review.note === undefined ? {} : { note: review.note }) }));
         break;
       }
