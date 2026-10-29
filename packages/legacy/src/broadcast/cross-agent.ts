@@ -11,6 +11,7 @@
  */
 
 import type { MemCell, BroadcastMessage, ConfidenceTag } from "../core/types.js";
+import { assertQdrantWritten } from "../core/http.js";
 
 export type CrossAgentAction =
   | { type: "corroborate"; memoryId: string; byAgent: string; newConfidence: number; newTag: ConfidenceTag }
@@ -82,7 +83,8 @@ export async function applyCorroboration(
       corroborators.push(action.byAgent);
     }
 
-    await fetch(`${qdrantUrl}/collections/${collection}/points/payload`, {
+    const path = `/collections/${collection}/points/payload`;
+    const written = await fetch(`${qdrantUrl}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -100,6 +102,7 @@ export async function applyCorroboration(
         },
       }),
     });
+    assertQdrantWritten(written, "POST", path);
     return true;
   } catch {
     return false;

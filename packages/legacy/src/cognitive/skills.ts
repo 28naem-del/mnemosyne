@@ -4,6 +4,7 @@
  */
 
 import type { Procedure } from "../core/types.js";
+import { assertQdrantWritten } from "../core/http.js";
 
 export class SkillLibrary {
   private readonly qdrantUrl: string;
@@ -18,7 +19,8 @@ export class SkillLibrary {
     procedure: Procedure,
     vector: number[],
   ): Promise<void> {
-    await fetch(`${this.qdrantUrl}/collections/${this.collection}/points`, {
+    const path = `/collections/${this.collection}/points`;
+    const written = await fetch(`${this.qdrantUrl}${path}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -42,6 +44,7 @@ export class SkillLibrary {
         }],
       }),
     });
+    assertQdrantWritten(written, "PUT", path);
   }
 
   async search(
@@ -93,7 +96,8 @@ export class SkillLibrary {
     const data = (await res.json()) as { result: { payload: Record<string, unknown> } };
     const count = ((data.result.payload.execution_count as number) || 0) + 1;
 
-    await fetch(`${this.qdrantUrl}/collections/${this.collection}/points/payload`, {
+    const path = `/collections/${this.collection}/points/payload`;
+    assertQdrantWritten(await fetch(`${this.qdrantUrl}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -101,6 +105,6 @@ export class SkillLibrary {
         points: [procedureId],
         payload: { execution_count: count, updated_at: new Date().toISOString() },
       }),
-    });
+    }), "POST", path);
   }
 }

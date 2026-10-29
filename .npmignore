@@ -2,9 +2,18 @@
 # examples, branding assets, root guides and license notices.
 # Sensitive/runtime exclusions are also in that file list because an explicit
 # directory allowlist takes precedence over this root ignore file.
+# "/README.md" is anchored in that list: an unanchored "README.md" entry makes npm
+# ship every README.md (site/README.md included) whatever the negations say.
+# npm never ships .gitignore files (python/.gitignore), so that needs no rule.
 node_modules/
 src/
 tests/
+scratch/
+.Codex/
+python/tests/
+site/README.md
+docs/evaluation/longmemeval-s-supported499-report.json
+docs/evaluation/reports/longmemeval-s500-corpus-paired-bm25.json
 coverage/
 .github/
 .git/

@@ -36,7 +36,7 @@ The 30 unanswerable cases still have labeled counterevidence sessions. Retrieval
 
 ## Inspect and reproduce
 
-The [raw report](longmemeval-s-supported499-report.json) includes every case, retrieval reference, score, effective limit and limitation. The [manifest](longmemeval-s-supported499.manifest.json) records source and subset hashes, exact exclusion, engine identity and reproduction settings. The raw conversations are not included in this repository.
+The [raw report](https://github.com/28naem-del/mnemosyne/blob/main/docs/evaluation/longmemeval-s-supported499-report.json) (repository only, not in the npm package) includes every case, retrieval reference, score, effective limit and limitation. The [manifest](longmemeval-s-supported499.manifest.json) records source and subset hashes, exact exclusion, engine identity and reproduction settings. The raw conversations are not included in this repository.
 
 Download the pinned source from the manifest and verify its full SHA-256. Remove only index 369 after asserting its question ID, retaining the remaining order and text. Serialize the resulting array with JavaScript `JSON.stringify` plus a final LF to reproduce the subset hash. Then run:
 

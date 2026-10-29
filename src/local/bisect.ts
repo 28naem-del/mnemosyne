@@ -35,7 +35,13 @@
  * store's reported configuration is compared with the source's, and any
  * difference (a custom embedder or reranker the default rebuild cannot load, a
  * different model cache) throws instead of comparing two different retrievers;
- * pass `storeOptions` to supply them. Two cases refuse outright: asking for a
+ * pass `storeOptions` to supply them. The reported configuration does not
+ * cover the instance precision defaults (`requireNamedMatch`, `minScores`,
+ * `fuzzy`), and a snapshot does not carry them either, so before Oracle B judges
+ * any ablation the default rebuild must also reproduce the source's own
+ * unablated ranking at the task's depth, id for id; when it does not, bisect
+ * throws and names the defaults to pass in `storeOptions` rather than answering
+ * for a different retriever. Two cases refuse outright: asking for a
  * different path than the store retrieves with (e.g. `storeOptions.retrieval:
  * 'lexical'` on a hybrid store), and an `hnsw` dense index, whose approximate
  * graph depends on insertion order and so cannot be rebuilt identically.
@@ -414,19 +420,48 @@ function satisfied(found: readonly string[], task: BisectTask): boolean {
 /**
  * Re-executes the real recall against a store rebuilt without `removed`. One
  * export is taken per bisect and reused; each call pays a fresh import and
- * index build, which is why this confirms rather than searches.
+ * index build, which is why this confirms rather than searches. Before the
+ * first, the default rebuild is checked against one real recall on the source
+ * at the task's depth (a recall a ledgered source records like any other), and
+ * throws when the two do not rank the same.
  */
 export function exactRunner(source: BisectSource, task: BisectTask, options: BisectOptions = {}): (removed: ReadonlySet<string>, limit: number) => { ids: string[]; goldRemoved: boolean } {
   return reexecutor(source, task, options).run;
 }
 
-function reexecutor(source: BisectSource, task: BisectTask, options: BisectOptions): {
+/** The source's own unablated ranking, which the default rebuild has to reproduce. */
+interface SourceRanking { ids: readonly string[]; limit: number }
+
+/**
+ * Throws unless the rebuilt store, with nothing ablated, ranks exactly as the
+ * source does. `retrieval` reports neither the instance precision defaults
+ * (`requireNamedMatch`, `minScores`, `fuzzy`) nor anything else a snapshot does
+ * not carry, so the configuration check alone cannot see them dropped; the
+ * ranking can.
+ */
+function assertSameRanking(source: SourceRanking, rebuilt: readonly string[]): void {
+  const length = Math.max(source.ids.length, rebuilt.length);
+  for (let index = 0; index < length; index++) {
+    if (source.ids[index] === rebuilt[index]) continue;
+    throw new Error(`bisect cannot reproduce the store's retrieval: with nothing ablated, Oracle B's rebuilt store ranks ${rebuilt.length} record(s) for this task where the source ranks ${source.ids.length}, first differing at rank ${index + 1} of ${source.limit}. The source probably sets precision defaults a snapshot does not carry (requireNamedMatch, minScores, fuzzy); pass the same values in storeOptions so both run the same retriever`);
+  }
+}
+
+/**
+ * `reference` supplies the source ranking the default rebuild is checked
+ * against (else one source recall is made for it). With `keepBaseline` the
+ * checked, unablated rebuild stays open and answers every later no-removal run,
+ * so the check costs no extra re-index; `dispose` closes it.
+ */
+function reexecutor(source: BisectSource, task: BisectTask, options: BisectOptions, reference?: () => SourceRanking | undefined, keepBaseline = false): {
   run: (removed: ReadonlySet<string>, limit: number) => { ids: string[]; goldRemoved: boolean };
   plan: () => ReexecutionPlan;
   observed: () => BisectRetrievalConfig | null;
+  dispose: () => void;
 } {
   let prepared: { plan: ReexecutionPlan; snapshot: MemorySnapshot; embeddings: StoredEmbedding[] } | undefined;
   let observed: BisectRetrievalConfig | null = null;
+  let baseline: BisectStore | undefined;
   const create = options.createStore ?? defaultStore;
   const prepare = (): NonNullable<typeof prepared> => {
     if (prepared) return prepared;
@@ -435,7 +470,28 @@ function reexecutor(source: BisectSource, task: BisectTask, options: BisectOptio
     // A source that cannot hand over its vectors still gets a correct rebuild —
     // the store re-embeds with the same model, which the config check pins.
     const embeddings = model !== null && source.exportEmbeddings ? source.exportEmbeddings(model) : [];
-    return (prepared = { plan, snapshot: source.export(), embeddings });
+    const snapshot = source.export();
+    // The default rebuild must be the source's retriever before any ablation is
+    // judged against it. A caller-supplied `createStore` owns that equivalence.
+    if (!options.createStore) {
+      const expected = reference?.() ?? (() => {
+        const limit = task.depth ?? DEFAULT_DEPTH;
+        return { limit, ids: source.recall(recallInput(task, limit)).map(hit => hit.memory.id) };
+      })();
+      const store = create(snapshot, plan.storeOptions, { embeddings });
+      let keep = false;
+      try {
+        const ids = store.recall(recallInput(task, expected.limit)).map(hit => hit.memory.id);
+        const reported = store.retrieval;
+        if (reported) {
+          observed = retrievalConfig(reported);
+          if (plan.expected) assertSameRetrieval(plan.expected, observed);
+        }
+        assertSameRanking(expected, ids);
+        keep = keepBaseline;
+      } finally { if (keep) baseline = store; else store.close(); }
+    }
+    return (prepared = { plan, snapshot, embeddings });
   };
   const run = (removed: ReadonlySet<string>, limit: number): { ids: string[]; goldRemoved: boolean } => {
     const { plan, snapshot, embeddings } = prepare();
@@ -443,7 +499,8 @@ function reexecutor(source: BisectSource, task: BisectTask, options: BisectOptio
     // Ablating the gold itself, or a record the gold depends on, answers a different question.
     if (task.gold.some(id => ablated.removed.has(id))) return { ids: [], goldRemoved: true };
     const kept = embeddings.filter(row => !ablated.removed.has(row.memoryId));
-    const store = create(ablated.snapshot, plan.storeOptions, { embeddings: kept });
+    const reuse = ablated.removed.size === 0 ? baseline : undefined;
+    const store = reuse ?? create(ablated.snapshot, plan.storeOptions, { embeddings: kept });
     try {
       const ids = store.recall(recallInput(task, limit)).map(hit => hit.memory.id);
       const reported = store.retrieval;
@@ -452,9 +509,10 @@ function reexecutor(source: BisectSource, task: BisectTask, options: BisectOptio
         if (plan.expected) assertSameRetrieval(plan.expected, observed);
       }
       return { ids, goldRemoved: false };
-    } finally { store.close(); }
+    } finally { if (store !== reuse) store.close(); }
   };
-  return { run, plan: () => prepare().plan, observed: () => observed };
+  const dispose = (): void => { baseline?.close(); baseline = undefined; };
+  return { run, plan: () => prepare().plan, observed: () => observed, dispose };
 }
 
 /** Oracle B as a predicate: does the task pass with `removed` really gone? */
@@ -547,7 +605,22 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
   if (mode !== undefined && mode !== wanted) {
     throw new Error(`bisect re-executes on the ${wanted} path but the store retrieves with ${mode}: Oracle B must run the store's own retriever, so drop storeOptions.retrieval or open the store with retrieval: '${wanted}'`);
   }
-  const reexecution = reexecutor(source, task, options);
+  // Filled by the first real recall below, before Oracle B can run: the default
+  // rebuild has to reproduce it before any ablation is judged.
+  let sourceRanking: SourceRanking | undefined;
+  const reexecution = reexecutor(source, task, options, () => sourceRanking, true);
+  try {
+    return locate(source, task, options, reexecution, (ranking) => { sourceRanking = ranking; }, { started, clock, require, depth, maxWidenings, maxTests, confirm, goldSet });
+  } finally { reexecution.dispose(); }
+}
+
+interface SearchSettings {
+  started: number; clock: () => number; require: 'any' | 'all'; depth: number;
+  maxWidenings: number; maxTests: number; confirm: NonNullable<BisectOptions['confirm']>; goldSet: Set<string>;
+}
+
+function locate(source: BisectSource, task: BisectTask, options: BisectOptions, reexecution: ReturnType<typeof reexecutor>, recordRanking: (ranking: SourceRanking) => void, settings: SearchSettings): BisectResult {
+  const { started, clock, require, depth, maxWidenings, maxTests, confirm, goldSet } = settings;
   const run = reexecution.run;
 
   const stateSha256 = options.stateHash === false || (task.asOf === undefined && task.knownAt === undefined)
@@ -558,6 +631,7 @@ export function bisect(source: BisectSource, task: BisectTask, options: BisectOp
   // if the gold is not in it — each widening is a real re-execution, so it is
   // paid for and counted, never assumed.
   const ranked: string[] = source.recall(recallInput(task, depth)).map(hit => hit.memory.id);
+  recordRanking({ ids: [...ranked], limit: depth });
   let widenings = 0;
   while (!ranked.some(id => goldSet.has(id)) && widenings < maxWidenings && ranked.length >= depth) {
     const next = run(new Set(ranked.filter(id => !goldSet.has(id))), depth);
