@@ -1,0 +1,14 @@
+{
+  "name": "mnemosyne",
+  "displayName": "Mnemosyne",
+  "version": "3.0.0-rc.3",
+  "description": "Evidence-tracked local memory over MCP: one SQLite file per project at .mnemosyne/memory.sqlite; corrections retire dependent memories.",
+  "author": {
+    "name": "28naem-del",
+    "url": "https://github.com/28naem-del"
+  },
+  "homepage": "https://mnemosy.ai",
+  "repository": "https://github.com/28naem-del/mnemosyne",
+  "license": "MIT",
+  "keywords": ["memory", "mcp", "sqlite", "local-first"]
+}

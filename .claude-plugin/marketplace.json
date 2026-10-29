@@ -1,0 +1,15 @@
+{
+  "name": "mnemosy-ai",
+  "description": "Mnemosyne: evidence-tracked local memory for Claude Code, served over MCP from one SQLite file.",
+  "owner": {
+    "name": "28naem-del",
+    "url": "https://github.com/28naem-del"
+  },
+  "plugins": [
+    {
+      "name": "mnemosyne",
+      "source": "./integrations/claude-code",
+      "description": "Local MCP memory server (16 memory_* tools) that stores one SQLite file per project; corrections retire dependent memories."
+    }
+  ]
+}

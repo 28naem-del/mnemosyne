@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "mnemosy-ai",
+  "version": "3.0.0-rc.3",
+  "description": "Mnemosyne (npm mnemosy-ai): evidence-tracked local memory over MCP. One SQLite file per Hermes profile; corrections retire the memories that depended on them.",
+  "keywords": ["memory", "mcp", "local-first", "sqlite"],
+  "author": {
+    "name": "Aristotle Intelligence Inc.",
+    "url": "https://mnemosy.ai"
+  },
+  "homepage": "https://mnemosy.ai",
+  "repository": "https://github.com/28naem-del/mnemosyne",
+  "license": "MIT"
+}

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A Claude Code plugin marketplace: `.claude-plugin/marketplace.json` (marketplace `mnemosy-ai`) lists one plugin, `mnemosyne`, in `integrations/claude-code/`. The plugin version is 3.0.0-rc.3 and it starts `npx -y -p mnemosy-ai@next mnemosy mcp` with one database per project at `${CLAUDE_PROJECT_DIR}/.mnemosyne/memory.sqlite`. Validated with `claude plugin validate` and installed from a local checkout with Claude Code 2.1.301; installing from the GitHub marketplace is not yet tested.
+- `integrations/hermes/`: a Hermes portable plugin (`mnemosy-ai`: one MCP server pinned to `mnemosy-ai@3.0.0-rc.3` and one skill). Not tested under Hermes and not listed in the Hermes plugin catalog.
+
+### Documentation
+
+- README "Install and connect an agent" has one subsection per host, each labelled Tested or Documented: Claude Code (plugin, `.mcp.json`, `claude mcp add`), Cursor (an "Add to Cursor" link and a project `.cursor/mcp.json`; documented), Codex (`codex mcp add` plus a `config.toml` table with `startup_timeout_sec = 60`; configuration checked with codex-cli 0.153.4, not run in a Codex session) and Hermes Agent (a `~/.hermes/config.yaml` entry; documented, not tested). `llms.txt` lists the plugin install commands.
+
 ### Development
 
 - A `mcp-registry` GitHub Actions workflow (`workflow_dispatch`, input `release_tag`) publishes `server.json` to the MCP Registry for a release whose npm version is already published, without touching npm. It checks that the tag, `package.json` and `server.json` versions agree, waits for npm to report the version's `mcpName`, downloads and cosign-verifies `mcp-publisher` v1.8.6, validates `server.json`, logs in with GitHub OIDC (no token or PAT), publishes, and fails unless the registry then lists that version. It covers the 3.0.0-rc.3 case, where npm published but the registry steps of `publish.yml` did not run.
