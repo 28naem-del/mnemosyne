@@ -6,6 +6,8 @@ Instructions for coding agents (Claude Code, Cursor, Codex, Copilot and others) 
 
 `mnemosy-ai` is local-first, long-term memory for AI agents: a SQLite store that keeps memories with their evidence, retires dependent guidance when a source is corrected, and serves recall and context over TypeScript, MCP, CLI and HTTP. The [README](README.md) states the measured results and the two release targets that are not met; keep both halves when you touch any claim.
 
+It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemosyne-oss/mnemosyne), the Python `mnemosyne-memory` package; the two share a name, not code or maintainers. Do not mix their APIs, install commands or issue trackers.
+
 ## Use it as memory for your own agent
 
 - Install: `npm install mnemosy-ai` (`latest` is the stable 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install; the older 1.x engine stays installable as `mnemosy-ai@1`). The newest pre-release is 3.0.0-rc.2 on the `next` channel: `npm install mnemosy-ai@next` (or pin `mnemosy-ai@3.0.0-rc.2`); it is a breaking release, see [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md).

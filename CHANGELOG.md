@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- README: a 30-second offline demo with its PROOF lines, a Claude Code one-liner and a contents line on the first screen; npm badges now read the `latest` and `next` dist-tags instead of fixed versions; a note that this project is separate from mnemosyne-oss/mnemosyne (`mnemosyne-memory` on PyPI). The same note is in `AGENTS.md`, `llms.txt` and the issue chooser.
+- Added `CITATION.cff` for the 2.0.0 release and a documentation issue form.
+
 ## [3.0.0-rc.2] - 2026-10-28
 
 The second 3.0.0 release candidate, and the first 3.0 release on npm. It is published on the

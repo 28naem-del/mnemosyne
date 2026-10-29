@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use Mnemosyne in research, please cite the software release you used."
+type: software
+title: "Mnemosyne: local-first, long-term memory for AI agents"
+abstract: >-
+  Mnemosyne (npm package mnemosy-ai) is a local-first memory engine for AI agents.
+  One SQLite file keeps what an agent learned together with the evidence it came
+  from and serves it over TypeScript, MCP, CLI and HTTP. When a source is
+  corrected, memories recorded as depending on it are retired.
+authors:
+  - name: "Aristotle Intelligence Inc."
+    email: 28naem@gmail.com
+    website: "https://mnemosy.ai"
+repository-code: "https://github.com/28naem-del/mnemosyne"
+url: "https://mnemosy.ai"
+license: MIT
+version: "2.0.0"
+date-released: "2026-10-27"
+keywords:
+  - agent memory
+  - long-term memory
+  - local-first
+  - SQLite
+  - Model Context Protocol
+  - provenance

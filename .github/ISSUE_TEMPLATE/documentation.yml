@@ -1,0 +1,42 @@
+name: Documentation problem
+description: Report a broken link, an unclear guide or an instruction that does not work as written
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping keep the guides accurate. Instructions name a release channel: npm `latest` is the stable release and npm `next` is the newest pre-release.
+
+        **This issue is public.** Use synthetic examples; do not share credentials, private memories or production databases.
+
+  - type: input
+    id: location
+    attributes:
+      label: Page or file
+      description: The README section, docs page or website URL that has the problem.
+      placeholder: "docs/quickstart.md, section \"Install the package\""
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or unclear
+      description: Quote the instruction or link, and describe what happened when you followed it.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version or channel
+      description: Output of `npm ls mnemosy-ai`, or the channel you installed (`latest` or `next`).
+      placeholder: "3.0.0-rc.2, installed from the next channel"
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or fix
+      description: Optional. A corrected command or sentence helps us fix it quickly.
