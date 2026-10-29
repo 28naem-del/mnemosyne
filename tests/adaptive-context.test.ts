@@ -117,6 +117,21 @@ describe('bounded adaptive source context', () => {
     const builder = new AdaptiveContext(f.runtime, { maintenance: f.maintenance, tokenizerId: 'reentrant-test', tokenCounter: value => { if (!changed) { changed = true; f.memory.forget(source.id); } return Buffer.byteLength(value); } });
     await expect(builder.build({ query: 'Atlas', maxTokens: 2000 })).rejects.toThrow('unavailable');
   });
+  it('keeps a forget made inside the token counter when the build then fails', async () => {
+    for (const after of ['unavailable', 'counter failed'] as const) {
+      const f = fixture(), source = f.store(); let erased = false;
+      const builder = new AdaptiveContext(f.runtime, { maintenance: f.maintenance, tokenizerId: 'reentrant-forget', tokenCounter: value => {
+        if (!erased) { erased = true; f.memory.forget(source.id); if (after === 'counter failed') throw new Error('host counter error'); }
+        return Buffer.byteLength(value);
+      } });
+      await expect(builder.build({ query: 'Atlas', maxTokens: 2000 })).rejects.toThrow(after);
+      expect(erased).toBe(true);
+      // The erasure committed on its own; the failed build cannot roll it back.
+      expect(f.memory.get(source.id)).toBeNull();
+      expect(f.memory.export().memories.map(record => record.id)).not.toContain(source.id);
+      expect((await f.builder.build({ query: 'Atlas', maxTokens: 2000 })).memoryIds).not.toContain(source.id);
+    }
+  });
 });
 
 describe('incremental source-backed context projections', () => {
