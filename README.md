@@ -5,9 +5,17 @@
 [![CI](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/28naem-del/mnemosyne/actions/workflows/ci.yml)
 [![npm latest](https://img.shields.io/npm/v/mnemosy-ai?label=npm%20latest&color=b8f6dd&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai)
 [![npm next](https://img.shields.io/npm/v/mnemosy-ai/next?label=npm%20next&color=9abfff&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai?activeTab=versions)
+[![npm downloads/month](https://img.shields.io/npm/dm/mnemosy-ai?label=downloads&color=b8f6dd&labelColor=111b2a)](https://www.npmjs.com/package/mnemosy-ai)
 [![Node.js ≥22.16](https://img.shields.io/badge/node-%E2%89%A522.16-b8f6dd?labelColor=111b2a)](https://nodejs.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-9abfff?labelColor=111b2a)](#install-and-connect-an-agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
+
+[![LongMemEval-S: 409/500](https://img.shields.io/badge/LongMemEval--S-409%2F500-b8f6dd?labelColor=111b2a)](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed)
+[![Matched run vs Mem0 OSS](https://img.shields.io/badge/matched%20run-vs%20Mem0%20OSS-9abfff?labelColor=111b2a)](COMPARISON.md)
+[![GitHub stars](https://img.shields.io/github/stars/28naem-del/mnemosyne?label=stars&color=b8f6dd&labelColor=111b2a)](https://github.com/28naem-del/mnemosyne)
+[![GitHub Discussions](https://img.shields.io/github/discussions/28naem-del/mnemosyne?label=discussions&color=9abfff&labelColor=111b2a)](https://github.com/28naem-del/mnemosyne/discussions)
+
+<!-- [![MCP Registry](https://img.shields.io/badge/MCP-Registry-9abfff?labelColor=111b2a)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.28naem-del/mnemosyne) — enable once io.github.28naem-del/mnemosyne is listed -->
 
 **The next agent starts wiser.**
 
