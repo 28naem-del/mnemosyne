@@ -6,8 +6,9 @@
  * its key in a 0600 PKCS#8 file next to the database instead; `:memory:`
  * stores and tests use an ephemeral or seeded key.
  */
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, type KeyObject } from 'node:crypto';
-import { chmodSync, closeSync, existsSync, lstatSync, openSync, readFileSync, writeSync } from 'node:fs';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto';
+import { chmodSync, closeSync, existsSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
+import { dirname } from 'node:path';
 import * as v from '../local/validation.js';
 import type { ConsolidationSignature } from './types.js';
 
@@ -46,22 +47,67 @@ function signer(privateKey: KeyObject, origin: ConsolidationSigner['origin']): C
   });
 }
 
-/** Creates the key file exclusively (0600) on first use, so two processes cannot race to different keys. */
-function loadKeyFile(path: string): KeyObject {
-  if (!existsSync(path)) {
-    const { privateKey } = generateKeyPairSync('ed25519');
-    const pem = privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
+const errorCode = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | null)?.code;
+
+/** Exclusively creates `path` (0600) and writes all of `data` into it, synced to disk before it is closed. */
+function writeNewFile(path: string, data: Buffer): void {
+  const fd = openSync(path, 'wx', 0o600);
+  try {
+    for (let offset = 0; offset < data.length;) offset += writeSync(fd, data, offset, data.length - offset);
+    fsyncSync(fd);
+  } finally { closeSync(fd); }
+}
+
+/** Makes a new directory entry durable. Platforms that cannot sync a directory (Windows) are skipped. */
+function syncDirectory(path: string): void {
+  let fd: number;
+  try { fd = openSync(path, 'r'); } catch { return; }
+  try { fsyncSync(fd); } catch (error) {
+    if (!['EINVAL', 'EPERM', 'EISDIR', 'ENOTSUP', 'EBADF'].includes(errorCode(error) ?? '')) throw error;
+  } finally { closeSync(fd); }
+}
+
+/**
+ * Publishes a new key at `path` atomically and without overwrite: the PEM is
+ * written and synced in a private temporary file, then hard-linked into place,
+ * so the key path never names an empty or partial key and two processes cannot
+ * race to different keys (the loser's link fails with EEXIST and it reads the
+ * winner's). A failed write leaves nothing at `path`.
+ */
+function publishKeyFile(path: string): void {
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const pem = Buffer.from(privateKey.export({ format: 'pem', type: 'pkcs8' }) as string, 'utf8');
+  const temp = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+  try {
+    writeNewFile(temp, pem);
     try {
-      const fd = openSync(path, 'wx', 0o600);
-      try { writeSync(fd, pem); } finally { closeSync(fd); }
+      linkSync(temp, path);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const code = errorCode(error);
+      if (code === 'EEXIST') return;
+      // A filesystem without hard links: fall back to an exclusive create of the
+      // key path itself, still written in full and synced before it is closed.
+      if (code !== 'ENOTSUP' && code !== 'EPERM' && code !== 'ENOSYS' && code !== 'EXDEV') throw error;
+      try { writeNewFile(path, pem); } catch (fallback) { if (errorCode(fallback) !== 'EEXIST') throw fallback; return; }
     }
+  } finally {
+    try { unlinkSync(temp); } catch (error) { if (errorCode(error) !== 'ENOENT') throw error; }
   }
+  syncDirectory(dirname(path));
+}
+
+/** Creates the key file on first use (0600, atomically published, never overwritten) and loads it. */
+function loadKeyFile(path: string): KeyObject {
+  if (!existsSync(path)) publishKeyFile(path);
   const file = lstatSync(path);
   if (!file.isFile() || file.isSymbolicLink()) throw new Error('Consolidation key path must be a regular file');
   chmodSync(path, 0o600);
-  return createPrivateKey({ key: readFileSync(path, 'utf8'), format: 'pem' });
+  let key: KeyObject | undefined;
+  try { key = createPrivateKey({ key: readFileSync(path, 'utf8'), format: 'pem' }); } catch { key = undefined; }
+  if (!key || key.asymmetricKeyType !== 'ed25519') {
+    throw new Error(`Consolidation key file ${path} is not a valid Ed25519 private key (PKCS#8 PEM); refusing to replace it. Restore it from a backup, or move it aside to start a new key (receipts signed by the old key then fail key pinning)`);
+  }
+  return key;
 }
 
 export function createConsolidationSigner(options: ConsolidationSignerOptions): ConsolidationSigner {

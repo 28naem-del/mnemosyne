@@ -110,7 +110,7 @@
   },
   "files": [
     "dist",
-    "README.md",
+    "/README.md",
     "llms.txt",
     "AGENTS.md",
     "LICENSE",
@@ -142,7 +142,11 @@
     "!**/*.db",
     "!**/*.db-*",
     "!assets/demo.gif",
-    "!assets/demo.tape"
+    "!assets/demo.tape",
+    "!python/tests",
+    "!site/README.md",
+    "!docs/evaluation/longmemeval-s-supported499-report.json",
+    "!docs/evaluation/reports/longmemeval-s500-corpus-paired-bm25.json"
   ],
   "scripts": {
     "benchmark": "node dist/evaluation/locomo-benchmark.js",

@@ -77,7 +77,7 @@ Key pinning in the library:
    - If any created record changed, was removed, or gained dependent work, the rollback is a `conflict`, changes nothing, and reports `restored: false`.
 6. **Backoff.** A rolled-back receipt marks which proposals were at fault. `proposeConsolidation` drops a faulted proposal, from any proposer, until the replay set has doubled; `backoff: false` turns this off. A kept proposal still in force is not proposed again. Pass 2 of the demo is pass 1 without its faulted merge.
 
-Receipts form a hash chain: each `prevDigest` is the previous receipt's `digest` in the same workspace and agent. `verifyConsolidationChain` recomputes the chain and lists every key change.
+Receipts form a hash chain: each `prevDigest` is the previous receipt's `digest` in the same workspace and agent. `verifyConsolidationChain` recomputes the chain and lists every key change. Links detect a receipt deleted from the middle of the chain, not one deleted from the end; pass a retained earlier `head` as `expectedHead` to detect that truncation ([threat model](CONSOLIDATION-SIGNING.md#threat-model)).
 
 ## Poisoning suite with consolidation on
 
