@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -71,7 +71,7 @@ describe('mnemosy operations --encrypt', { timeout: 120_000 }, () => {
 
   it('refuses unsafe or missing passphrase sources and plain key bundling', () => {
     const f = store();
-    const open = join(f.root, 'open.txt'); writeFileSync(open, PASSPHRASE, { mode: 0o644 });
+    const open = join(f.root, 'open.txt'); writeFileSync(open, PASSPHRASE); chmodSync(open, 0o644);
     const cases: Array<[string[], Record<string, string>, RegExp]> = [
       [['--encrypt'], {}, /passphrase/i],
       [['--encrypt', '--passphrase-file', open], {}, /group or others/],
