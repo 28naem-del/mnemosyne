@@ -422,7 +422,8 @@ jobs:
           const machines = {};
           const partFiles = {};
           for (const entry of include) {
-            const dir = join(env.PARTS, `part-${entry.name}`);
+            // download-artifact unpacks a lone artifact straight into the target, without a per-artifact directory.
+            const dir = include.length === 1 && !existsSync(join(env.PARTS, `part-${entry.name}`)) ? env.PARTS : join(env.PARTS, `part-${entry.name}`);
             if (!existsSync(dir)) { problems.push(`${entry.name}: no artifact`); continue; }
             for (const name of readdirSync(dir)) {
               const from = join(dir, name);
