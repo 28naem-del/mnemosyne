@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const support = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'docs/UPGRADE-STATUS.md',
   '.github/ISSUE_TEMPLATE/config.yml', '.github/ISSUE_TEMPLATE/bug_report.yml', '.github/ISSUE_TEMPLATE/feature_request.yml',
-  'site/.well-known/security.txt', 'site/index.html', 'site/docs/index.html', 'site/features/index.html', 'site/compare/index.html'];
+  'site/index.html', 'site/docs/index.html', 'site/features/index.html', 'site/compare/index.html'];
 const emailPattern = /[\w.!#$%&'*+/=?^`{|}~-]+@[\w-]+(?:\.[\w-]+)+/g;
 
 function filesIn(directory, extension) {
@@ -28,10 +28,23 @@ function decode(text) {
   });
 }
 
-// Extract plain-text candidates for an offline linter, not safe HTML for rendering.
-// Spaces preserve boundaries between text runs instead of synthesizing contacts.
+// Extract contact text for an offline linter, never HTML for rendering.
+// Inline markup can split an address; block elements separate distinct text runs.
+// Recognize quoted attributes so a literal > inside a quote does not end a tag.
 function contactText(text) {
-  return text.split(/<[^>]+>/g).map(decode).join(' ').replace(/[<>]/g, ' ');
+  const blocks = new Set(['address', 'article', 'aside', 'blockquote', 'br', 'dd', 'div', 'dl', 'dt',
+    'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'header', 'hr', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'ul']);
+  const tags = /<\/?([a-z][\w:-]*)\b(?:[^<>"']|"[^"]*"|'[^']*')*>/gi;
+  const parts = [];
+  let cursor = 0;
+  for (const tag of text.matchAll(tags)) {
+    parts.push(text.slice(cursor, tag.index));
+    if (blocks.has(tag[1].toLowerCase())) parts.push('\n');
+    cursor = tag.index + tag[0].length;
+  }
+  parts.push(text.slice(cursor));
+  return decode(parts.join('')).replace(/[<>]/g, ' ');
 }
 
 function prose(text) {
@@ -81,7 +94,7 @@ export function checkPublicMetadata(root = repository) {
       same('python/pyproject.toml', key, value(urls, key), expected);
     }
 
-    const files = new Set([...support, 'docs/README.md', 'site/README.md',
+    const files = new Set([...support, 'site/.well-known/security.txt', 'docs/README.md', 'site/README.md',
       ...filesIn(join(root, 'docs/site'), '.md').map(file => relative(root, file)),
       ...filesIn(join(root, 'site'), '.html').map(file => relative(root, file)),
       ...filesIn(join(root, '.github/ISSUE_TEMPLATE'), '.yml').map(file => relative(root, file))]);

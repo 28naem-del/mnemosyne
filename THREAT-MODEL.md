@@ -13,13 +13,13 @@ The operational boundaries in [SECURITY.md](SECURITY.md) still apply: workspace 
 
 ## Memory poisoning
 
-The adversarial suite asks whether planted, laundered, leaked or forgotten content can reach an agent through the local kernel. It runs offline, on the lexical path, with no network, no model and no API key, one fresh store per case, and a fixed clock. The corpus is 227 synthetic cases (167 attacks, 60 benign controls), seed `poisoning-v1`, sha256 `4b5d665d881b4bbcf0152733a8a51e98c19671f03539d9742d514ae6240ee336`, byte-identical to the seeded generator. Classes and the promotion rule are in [docs/POISONING-SUITE.md](docs/POISONING-SUITE.md). The case file is described in [benchmarks/poisoning/README.md](benchmarks/poisoning/README.md).
+The adversarial suite asks whether planted, laundered, leaked or forgotten content can reach an agent through the local kernel. It runs offline, on the lexical path, with no network, no model and no API key, one fresh store per case, and a fixed clock. The corpus is 227 synthetic cases (167 attacks, 60 benign controls), seed `poisoning-v1`, sha256 `4b5d665d881b4bbcf0152733a8a51e98c19671f03539d9742d514ae6240ee336`, byte-identical to the seeded generator. Classes and the promotion rule are in [docs/POISONING-SUITE.md](docs/POISONING-SUITE.md). The case file is described in [benchmarks/poisoning/README.md](https://github.com/28naem-del/mnemosyne/blob/main/benchmarks/poisoning/README.md).
 
 | Mode | Attack escapes | False quarantines | Errors | Source |
 |---|---:|---:|---:|---|
-| Default (`npm run poisoning`) | 0 / 167 | 0 / 60 | 0 | [reports/poisoning/v1/report.md](reports/poisoning/v1/report.md) |
-| Consolidation on | 0 / 167 | 0 / 60 | 0 | [reports/poisoning/v1-consolidation/report.md](reports/poisoning/v1-consolidation/report.md) |
-| Ungated negative control | 85 / 167 | 0 / 60 | 0 | [reports/poisoning/v1-consolidation/ungated-control/report.md](reports/poisoning/v1-consolidation/ungated-control/report.md) |
+| Default (`npm run poisoning`) | 0 / 167 | 0 / 60 | 0 | [reports/poisoning/v1/report.md](https://github.com/28naem-del/mnemosyne/blob/main/reports/poisoning/v1/report.md) |
+| Consolidation on | 0 / 167 | 0 / 60 | 0 | [reports/poisoning/v1-consolidation/report.md](https://github.com/28naem-del/mnemosyne/blob/main/reports/poisoning/v1-consolidation/report.md) |
+| Ungated negative control | 85 / 167 | 0 / 60 | 0 | [reports/poisoning/v1-consolidation/ungated-control/report.md](https://github.com/28naem-del/mnemosyne/blob/main/reports/poisoning/v1-consolidation/ungated-control/report.md) |
 
 The consolidation-on run recorded 294 gate decisions: 11 kept, 184 rolled back by invariant, 99 `no_evidence`, and 0 laundering passes kept. The ungated control applies passes the gate did not keep, and its 85 escapes are content 30, selection 24 and path 31. That control shows the probes can see laundered content. It is not a measurement of a deployed attacker.
 
@@ -62,7 +62,7 @@ Optional local models are downloaded only when requested, at a pinned commit, an
 - Workflow actions are pinned to full commit SHAs. Dependabot can bump those pins. A moving tag is not a pin.
 - The publish workflow checks the tag against `package.json`, packs one tarball, installs that tarball, and publishes that same file with npm provenance. It also requests `id-token: write` and still passes `secrets.NPM_TOKEN` as `NODE_AUTH_TOKEN`. Removing the long-lived token requires npm trusted publishing to be confirmed by the owner. This repository's workflow cannot prove that setting by itself. See issue #66.
 - Before MCP Registry publication, the workflow verifies the `mcp-publisher` archive with cosign against the upstream release identity.
-- On a successful publish, a later job generates a CycloneDX SBOM from the tagged tree (Syft, via `anchore/sbom-action`) and uploads it as a workflow artifact. If a GitHub Release for that tag already exists, the job attaches `mnemosy-ai-<version>.cdx.json`. The workflow does not create the GitHub Release. Scorecard's SBOM check looks at release assets whose names end in `.cdx.json` (or SPDX names) on the latest releases, and at a matching file in the repository root. No SBOM file is committed here, so the check stays empty until a release asset is attached.
+- Only after the entire publish job succeeds, including npm and MCP Registry publication, a later job generates a CycloneDX SBOM from the exact source commit verified by the publish job (Syft, via `anchore/sbom-action`) and uploads it as a workflow artifact. This is a source-tree/lockfile inventory, not a tarball attestation. If npm succeeds but the later MCP step fails, retry the publish workflow successfully before an SBOM is produced. If a GitHub Release for that tag already exists, the job attaches `mnemosy-ai-<version>.cdx.json`. The workflow does not create the GitHub Release. Scorecard's SBOM check looks at release assets whose names end in `.cdx.json` (or SPDX names) on the latest releases, and at a matching file in the repository root. No SBOM file is committed here, so the check stays empty until a release asset is attached.
 - The product image (`Dockerfile`) uses `node:24-alpine` by tag. The optional legacy compose services use floating image tags. Those tags are not digest-pinned.
 - Optional model weights are not part of the npm package.
 

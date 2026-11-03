@@ -199,7 +199,8 @@ jobs:
           "$RUNNER_TEMP/mcp-publisher" login github-oidc
           "$RUNNER_TEMP/mcp-publisher" publish
 
-  # CycloneDX SBOM for the tagged source and its lockfile. Attached to the GitHub
+  # CycloneDX inventory of the exact publish source and lockfile, not a tarball attestation.
+  # Requires the entire publish job, including MCP Registry publication, to succeed. Attached to the GitHub
   # Release when that release already exists (this workflow does not create one).
   # The file name ends in .cdx.json so OpenSSF Scorecard can see it on the release.
   sbom:

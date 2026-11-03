@@ -14,13 +14,13 @@ Participation follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). How to send a ch
 
 ## Releases
 
-Stable releases are published to npm `latest` from an existing tag by a manual run of `.github/workflows/publish.yml`. Pre-releases use the npm `next` dist-tag. The workflow checks that the tag equals `v` plus `package.json` version, packs one tarball, and publishes that tarball with npm provenance. A GitHub Release is created separately. When that release already exists, the same workflow attaches a CycloneDX SBOM named `mnemosy-ai-<version>.cdx.json`.
+Stable releases are published to npm `latest` from an existing tag by a manual run of `.github/workflows/publish.yml`. Pre-releases use the npm `next` dist-tag. The workflow checks that the tag equals `v` plus `package.json` version, packs one tarball, and publishes that tarball with npm provenance. A GitHub Release is created separately. Only after the whole publish job succeeds (including MCP Registry publication), and when that release already exists, the same workflow attaches a CycloneDX SBOM named `mnemosy-ai-<version>.cdx.json`.
 
 npm `latest` is 2.0.0. The newest pre-release on `next` is 3.0.0-rc.4. There is no published long-term-support branch.
 
 ## Security reports
 
-Private vulnerability reports go through GitHub Security Advisories or `security@mnemosy.ai`, as described in [SECURITY.md](SECURITY.md). The maintainer acknowledges a report and keeps it private until a fix ships or a disclosure date is agreed. There is no published response-time guarantee.
+Private vulnerability reports go to [28naem@gmail.com](mailto:28naem@gmail.com), as described in [SECURITY.md](SECURITY.md). The maintainer acknowledges a report and keeps it private until a fix ships or a disclosure date is agreed. There is no published response-time guarantee.
 
 ## Changes to governance
 

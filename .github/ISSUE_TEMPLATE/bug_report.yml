@@ -11,7 +11,7 @@ body:
 
         **This issue is public.** Use synthetic memories and remove credentials, private conversations, personal data, private hostnames and local user paths from every field. Do not attach a production database or backup.
 
-        For a suspected vulnerability, follow [the private reporting instructions](https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md): open a [GitHub Security Advisory](https://github.com/28naem-del/mnemosyne/security/advisories/new) or email **security@mnemosy.ai**. Do not open a public issue. Maintainer contact remains **28naem@gmail.com**.
+        For a suspected vulnerability, follow [the private reporting instructions](https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md): email **28naem@gmail.com**. Do not open a public issue.
 
   - type: textarea
     id: description

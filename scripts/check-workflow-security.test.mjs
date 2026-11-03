@@ -43,6 +43,14 @@ test('the SBOM checkout is bound to the source verified by the publish job', () 
   assert.ok(!sbom.includes('ref: refs/tags/'));
 });
 
+test('Scorecard has a bounded runtime and cancels only superseded runs of the same ref', () => {
+  const source = readFileSync(join(workflowRoot, 'scorecard.yml'), 'utf8');
+  assert.match(source, /^    timeout-minutes: 15$/m);
+  assert.ok(source.includes('group: scorecard-${{ github.workflow }}-${{ github.ref }}'));
+  assert.match(source, /^  cancel-in-progress: true$/m);
+  assert.doesNotMatch(publish, /^  cancel-in-progress: true$/m, 'Do not cancel an in-flight release');
+});
+
 function attachmentScript() {
   const lines = publish.split('\n');
   const start = lines.findIndex(line => line === '      - name: Attach the SBOM to the GitHub release');

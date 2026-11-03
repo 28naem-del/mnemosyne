@@ -179,3 +179,18 @@ test('checks the security.txt reporting destination against the public identity'
   replace(root, 'site/.well-known/security.txt', identity.contact, 'wrong@example.test');
   assert.match(checkPublicMetadata(root).errors.join('\n'), /site\/\.well-known\/security\.txt: mailto recipient/);
 });
+
+
+test('retains split-inline email and quoted greater-than attribute compatibility', async t => {
+  for (const label of ['wrong<span>@</span>example.test', '<span title=">">wrong@example.test</span>']) await t.test(label, t => {
+    const root = fixture(t);
+    writeFileSync(join(root, 'site/index.html'), html + '<a href="mailto:team@example.test">' + label + '</a>');
+    assert.match(checkPublicMetadata(root).errors.join('\n'), /site\/index.html: displayed contact/);
+  });
+});
+
+test('an optional absent security.txt does not break existing checker fixtures', t => {
+  const root = fixture(t);
+  rmSync(join(root, 'site/.well-known/security.txt'));
+  assert.deepEqual(checkPublicMetadata(root).errors, []);
+});

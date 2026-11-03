@@ -57,7 +57,7 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Check workflow security contracts
-        run: node --test scripts/check-workflow-security.test.mjs
+        run: node --test scripts/check-workflow-security.test.mjs scripts/check-package-docs.test.mjs scripts/check-reporting-channels.test.mjs
 
       - name: Check documentation navigation
         run: npm run check:docs
