@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const support = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'docs/UPGRADE-STATUS.md',
   '.github/ISSUE_TEMPLATE/config.yml', '.github/ISSUE_TEMPLATE/bug_report.yml', '.github/ISSUE_TEMPLATE/feature_request.yml',
-  'site/index.html', 'site/docs/index.html', 'site/features/index.html', 'site/compare/index.html'];
+  'site/.well-known/security.txt', 'site/index.html', 'site/docs/index.html', 'site/features/index.html', 'site/compare/index.html'];
 const emailPattern = /[\w.!#$%&'*+/=?^`{|}~-]+@[\w-]+(?:\.[\w-]+)+/g;
 
 function filesIn(directory, extension) {
@@ -26,6 +26,12 @@ function decode(text) {
     const code = value[1].toLowerCase() === 'x' ? parseInt(value.slice(2), 16) : Number(value.slice(1));
     return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
   });
+}
+
+// Extract plain-text candidates for an offline linter, not safe HTML for rendering.
+// Spaces preserve boundaries between text runs instead of synthesizing contacts.
+function contactText(text) {
+  return text.split(/<[^>]+>/g).map(decode).join(' ').replace(/[<>]/g, ' ');
 }
 
 function prose(text) {
@@ -48,7 +54,7 @@ export function checkPublicMetadata(root = repository) {
     const securityContact = typeof identity.securityContact === 'string' && identity.securityContact && identity.securityContact !== identity.contact
       ? identity.securityContact
       : '';
-    const acceptedAddress = address => address === identity.contact || address === securityContact;
+    const acceptedAddress = address => address === identity.contact || (securityContact !== '' && address === securityContact);
     const expectAddress = (file, field, actual) => {
       if (!acceptedAddress(actual)) {
         const allowed = securityContact ? `${identity.contact} or ${securityContact}` : identity.contact;
@@ -104,13 +110,13 @@ export function checkPublicMetadata(root = repository) {
           for (const [key, value] of new URLSearchParams(query)) {
             if (/^(?:to|cc|bcc)$/i.test(key)) expectAddress(file, `mailto ${key}`, value);
           }
-          for (const visible of decode(label.replace(/<[^>]+>/g, '')).match(emailPattern) ?? []) {
+          for (const visible of contactText(label).match(emailPattern) ?? []) {
             if (visible !== address) errors.push(`${file}: displayed contact must match public identity (${address})`);
           }
         } catch { errors.push(`${file}: invalid encoded mailto recipient`); }
       }
       // Prose only: technical examples, source identifiers, licenses and vendor notices are out of scope.
-      const visible = decode(text.replace(/<[^>]+>/g, '').replace(/\]\([^)]*\)/g, ']'))
+      const visible = contactText(text.replace(/\]\([^)]*\)/g, ']'))
         .replace(/(\*{1,3}|_{1,3})([^\n]*?)\1/g, '$2');
       for (const address of visible.match(emailPattern) ?? []) {
         expectAddress(file, 'public contact', address);

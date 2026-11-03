@@ -15,10 +15,9 @@ jobs:
     name: Build, test, and pack (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # actions: write is the npm cache used by setup-node. The job does not publish.
+    # Cache and artifact access use the Actions runtime token, not actions: write.
     permissions:
       contents: read
-      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +55,9 @@ jobs:
 
       - name: Security audit
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Check workflow security contracts
+        run: node --test scripts/check-workflow-security.test.mjs
 
       - name: Check documentation navigation
         run: npm run check:docs

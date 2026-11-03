@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm-publish
+    outputs:
+      source-sha: ${{ steps.release.outputs.source-sha }}
     permissions:
       contents: read
       id-token: write
@@ -47,6 +49,8 @@ jobs:
               || major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) {
             throw new Error('Trusted publishing requires npm 11.5.1 or newer');
           }
+          const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          appendFileSync(process.env.GITHUB_OUTPUT, `source-sha=${sourceSha}\n`);
           const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
           if (pkg.name !== 'mnemosy-ai') throw new Error('Unexpected package name');
           if (`v${pkg.version}` !== process.env.RELEASE_TAG) {
@@ -206,12 +210,12 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
-      actions: write
     steps:
       - name: Checkout release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ inputs.release_tag }}
+          # Reuse the exact source verified and published by the first job.
+          ref: ${{ needs.publish.outputs.source-sha }}
           persist-credentials: false
 
       - name: Generate a CycloneDX SBOM
@@ -256,7 +260,10 @@ jobs:
           ASSET: ${{ steps.sbom.outputs.asset }}
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          # An API/authentication failure must fail the job, not masquerade as
+          # a missing release. Pagination also covers older release tags.
+          release_tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
+          if printf '%s\n' "$release_tags" | grep -Fxq -- "$RELEASE_TAG"; then
             gh release upload "$RELEASE_TAG" "$ASSET" --clobber --repo "$GITHUB_REPOSITORY"
             echo "Attached ${ASSET} to ${RELEASE_TAG}"
           else
