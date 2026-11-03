@@ -31,6 +31,8 @@
 
 > [!NOTE]
 > **Which Mnemosyne is this?** This repository is the TypeScript package published on npm as [`mnemosy-ai`](https://www.npmjs.com/package/mnemosy-ai), with its site at [mnemosy.ai](https://mnemosy.ai). It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemosyne-oss/mnemosyne), the Python memory library published on PyPI as `mnemosyne-memory`; the two share a name, not code or maintainers. Please file issues for that project in its own repository.
+>
+> **This repository predates `mnemosyne-oss/mnemosyne`: GitHub records its creation on February 24, 2026; the separate Python repository was created on April 5, 2026.**
 
 ## Try it
 
