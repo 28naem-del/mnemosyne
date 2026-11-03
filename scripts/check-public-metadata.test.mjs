@@ -92,6 +92,36 @@ test('checks destinations in HTML, Markdown references and issue-template URL fi
   });
 });
 
+test('allows the declared security contact beside the public support address', t => {
+  const root = fixture(t);
+  const identityPath = join(root, 'scripts/public-identity.json');
+  const declared = JSON.parse(readFileSync(identityPath, 'utf8'));
+  declared.securityContact = 'security@example.test';
+  writeFileSync(identityPath, JSON.stringify(declared));
+  writeFileSync(join(root, 'SECURITY.md'), `${contact}\nReport to [security@example.test](mailto:security@example.test).`);
+  assert.deepEqual(checkPublicMetadata(root).errors, []);
+});
+
+test('rejects an undeclared mailbox even when a security contact is declared', t => {
+  const root = fixture(t);
+  const identityPath = join(root, 'scripts/public-identity.json');
+  const declared = JSON.parse(readFileSync(identityPath, 'utf8'));
+  declared.securityContact = 'security@example.test';
+  writeFileSync(identityPath, JSON.stringify(declared));
+  writeFileSync(join(root, 'SECURITY.md'), `${contact}\nAlso hidden@example.test.`);
+  assert.match(checkPublicMetadata(root).errors.join('\n'), /SECURITY.md: public contact/);
+});
+
+test('a security mailbox does not replace the required public support contact', t => {
+  const root = fixture(t);
+  const identityPath = join(root, 'scripts/public-identity.json');
+  const declared = JSON.parse(readFileSync(identityPath, 'utf8'));
+  declared.securityContact = 'security@example.test';
+  writeFileSync(identityPath, JSON.stringify(declared));
+  writeFileSync(join(root, 'SECURITY.md'), 'Report to [security@example.test](mailto:security@example.test).');
+  assert.ok(checkPublicMetadata(root).errors.some(error => error === 'SECURITY.md: missing public support contact'));
+});
+
 test('rejects drift in JavaScript and Python package author metadata', async t => {
   for (const file of ['package.json', 'python/pyproject.toml']) await t.test(file, t => {
     const root = fixture(t);

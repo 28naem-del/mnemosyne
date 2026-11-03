@@ -18,5 +18,5 @@ contact_links:
     about: That is a separate project that shares the name. This repository is the TypeScript mnemosy-ai package; please report issues for mnemosyne-memory in its own repository.
 
   - name: Report a vulnerability privately
-    url: https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md
-    about: Follow the private reporting instructions. Do not publish vulnerabilities, credentials or private memories in an issue.
+    url: https://github.com/28naem-del/mnemosyne/security/advisories/new
+    about: Open a GitHub Security Advisory, or email security@mnemosy.ai. Instructions are in SECURITY.md. Do not publish vulnerabilities, credentials or private memories in an issue.

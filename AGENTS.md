@@ -39,7 +39,8 @@ It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemo
 
 - Do not commit secrets, `.env` files, API keys, database files, model weights or personal data. `package.json` `files` and `.npmignore` exclude them from the package; keep both lists in sync.
 - Do not run paid model calls from tests or examples. Every test and example runs offline with fixtures.
-- Do not change `scripts/public-identity.json` or the contact address without a maintainer decision.
+- Do not change `scripts/public-identity.json` or the contact address without a maintainer decision. `contact` is the public support address. `securityContact` is only the private vulnerability mailbox named in [SECURITY.md](SECURITY.md).
+- Do not replace a pinned GitHub Action commit SHA with a floating tag. Dependabot updates those pins.
 - Do not publish. Releases go through `.github/workflows/publish.yml` from a tagged commit with trusted publishing.
 
 ## Contact

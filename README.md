@@ -9,6 +9,8 @@
 [![Node.js ≥22.16](https://img.shields.io/badge/node-%E2%89%A522.16-b8f6dd?labelColor=111b2a)](https://nodejs.org/)
 [![MCP server](https://img.shields.io/badge/MCP-server-9abfff?labelColor=111b2a)](#install-and-connect-an-agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b8f6dd?labelColor=111b2a)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/28naem-del/mnemosyne/badge)](https://scorecard.dev/viewer/?uri=github.com/28naem-del/mnemosyne)
+[![CodeQL](https://github.com/28naem-del/mnemosyne/actions/workflows/codeql.yml/badge.svg)](https://github.com/28naem-del/mnemosyne/actions/workflows/codeql.yml)
 
 [![LongMemEval-S: 409/500](https://img.shields.io/badge/LongMemEval--S-409%2F500-b8f6dd?labelColor=111b2a)](#measured-409-of-500-on-longmemeval-s-with-the-misses-printed)
 [![LoCoMo recall@10: 73.57 vs Mem0 OSS 63.72](https://img.shields.io/badge/LoCoMo%20recall%4010-73.57%20vs%20Mem0%20OSS%2063.72-9abfff?labelColor=111b2a)](COMPARISON.md)
@@ -493,8 +495,8 @@ Local semantic search scans the eligible indexed corpus with bounded retained ca
 
 ## Build with us
 
-Mnemosyne is built by **Aristotle Intelligence Inc., a Delaware company**, and has been **fully self-funded to date**. For advanced memory requirements, integration discussions or investor enquiries, contact **[28naem@gmail.com](mailto:28naem@gmail.com)**.
+Built by **Aristotle Intelligence Inc. (Delaware)**, and development has been **fully self-funded to date**. For advanced memory requirements, integration discussions or investor enquiries, contact **[28naem@gmail.com](mailto:28naem@gmail.com)**.
 
 Use [GitHub issues](https://github.com/28naem-del/mnemosyne/issues) for reproducible bugs and feature proposals. Report vulnerabilities privately through [SECURITY.md](SECURITY.md). Contributions that improve evidence retention, integration reliability or reproducible evaluation are especially useful.
 
-[Contributing](CONTRIBUTING.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [MIT license](LICENSE) · [Third-party notices](NOTICE.md)
+[Contributing](CONTRIBUTING.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md) · [Threat model](THREAT-MODEL.md) · [Governance](GOVERNANCE.md) · [MIT license](LICENSE) · [Third-party notices](NOTICE.md)

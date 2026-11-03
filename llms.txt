@@ -52,5 +52,5 @@ Measured results (methods and caveats in the linked pages): LongMemEval-S answer
 ## Optional
 
 - [AGENTS.md](https://github.com/28naem-del/mnemosyne/blob/main/AGENTS.md): instructions for coding agents working inside this repository.
-- [Security policy](https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md) and [Contributing](https://github.com/28naem-del/mnemosyne/blob/main/CONTRIBUTING.md).
+- [Security policy](https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md), [threat model](https://github.com/28naem-del/mnemosyne/blob/main/THREAT-MODEL.md), [governance](https://github.com/28naem-del/mnemosyne/blob/main/GOVERNANCE.md) and [Contributing](https://github.com/28naem-del/mnemosyne/blob/main/CONTRIBUTING.md).
 - [Website](https://mnemosy.ai) and [npm package page](https://www.npmjs.com/package/mnemosy-ai).

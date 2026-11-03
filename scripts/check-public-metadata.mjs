@@ -43,6 +43,18 @@ export function checkPublicMetadata(root = repository) {
     for (const field of ['company', 'contact', 'site', 'repository']) {
       if (typeof identity[field] !== 'string' || !identity[field]) throw new Error(`public identity is missing ${field}`);
     }
+    // The public support address stays `contact`. A separate security mailbox may
+    // appear beside it. It does not satisfy the required support-contact check.
+    const securityContact = typeof identity.securityContact === 'string' && identity.securityContact && identity.securityContact !== identity.contact
+      ? identity.securityContact
+      : '';
+    const acceptedAddress = address => address === identity.contact || address === securityContact;
+    const expectAddress = (file, field, actual) => {
+      if (!acceptedAddress(actual)) {
+        const allowed = securityContact ? `${identity.contact} or ${securityContact}` : identity.contact;
+        errors.push(`${file}: ${field} must match public identity (${allowed})`);
+      }
+    };
     const pkg = JSON.parse(read('package.json'));
     same('package.json', 'author.name', pkg.author?.name, identity.company);
     same('package.json', 'author.email', pkg.author?.email, identity.contact);
@@ -87,19 +99,21 @@ export function checkPublicMetadata(root = repository) {
         try {
           const [recipient, query = ''] = href.slice(7).split('?');
           const address = decodeURIComponent(recipient);
-          same(file, 'mailto recipient', address, identity.contact);
+          expectAddress(file, 'mailto recipient', address);
           contact ||= address === identity.contact;
           for (const [key, value] of new URLSearchParams(query)) {
-            if (/^(?:to|cc|bcc)$/i.test(key)) same(file, `mailto ${key}`, value, identity.contact);
+            if (/^(?:to|cc|bcc)$/i.test(key)) expectAddress(file, `mailto ${key}`, value);
           }
-          for (const visible of decode(label.replace(/<[^>]+>/g, '')).match(emailPattern) ?? []) same(file, 'displayed contact', visible, address);
+          for (const visible of decode(label.replace(/<[^>]+>/g, '')).match(emailPattern) ?? []) {
+            if (visible !== address) errors.push(`${file}: displayed contact must match public identity (${address})`);
+          }
         } catch { errors.push(`${file}: invalid encoded mailto recipient`); }
       }
       // Prose only: technical examples, source identifiers, licenses and vendor notices are out of scope.
       const visible = decode(text.replace(/<[^>]+>/g, '').replace(/\]\([^)]*\)/g, ']'))
         .replace(/(\*{1,3}|_{1,3})([^\n]*?)\1/g, '$2');
       for (const address of visible.match(emailPattern) ?? []) {
-        same(file, 'public contact', address, identity.contact);
+        expectAddress(file, 'public contact', address);
         contact ||= address === identity.contact;
       }
       if (required && !contact) errors.push(`${file}: missing public support contact`);

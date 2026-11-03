@@ -10,6 +10,9 @@
 - [ ] `npm run check` passes
 - [ ] Documentation and migration notes match the change
 - [ ] Package entry points checked when packaging changes
+- [ ] No secrets, credentials, private memories, or production data
+
+Security-sensitive changes should match [SECURITY.md](https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md) and [THREAT-MODEL.md](https://github.com/28naem-del/mnemosyne/blob/main/THREAT-MODEL.md). Report vulnerabilities through a GitHub Security Advisory or security@mnemosy.ai, not in the pull request.
 
 ## Limits and compatibility
 

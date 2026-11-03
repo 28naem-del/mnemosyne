@@ -1,3 +1,4 @@
+Contact: mailto:security@mnemosy.ai
 Contact: mailto:28naem@gmail.com
 Expires: 2027-10-28T00:00:00.000Z
 Policy: https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md
