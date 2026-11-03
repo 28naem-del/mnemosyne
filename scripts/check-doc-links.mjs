@@ -15,11 +15,14 @@ function prose(text, options = {}) {
 
 function anchors(text, markdown) {
   const ids = new Set();
-  const content = markdown ? prose(text, { comments: 'omit' }) : maskHtmlRegions(text, [], { comments: 'omit' });
+  const content = markdown ? prose(text) : maskHtmlRegions(text);
   const markup = markdown ? prose(text, { inlineCode: 'mask' }) : maskHtmlRegions(text);
   for (const match of markup.matchAll(/[<][a-z][^>]*?\b(?:id|name)=["']([^"']+)["'][^>]*>/gi)) ids.add(match[1]);
-  if (markdown) for (const match of content.matchAll(/^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/gm)) {
-    const base = headingText(match[1]).replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  if (markdown) for (const match of content.matchAll(/^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/gmd)) {
+    // Masking preserves offsets. Extract from original source, never re-tokenize
+    // a string formed by deleting comments (which can manufacture new markup).
+    const [start, end] = match.indices[1];
+    const base = headingText(text.slice(start, end)).replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .toLowerCase().replace(/[^\p{L}\p{M}\p{N}_\-\s]/gu, '').replace(/\s/g, '-');
     let slug = base, suffix = 0;
     while (ids.has(slug)) slug = `${base}-${++suffix}`;

@@ -116,7 +116,7 @@ export function headingText(text) {
   const parts = [];
   let cursor = 0;
   for (const token of tokens(text, true)) {
-    if (token.kind !== 'tag' && token.kind !== 'comment') continue;
+    if (token.kind !== 'comment' && !(token.kind === 'tag' && token.complete)) continue;
     parts.push(text.slice(cursor, token.start));
     if (token.kind === 'comment') parts.push(text.slice(token.start, token.end).replace(/[^\n]/g, ''));
     cursor = token.end;

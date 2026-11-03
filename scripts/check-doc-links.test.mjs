@@ -83,3 +83,46 @@ test('heading slugs join visible text across genuine comments, independent of co
   });
   assert.deepEqual(checkDocLinks(root).errors, []);
 });
+
+
+test('heading source provenance never reparses a comment manufactured by omission', async t => {
+  for (const heading of [
+    '# A<<!---->!-- B',
+    '## A<<!---->!-- B ###',
+    '# A<!-- note --><<!---->!-- B',
+    '# A<<!---->!-- B<!-- tail --><!---->',
+    '# <em>A</em><<!---->!-- B',
+  ]) await t.test(heading, t => {
+    const root = fixture(t, {
+      'README.md': '[existing](docs/guide.md#a---b)\n[not a heading](docs/guide.md#a)',
+      'docs/guide.md': heading,
+    });
+    const result = checkDocLinks(root);
+    assert.equal(result.checked, 1);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], /#a: missing anchor$/);
+  });
+});
+
+test('incomplete tag-like headings remain literal, including adjacent comments and complete tags', async t => {
+  for (const [heading, anchor] of [
+    ['# Type <string value', 'type-string-value'],
+    ['# Type </string value', 'type-string-value'],
+    ['# Type <string value="unterminated', 'type-string-valueunterminated'],
+    ["# Type <string value='unterminated", 'type-string-valueunterminated'],
+    ['# Type <!-- note --><string value', 'type-string-value'],
+    ['# <em>Type</em> <string value', 'type-string-value'],
+    ['# `Type` <string value', 'type-string-value'],
+    ['# <em title="<!--">Type</em> <string value', 'type-string-value'],
+    ['# Type <string value<!-- note --> end', 'type-string-value-end'],
+  ]) await t.test(heading, t => {
+    const root = fixture(t, {
+      'README.md': '[existing](docs/guide.md#' + anchor + ')\n[not a heading](docs/guide.md#type)',
+      'docs/guide.md': heading,
+    });
+    const result = checkDocLinks(root);
+    assert.equal(result.checked, 1);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], /#type: missing anchor$/);
+  });
+});
