@@ -50,8 +50,7 @@ function contactText(text) {
 }
 
 function prose(text) {
-  return maskHtmlRegions(text, ['script', 'style', 'pre', 'code'])
-    .replace(/^\s*(`{3,}|~{3,})[^\n]*\n[^]*?^\s*\1\s*$/gm, '').replace(/(`+)[^\n]*?\1/g, '');
+  return maskHtmlRegions(text, ['script', 'style', 'pre', 'code'], { markdown: true, inlineCode: 'mask' });
 }
 
 export function checkPublicMetadata(root = repository) {

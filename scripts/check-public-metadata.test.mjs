@@ -211,3 +211,27 @@ test('malformed nested comment/tag fragments do not hide public contact drift', 
     assert.match(checkPublicMetadata(root).errors.join('\n'), /site\/index.html: public contact/);
   });
 });
+
+
+test('quoted attribute and Markdown code comment literals cannot hide visible contact drift', async t => {
+  for (const addition of [
+    '<span title="<!--">wrong@example.test</span>', "<span title='<!--'>wrong@example.test</span>",
+    '<span title="x > <!--">wrong@example.test</span>', '<span title="`<!--">wrong@example.test</span>',
+    '`<!--`\nwrong@example.test', '``a ` <!--``\nwrong@example.test', '`literal\n<!--\n`\nwrong@example.test',
+    '```html\n<!--\n```\nwrong@example.test',
+    '<code><!-- technical example</code>wrong@example.test',
+  ]) await t.test(addition, t => {
+    const root = fixture(t);
+    writeFileSync(join(root, 'README.md'), contact + '\n' + addition);
+    assert.ok(checkPublicMetadata(root).errors.some(error => error.startsWith('README.md: public contact')), addition);
+  });
+});
+
+test('custom tag names are not ignored raw-text elements and cannot hide following contacts', async t => {
+  for (const name of ['code-example', 'script-example', 'style-example', 'pre-example', 'code:example', 'code.example', 'code@example']) await t.test(name, t => {
+    const root = fixture(t);
+    writeFileSync(join(root, 'README.md'), contact + '\n<' + name + '>wrong@example.test</' + name + '>\nfollowing@example.test');
+    const errors = checkPublicMetadata(root).errors.filter(error => error.startsWith('README.md: public contact'));
+    assert.equal(errors.length, 2, JSON.stringify(errors));
+  });
+});

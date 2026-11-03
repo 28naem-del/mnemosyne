@@ -50,6 +50,8 @@ for (const [file, route, payload] of [
   });
   test(file + ' catches malformed JSON and keeps errors generic', async () => {
     const { handler } = await handlerFor(file);
-    assert.deepEqual((await request(handler, 'POST', route, '{PRIVATE invalid input')).body, { error: 'internal server error' });
+    const response = await request(handler, 'POST', route, '{PRIVATE invalid input');
+    assert.equal(response.status, 500);
+    assert.deepEqual(response.body, { error: 'internal server error' });
   });
 }

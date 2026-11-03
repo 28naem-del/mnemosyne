@@ -9,23 +9,14 @@ import { headingText, maskHtmlRegions } from './prose-text.mjs';
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outside = (root, file) => relative(root, file) === '..' || relative(root, file).startsWith(`..${sep}`);
 
-function prose(text) {
-  let fence;
-  return maskHtmlRegions(text.split('\n').map(line => {
-    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-    if (fence) {
-      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = undefined;
-      return '';
-    }
-    if (marker) { fence = marker[1]; return ''; }
-    return line;
-  }).join('\n'));
+function prose(text, options = {}) {
+  return maskHtmlRegions(text, [], { markdown: true, ...options });
 }
 
 function anchors(text, markdown) {
   const ids = new Set();
-  const content = markdown ? prose(text) : maskHtmlRegions(text);
-  const markup = markdown ? content.replace(/(`+)[^\n]*?\1/g, '') : content;
+  const content = markdown ? prose(text, { comments: 'omit' }) : maskHtmlRegions(text, [], { comments: 'omit' });
+  const markup = markdown ? prose(text, { inlineCode: 'mask' }) : maskHtmlRegions(text);
   for (const match of markup.matchAll(/[<][a-z][^>]*?\b(?:id|name)=["']([^"']+)["'][^>]*>/gi)) ids.add(match[1]);
   if (markdown) for (const match of content.matchAll(/^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/gm)) {
     const base = headingText(match[1]).replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
@@ -53,7 +44,7 @@ export function checkDocLinks(root = repository) {
   const errors = [], cache = new Map();
   let checked = 0;
   for (const file of files) {
-    const text = prose(readFileSync(file, 'utf8')).replace(/(`+)[^\n]*?\1/g, '');
+    const text = prose(readFileSync(file, 'utf8'), { inlineCode: 'mask' });
     const links = [...text.matchAll(/\]\(\s*(<[^>]+>|[^\s)]+)(?:\s+["'][^\n]*?["'])?\s*\)/g),
       ...text.matchAll(/^ {0,3}\[[^\]]+\]:\s*(<[^>]+>|\S+)/gm),
       ...text.matchAll(/<(?:a|img|source)\b[^>]*?\b(?:href|src)=["']([^"']+)["'][^>]*>/g)];
