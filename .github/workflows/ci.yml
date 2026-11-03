@@ -75,8 +75,13 @@ jobs:
           docs/evaluation/reports/longmemeval-s500-corpus-paired-bm25.json
           docs/evaluation/reports/synthetic-corpus-smoke.json
 
+      # TEMPORARY PR-only lock bootstrap, not the final reproducibility fix.
+      # Remove capture/export after reviewed templates + binder land, or move
+      # generation to a separately reviewed explicit maintenance workflow.
       - name: Check the installed release artifact
         shell: bash
+        env:
+          CAPTURE_CONSUMER_LOCKS: ${{ matrix.node == '24' && github.event_name == 'pull_request' }}
         run: |
           npm pack --json --ignore-scripts > "$RUNNER_TEMP/mnemosyne-pack.json"
           PACK_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/mnemosyne-pack.json")
@@ -86,6 +91,13 @@ jobs:
           node scripts/verify-package.mjs --source package.json \
             --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
             --tarball "$PWD/$PACK_NAME"
+
+          # Save the genuine core npm outputs BEFORE optional mutation.
+          if [ "$CAPTURE_CONSUMER_LOCKS" = true ]; then
+            node scripts/capture-consumer-locks.mjs --profile core --source package.json \
+              --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
+              --tarball "$PWD/$PACK_NAME" --out "$RUNNER_TEMP/mnemosyne-consumer-lock-evidence"
+          fi
 
           # Exercise the optional dependency tree without model downloads.
           node --input-type=module - "$MNEMOSYNE_SMOKE_DIR/package.json" <<'NODE'
@@ -101,6 +113,45 @@ jobs:
           node scripts/verify-package.mjs --source package.json \
             --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
             --tarball "$PWD/$PACK_NAME"
+
+          # Capture only after the real optional audit and verifier succeeded.
+          if [ "$CAPTURE_CONSUMER_LOCKS" = true ]; then
+            node scripts/capture-consumer-locks.mjs --profile optional --source package.json \
+              --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
+              --tarball "$PWD/$PACK_NAME" --out "$RUNNER_TEMP/mnemosyne-consumer-lock-evidence"
+          fi
+
+      - name: Export temporary consumer lock bootstrap evidence
+        if: matrix.node == '24' && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2; existing repository pin
+        with:
+          name: consumer-lock-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/core/package.json
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/core/package-lock.json
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/core/pack.json
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/core/provenance.json
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/optional/package.json
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/optional/package-lock.json
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/optional/pack.json
+            ${{ runner.temp }}/mnemosyne-consumer-lock-evidence/optional/provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build and smoke-test the pinned Docker image
+        if: matrix.node == '24'
+        timeout-minutes: 7
+        shell: bash
+        run: |
+          # Real build, not a metadata-only pin check. No registry publication.
+          timeout --kill-after=15s 300s docker build --pull --tag mnemosyne-ci-smoke .
+          trap 'docker rm --force mnemosyne-ci-version mnemosyne-ci-help >/dev/null 2>&1 || true' EXIT
+          EXPECTED_VERSION=$(node -p "require('./package.json').version")
+          ACTUAL_VERSION=$(timeout --kill-after=5s 30s docker run --rm --network none --read-only --name mnemosyne-ci-version mnemosyne-ci-smoke --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
+          timeout --kill-after=5s 30s docker run --rm --network none --read-only --name mnemosyne-ci-help mnemosyne-ci-smoke --help > "$RUNNER_TEMP/mnemosyne-docker-help.txt"
+          grep -F -- "Mnemosyne $EXPECTED_VERSION" "$RUNNER_TEMP/mnemosyne-docker-help.txt"
+          grep -F -- 'mnemosy mcp' "$RUNNER_TEMP/mnemosyne-docker-help.txt"
 
       - name: Run the runtime SDK example
         run: node --experimental-strip-types examples/runtime-learning.ts
