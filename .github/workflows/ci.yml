@@ -53,11 +53,14 @@ jobs:
           MNEMOSYNE_MODEL_CACHE: ${{ runner.temp }}/mnemosyne-models
         run: npm run check
 
+      - name: Typecheck, build, and test the legacy engine
+        run: npm run test:legacy
+
       - name: Security audit
         run: npm audit --omit=dev --audit-level=high
 
       - name: Check workflow security contracts
-        run: node --test scripts/check-workflow-security.test.mjs scripts/check-package-docs.test.mjs scripts/check-reporting-channels.test.mjs
+        run: node --test scripts/*.test.mjs
 
       - name: Check documentation navigation
         run: npm run check:docs

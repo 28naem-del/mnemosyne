@@ -4,6 +4,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { maskHtmlRegions } from './prose-text.mjs';
+
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const support = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'docs/UPGRADE-STATUS.md',
   '.github/ISSUE_TEMPLATE/config.yml', '.github/ISSUE_TEMPLATE/bug_report.yml', '.github/ISSUE_TEMPLATE/feature_request.yml',
@@ -48,8 +50,7 @@ function contactText(text) {
 }
 
 function prose(text) {
-  return text.replace(/<!--[^]*?-->/g, '').replace(/<(script|style|pre|code)\b[^>]*>[^]*?<\/\1>/gi, '')
-    .replace(/^\s*(`{3,}|~{3,})[^\n]*\n[^]*?^\s*\1\s*$/gm, '').replace(/(`+)[^\n]*?\1/g, '');
+  return maskHtmlRegions(text, ['script', 'style', 'pre', 'code'], { markdown: true, inlineCode: 'mask' });
 }
 
 export function checkPublicMetadata(root = repository) {

@@ -49,3 +49,80 @@ test('example HTML ids and comments cannot satisfy a real fragment link', t => {
   assert.equal(result.errors.length, 4);
   assert.ok(result.errors.every(error => error.includes('missing anchor')));
 });
+
+
+test('comments retain visible heading text without manufacturing a hidden second comment', t => {
+  const root = fixture(t, { 'README.md': '[bad](docs/guide.md#joined)', 'docs/guide.md': '# jo<!-- example -->ined\n<<!-- example -->!-- [visible](missing.md) -->' });
+  const errors = checkDocLinks(root).errors;
+  assert.ok(!errors.some(error => error.includes('#joined: missing anchor')));
+  assert.ok(errors.some(error => error.includes('docs/guide.md:2') && error.includes('missing.md: missing target')));
+});
+
+test('inline HTML still yields the same plain-text heading slug', t => {
+  const root = fixture(t, { 'README.md': '[ok](docs/guide.md#joined)', 'docs/guide.md': '# jo<span>in</span>ed' });
+  assert.deepEqual(checkDocLinks(root).errors, []);
+});
+
+
+test('literal comment openers in code or quoted attributes never hide later broken links', async t => {
+  for (const prefix of [
+    '`<!--`', '``a ` <!--``', '`literal\n<!--\n`', '<span title="<!--">real</span>',
+    "<span title='<!--'>real</span>", '<span title="x > <!--">real</span>',
+    '```html\n<!--\n```', '~~~html\n<!--\n~~~', '\\<!--',
+  ]) await t.test(prefix, t => {
+    const root = fixture(t, { 'README.md': prefix + '\n\n[broken](missing.md)' });
+    const result = checkDocLinks(root);
+    assert.ok(result.errors.some(error => error.includes('missing.md: missing target')), JSON.stringify(result));
+  });
+});
+
+test('heading slugs join visible text across genuine comments, independent of comment byte length', t => {
+  const root = fixture(t, {
+    'README.md': '[first](docs/guide.md#joined)\n[duplicate](docs/guide.md#joined-1)\n[attribute](docs/guide.md#real)\n[code](docs/guide.md#inline-code)',
+    'docs/guide.md': '# jo<!-- x -->ined\n# jo<!-- a much longer invisible comment -->ined\n# <span title="<!--">real</span>\n# `inline` code',
+  });
+  assert.deepEqual(checkDocLinks(root).errors, []);
+});
+
+
+test('heading source provenance never reparses a comment manufactured by omission', async t => {
+  for (const heading of [
+    '# A<<!---->!-- B',
+    '## A<<!---->!-- B ###',
+    '# A<!-- note --><<!---->!-- B',
+    '# A<<!---->!-- B<!-- tail --><!---->',
+    '# <em>A</em><<!---->!-- B',
+  ]) await t.test(heading, t => {
+    const root = fixture(t, {
+      'README.md': '[existing](docs/guide.md#a---b)\n[not a heading](docs/guide.md#a)',
+      'docs/guide.md': heading,
+    });
+    const result = checkDocLinks(root);
+    assert.equal(result.checked, 1);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], /#a: missing anchor$/);
+  });
+});
+
+test('incomplete tag-like headings remain literal, including adjacent comments and complete tags', async t => {
+  for (const [heading, anchor] of [
+    ['# Type <string value', 'type-string-value'],
+    ['# Type </string value', 'type-string-value'],
+    ['# Type <string value="unterminated', 'type-string-valueunterminated'],
+    ["# Type <string value='unterminated", 'type-string-valueunterminated'],
+    ['# Type <!-- note --><string value', 'type-string-value'],
+    ['# <em>Type</em> <string value', 'type-string-value'],
+    ['# `Type` <string value', 'type-string-value'],
+    ['# <em title="<!--">Type</em> <string value', 'type-string-value'],
+    ['# Type <string value<!-- note --> end', 'type-string-value-end'],
+  ]) await t.test(heading, t => {
+    const root = fixture(t, {
+      'README.md': '[existing](docs/guide.md#' + anchor + ')\n[not a heading](docs/guide.md#type)',
+      'docs/guide.md': heading,
+    });
+    const result = checkDocLinks(root);
+    assert.equal(result.checked, 1);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], /#type: missing anchor$/);
+  });
+});
