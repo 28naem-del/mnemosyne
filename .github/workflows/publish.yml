@@ -131,9 +131,14 @@ jobs:
         run: |
           npm pack --json --ignore-scripts > "$RUNNER_TEMP/mnemosyne-pack.json"
           PACK_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/mnemosyne-pack.json")
-          MNEMOSYNE_SMOKE_DIR=$(mktemp -d "$RUNNER_TEMP/mnemosyne-package.XXXXXX")
-          trap 'rm -rf "$MNEMOSYNE_SMOKE_DIR"' EXIT
-          npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund "$PWD/$PACK_NAME"
+          MNEMOSYNE_SMOKE_ROOT=$(mktemp -d "$RUNNER_TEMP/mnemosyne-package.XXXXXX")
+          trap 'rm -rf "$MNEMOSYNE_SMOKE_ROOT"' EXIT
+          MNEMOSYNE_SMOKE_DIR="$MNEMOSYNE_SMOKE_ROOT/core"
+          node scripts/prepare-consumer.mjs --profile core --source package.json \
+            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --tarball "$PWD/$PACK_NAME" --install "$MNEMOSYNE_SMOKE_DIR"
+          npm ci --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --include=optional --no-audit --no-fund
+          node scripts/prepare-consumer.mjs --check --profile core --source package.json \
+            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --tarball "$PWD/$PACK_NAME" --install "$MNEMOSYNE_SMOKE_DIR"
           node scripts/verify-package.mjs --source package.json \
             --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
             --tarball "$PWD/$PACK_NAME"

@@ -1,0 +1,35 @@
+{
+  "kind": "TEMPORARY PR bootstrap; generated locks, not reproducibility closure",
+  "profile": "core",
+  "sourceSHA": "77f06c377b62f6cb13cc5d54cf973623b4ca7ca3",
+  "node": "v24.22.1",
+  "npm": "11.19.1",
+  "sourceManifestSHA256": "39bb31c56c5c295188b37330c3782c02be7ac395c52adb2b894e15df5ddac85d",
+  "tarball": {
+    "filename": "mnemosy-ai-3.0.0-rc.4.tgz",
+    "name": "mnemosy-ai",
+    "version": "3.0.0-rc.4",
+    "sha256": "3c3565c8780e95caa08ccfbb8ce402ad50170d0e91d4fd854e29dcc00db8790b",
+    "integrity": "sha512-6VkY8j/wxZj5fiYO/oq8glJFu0HnXqpdgzR84RbcGVkyDnk68CZqHYSFGeXqohdUYpwEVYE75Vlq9OcLdSA2Hw==",
+    "shasum": "9d6967215c74156b1fad3ecfe887d2f238ecd6b7"
+  },
+  "installCommand": "npm install --prefix \"$MNEMOSYNE_SMOKE_DIR\" --ignore-scripts --omit=dev --no-audit --no-fund \"$PWD/$PACK_NAME\"",
+  "optionalMutation": null,
+  "files": [
+    {
+      "path": "package.json",
+      "bytes": 105,
+      "sha256": "95b614cea1759a654069a4506b88c433297144138f51db7f49f50c1cfc38f6f8"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 14869,
+      "sha256": "9c975b5ea0950d69ffeea051dc771127287b359de596c82d9308053bd7645b6c"
+    },
+    {
+      "path": "pack.json",
+      "bytes": 70336,
+      "sha256": "18988adaf99c4c650a873b780a9cf382d0118e97ad61cb67f11fa20d23acc346"
+    }
+  ]
+}
