@@ -194,3 +194,20 @@ test('an optional absent security.txt does not break existing checker fixtures',
   rmSync(join(root, 'site/.well-known/security.txt'));
   assert.deepEqual(checkPublicMetadata(root).errors, []);
 });
+
+
+test('ignored comments and raw-text blocks cannot fabricate contact addresses', async t => {
+  for (const ignored of ['<!-- example -->', '<script>example</script>', '<style>example</style>', '<pre>example</pre>', '<code>example</code>']) await t.test(ignored, t => {
+    const root = fixture(t);
+    writeFileSync(join(root, 'site/index.html'), 'team' + ignored + '@example.test');
+    assert.ok(checkPublicMetadata(root).errors.includes('site/index.html: missing public support contact'));
+  });
+});
+
+test('malformed nested comment/tag fragments do not hide public contact drift', async t => {
+  for (const prefix of ['<<!-- example -->!--', '<scr<script>example</script>ipt>']) await t.test(prefix, t => {
+    const root = fixture(t);
+    writeFileSync(join(root, 'site/index.html'), html + prefix + 'wrong@example.test');
+    assert.match(checkPublicMetadata(root).errors.join('\n'), /site\/index.html: public contact/);
+  });
+});

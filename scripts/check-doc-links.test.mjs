@@ -49,3 +49,16 @@ test('example HTML ids and comments cannot satisfy a real fragment link', t => {
   assert.equal(result.errors.length, 4);
   assert.ok(result.errors.every(error => error.includes('missing anchor')));
 });
+
+
+test('comments cannot manufacture a heading anchor or a hidden second comment', t => {
+  const root = fixture(t, { 'README.md': '[bad](docs/guide.md#joined)', 'docs/guide.md': '# jo<!-- example -->ined\n<<!-- example -->!-- [visible](missing.md) -->' });
+  const errors = checkDocLinks(root).errors;
+  assert.ok(errors.some(error => error.includes('#joined: missing anchor')));
+  assert.ok(errors.some(error => error.includes('docs/guide.md:2') && error.includes('missing.md: missing target')));
+});
+
+test('inline HTML still yields the same plain-text heading slug', t => {
+  const root = fixture(t, { 'README.md': '[ok](docs/guide.md#joined)', 'docs/guide.md': '# jo<span>in</span>ed' });
+  assert.deepEqual(checkDocLinks(root).errors, []);
+});

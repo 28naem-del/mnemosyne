@@ -4,12 +4,14 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { headingText, maskHtmlRegions } from './prose-text.mjs';
+
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outside = (root, file) => relative(root, file) === '..' || relative(root, file).startsWith(`..${sep}`);
 
 function prose(text) {
   let fence;
-  return text.split('\n').map(line => {
+  return maskHtmlRegions(text.split('\n').map(line => {
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (fence) {
       if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = undefined;
@@ -17,16 +19,16 @@ function prose(text) {
     }
     if (marker) { fence = marker[1]; return ''; }
     return line;
-  }).join('\n').replace(/<!--[^]*?-->/g, match => match.replace(/[^\n]/g, ''));
+  }).join('\n'));
 }
 
 function anchors(text, markdown) {
   const ids = new Set();
-  const content = markdown ? prose(text) : text.replace(/<!--[^]*?-->/g, '');
+  const content = markdown ? prose(text) : maskHtmlRegions(text);
   const markup = markdown ? content.replace(/(`+)[^\n]*?\1/g, '') : content;
   for (const match of markup.matchAll(/[<][a-z][^>]*?\b(?:id|name)=["']([^"']+)["'][^>]*>/gi)) ids.add(match[1]);
   if (markdown) for (const match of content.matchAll(/^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/gm)) {
-    const base = match[1].replace(/<[^>]+>/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    const base = headingText(match[1]).replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .toLowerCase().replace(/[^\p{L}\p{M}\p{N}_\-\s]/gu, '').replace(/\s/g, '-');
     let slug = base, suffix = 0;
     while (ids.has(slug)) slug = `${base}-${++suffix}`;
