@@ -126,3 +126,23 @@ test('SBOM upload errors remain failures', t => {
   const result = attach(t, 'upload-failure');
   assert.equal(result.status, 44, result.stderr);
 });
+
+
+test('required Node jobs durably select all root, legacy and script security regressions', () => {
+  const ci = readFileSync(join(workflowRoot, 'ci.yml'), 'utf8');
+  const rootConfig = readFileSync(join(root, 'vitest.config.ts'), 'utf8');
+  const legacyConfig = readFileSync(join(root, 'packages/legacy/vitest.config.ts'), 'utf8');
+  assert.match(ci, /^    name: Build, test, and pack \(Node \$\{\{ matrix\.node \}\}\)$/m);
+  assert.ok(ci.includes("node: ['22.16.0', '24']"));
+  assert.ok(ci.includes("python: ['3.10', '3.13']"));
+  assert.match(ci, /^        run: npm run check$/m);
+  assert.match(ci, /^        run: npm run test:legacy$/m);
+  assert.match(ci, /^        run: node --test scripts\/\*\.test\.mjs$/m);
+  for (const source of [rootConfig, legacyConfig]) assert.ok(source.includes('include: ["tests/**/*.test.ts"]'));
+  const legacy = JSON.parse(readFileSync(join(root, 'packages/legacy/package.json'), 'utf8'));
+  assert.equal(legacy.scripts.check, 'npm run build && npm run typecheck:examples && npm test');
+  assert.equal(legacy.scripts.test, 'vitest run --config vitest.config.ts');
+  for (const name of ['security-regressions.test.ts', 'cache-namespace.test.ts']) {
+    assert.ok(readdirSync(join(root, 'packages/legacy/tests')).includes(name));
+  }
+});
