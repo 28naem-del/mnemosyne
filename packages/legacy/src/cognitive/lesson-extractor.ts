@@ -38,9 +38,78 @@ export interface LessonExtractionResult {
 
 // -- Detection Patterns --
 
-const CORRECTION_PATTERNS: RegExp[] = [
+type LessonPattern = RegExp | ((text: string) => string[] | null);
+
+// Scan candidate prefixes/separators once. Repeated "not" or whitespace cannot
+// cause the matcher to reconsider every possible split of the same suffix.
+function matchContrastCorrection(text: string): string[] | null {
+  const separators = [...text.matchAll(/(?:it'?s|but|it is|rather)(?=\s+.)/gi)];
+  if (separators.length === 0) return null;
+  const breaks = [...text.matchAll(/[\r\n\u2028\u2029]/g)].map(match => match.index);
+  const bridges = new Map<number, number>();
+  const lowerBound = (length: number, before: (i: number) => boolean) => {
+    let lo = 0, hi = length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (before(mid)) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  for (const prefix of text.matchAll(/not\s+/gi)) {
+    const start = prefix.index + prefix[0].length;
+    const firstBreak = breaks[lowerBound(breaks.length, i => breaks[i] < start)];
+    let limit = text.length;
+    if (firstBreak !== undefined) {
+      if (!bridges.has(firstBreak)) {
+        const whitespace = /\s*/y;
+        whitespace.lastIndex = firstBreak;
+        whitespace.exec(text);
+        bridges.set(firstBreak, whitespace.lastIndex);
+      }
+      limit = bridges.get(firstBreak)!;
+    }
+    // Greedy prefix whitespace is tried before giving any of it back to the
+    // required nonempty assumption. Binary search avoids rescanning suffixes.
+    let candidate = separators[lowerBound(separators.length, i => separators[i].index <= start)];
+    if (!candidate || candidate.index > limit) {
+      candidate = separators[lowerBound(separators.length, i => separators[i].index < start)];
+      const canGiveBack = /[^\r\n\u2028\u2029]/.test(prefix[0].slice(4));
+      if (!candidate || candidate.index !== start || !canGiveBack) continue;
+    }
+    const rest = /^\s+(.+)/.exec(text.slice(candidate.index + candidate[0].length))!;
+    return [candidate[0], "", rest[1]];
+  }
+  return null;
+}
+
+// Match a fixed failure phrase first, then inspect its preceding whitespace
+// once. The previous wildcard/whitespace pair was cubic on the same payloads.
+function matchFailureLesson(text: string): string[] | null {
+  for (const phrase of text.matchAll(/(?:doesn't|does not|won't|will not) work/gi)) {
+    let end = phrase.index;
+    while (end > 0 && /\s/.test(text[end - 1])) end--;
+    if (end === phrase.index) continue;
+    let start = end;
+    while (start > 0 && !/[\r\n\u2028\u2029]/.test(text[start - 1])) start--;
+    const reason = /^\s*(?:because\s+(.+))?/.exec(text.slice(phrase.index + phrase[0].length))?.[1] ?? "";
+    if (start < end) return [phrase[0], text.slice(start, end), reason];
+    // Preserve the old match for whitespace-only assumptions (one character in
+    // group 1, with at least one following whitespace character).
+    for (let i = 0; i + 1 < phrase.index; i++) {
+      if (!/[\r\n\u2028\u2029]/.test(text[i])) return [phrase[0], text[i], reason];
+    }
+  }
+  return null;
+}
+
+function matchLesson(text: string, pattern: LessonPattern): string[] | null {
+  return typeof pattern === "function" ? pattern(text) : text.match(pattern);
+}
+
+const CORRECTION_PATTERNS: LessonPattern[] = [
   /(?:no|nope|wrong|incorrect|actually),?\s*(?:it'?s|it is|that's|that is|the (?:correct|right|actual) (?:one|answer|value) is)\s+(.+)/i,
-  /not\s+(.+?),?\s*(?:it'?s|but|it is|rather)\s+(.+)/i,
+  matchContrastCorrection,
   /(?:should|must) be\s+(.+)/i,
   /(?:you|I think you) meant?\s+(.+)/i,
 ];
@@ -62,13 +131,13 @@ const LEARNED_PATTERNS: RegExp[] = [
   /(?:the )?(?:trick|key|secret) (?:is|was)\s+(.+)/i,
 ];
 
-const ANTI_PATTERN_PATTERNS: RegExp[] = [
+const ANTI_PATTERN_PATTERNS: LessonPattern[] = [
   /(?:don't|do not|never|avoid)\s+(.+?)(?:\s+because\s+(.+))?$/i,
-  /(.+?)\s+(?:doesn't|does not|won't|will not) work\s*(?:because\s+(.+))?/i,
+  matchFailureLesson,
 ];
 
 // All pattern groups with their lesson types
-const PATTERN_GROUPS: Array<[RegExp[], LessonType]> = [
+const PATTERN_GROUPS: Array<[LessonPattern[], LessonType]> = [
   [CORRECTION_PATTERNS, "correction"],
   [FIX_PATTERNS, "fix"],
   [GOTCHA_PATTERNS, "gotcha"],
@@ -90,7 +159,7 @@ export function detectLessons(
 
   // Check correction patterns first (user reply contradicts bot)
   for (const pattern of CORRECTION_PATTERNS) {
-    const match = userReply.match(pattern);
+    const match = matchLesson(userReply, pattern);
     if (match) {
       const wrongPart = botMessage.slice(0, 200);
       lessons.push({
@@ -108,7 +177,7 @@ export function detectLessons(
   for (const [patterns, type] of PATTERN_GROUPS) {
     if (type === "correction") continue; // Already handled above
     for (const pattern of patterns) {
-      const match = userReply.match(pattern);
+      const match = matchLesson(userReply, pattern);
       if (match) {
         lessons.push({
           id: randomUUID(),
@@ -135,7 +204,7 @@ export function detectStandaloneLessons(
 
   for (const [patterns, type] of PATTERN_GROUPS) {
     for (const pattern of patterns) {
-      const match = userMessage.match(pattern);
+      const match = matchLesson(userMessage, pattern);
       if (match) {
         lessons.push({
           id: randomUUID(),

@@ -117,14 +117,14 @@ const ENTITY_PATTERNS = {
   // IP addresses (any IPv4)
   ip: /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g,
   // Ports
-  port: /\bport\s*[:=]?\s*(\d{2,5})\b/gi,
+  port: /\bport\s*(?:[:=]\s*)?(\d{2,5})\b/gi,
   // Dates (ISO, natural)
   isoDate: /\b(\d{4}-\d{2}-\d{2})\b/g,
   naturalDate: /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:,?\s*\d{4})?\b/gi,
   // Version strings
   version: /\bv?\d+\.\d+(?:\.\d+)?(?:-[\w.]+)?\b/g,
   // Email addresses
-  email: /[\w.-]+@[\w.-]+\.\w+/g,
+  email: /(?<![\w.-])[\w.-]+@[\w.-]+\.\w+/g,
   // URLs
   url: /https?:\/\/[\w.-]+(?::\d+)?(?:\/\S*)?/gi,
   // Proper names (capitalized words not at sentence start, 2+ chars)
