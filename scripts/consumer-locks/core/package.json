@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "mnemosy-ai": "file:../../mnemosyne/mnemosyne/mnemosy-ai-3.0.0-rc.4.tgz"
+  }
+}
