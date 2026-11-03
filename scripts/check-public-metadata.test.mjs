@@ -24,6 +24,7 @@ function fixture(t) {
     '.github/ISSUE_TEMPLATE/config.yml': `about: Contact ${identity.contact}`,
     '.github/ISSUE_TEMPLATE/bug_report.yml': `Contact **${identity.contact}** privately.`,
     '.github/ISSUE_TEMPLATE/feature_request.yml': `Contact **${identity.contact}** privately.`,
+    'site/.well-known/security.txt': 'Contact: mailto:team@example.test\nExpires: 2027-10-28T00:00:00.000Z\n',
     'site/index.html': html,
     'site/docs/index.html': html,
     'site/features/index.html': html,
@@ -92,6 +93,36 @@ test('checks destinations in HTML, Markdown references and issue-template URL fi
   });
 });
 
+test('allows the declared security contact beside the public support address', t => {
+  const root = fixture(t);
+  const identityPath = join(root, 'scripts/public-identity.json');
+  const declared = JSON.parse(readFileSync(identityPath, 'utf8'));
+  declared.securityContact = 'security@example.test';
+  writeFileSync(identityPath, JSON.stringify(declared));
+  writeFileSync(join(root, 'SECURITY.md'), `${contact}\nReport to [security@example.test](mailto:security@example.test).`);
+  assert.deepEqual(checkPublicMetadata(root).errors, []);
+});
+
+test('rejects an undeclared mailbox even when a security contact is declared', t => {
+  const root = fixture(t);
+  const identityPath = join(root, 'scripts/public-identity.json');
+  const declared = JSON.parse(readFileSync(identityPath, 'utf8'));
+  declared.securityContact = 'security@example.test';
+  writeFileSync(identityPath, JSON.stringify(declared));
+  writeFileSync(join(root, 'SECURITY.md'), `${contact}\nAlso hidden@example.test.`);
+  assert.match(checkPublicMetadata(root).errors.join('\n'), /SECURITY.md: public contact/);
+});
+
+test('a security mailbox does not replace the required public support contact', t => {
+  const root = fixture(t);
+  const identityPath = join(root, 'scripts/public-identity.json');
+  const declared = JSON.parse(readFileSync(identityPath, 'utf8'));
+  declared.securityContact = 'security@example.test';
+  writeFileSync(identityPath, JSON.stringify(declared));
+  writeFileSync(join(root, 'SECURITY.md'), 'Report to [security@example.test](mailto:security@example.test).');
+  assert.ok(checkPublicMetadata(root).errors.some(error => error === 'SECURITY.md: missing public support contact'));
+});
+
 test('rejects drift in JavaScript and Python package author metadata', async t => {
   for (const file of ['package.json', 'python/pyproject.toml']) await t.test(file, t => {
     const root = fixture(t);
@@ -120,4 +151,46 @@ test('current security and contributor policies cannot resolve to an old release
     writeFileSync(join(root, 'site/index.html'), `${html}<a href="${identity.repository}/blob/v1.2.3/${policy}.md">Policy</a>`);
     assert.match(checkPublicMetadata(root).errors.join('\n'), /current support policy must link to main/);
   });
+});
+
+
+test('does not join separate HTML text runs into a fabricated support contact', t => {
+  const root = fixture(t);
+  writeFileSync(join(root, 'site/index.html'), '<p>team@</p><p>example.test</p>');
+  assert.ok(checkPublicMetadata(root).errors.includes('site/index.html: missing public support contact'));
+});
+
+test('checks nested markup without treating text extraction as HTML sanitization', t => {
+  const root = fixture(t);
+  writeFileSync(join(root, 'site/index.html'), html + '<scr<b>ipt>wrong&#64;example.test</scr<b>ipt>');
+  assert.match(checkPublicMetadata(root).errors.join('\n'), /site\/index.html: public contact/);
+});
+
+test('rejects empty mailto recipients and recipient headers without a security mailbox', async t => {
+  for (const link of ['mailto:?subject=hello', 'mailto:team@example.test?cc=', 'mailto:team@example.test?bcc=']) await t.test(link, t => {
+    const root = fixture(t);
+    writeFileSync(join(root, 'SECURITY.md'), contact + '\n[Another contact](' + link + ')');
+    assert.match(checkPublicMetadata(root).errors.join('\n'), /SECURITY.md: mailto (recipient|cc|bcc)/);
+  });
+});
+
+test('checks the security.txt reporting destination against the public identity', t => {
+  const root = fixture(t);
+  replace(root, 'site/.well-known/security.txt', identity.contact, 'wrong@example.test');
+  assert.match(checkPublicMetadata(root).errors.join('\n'), /site\/\.well-known\/security\.txt: mailto recipient/);
+});
+
+
+test('retains split-inline email and quoted greater-than attribute compatibility', async t => {
+  for (const label of ['wrong<span>@</span>example.test', '<span title=">">wrong@example.test</span>']) await t.test(label, t => {
+    const root = fixture(t);
+    writeFileSync(join(root, 'site/index.html'), html + '<a href="mailto:team@example.test">' + label + '</a>');
+    assert.match(checkPublicMetadata(root).errors.join('\n'), /site\/index.html: displayed contact/);
+  });
+});
+
+test('an optional absent security.txt does not break existing checker fixtures', t => {
+  const root = fixture(t);
+  rmSync(join(root, 'site/.well-known/security.txt'));
+  assert.deepEqual(checkPublicMetadata(root).errors, []);
 });

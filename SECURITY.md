@@ -1,10 +1,14 @@
 # Security policy
 
-Mnemosyne 2.0.0 is the stable release of the version 2 line (npm `latest`); 3.0.0-rc.4 is the newest pre-release (npm `next`) and a breaking release. Review the [version 2](docs/MIGRATION-v2.md) and [version 3](docs/MIGRATION-v3.md) migration notes before upgrading existing applications. Report security issues affecting this release or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification.
+Mnemosyne 2.0.0 is the stable release of the version 2 line (npm `latest`); 3.0.0-rc.4 is the newest pre-release (npm `next`) and a breaking release. Review the [version 2](docs/MIGRATION-v2.md) and [version 3](docs/MIGRATION-v3.md) migration notes before upgrading existing applications. Report security issues affecting this release or an earlier version with the exact affected version; fixes are evaluated against the current development line. There is no published long-term-support guarantee or security certification. The [threat model](THREAT-MODEL.md) states what the poisoning suite measured and what it does not cover.
 
 ## Report a vulnerability privately
 
-Email **[28naem@gmail.com](mailto:28naem@gmail.com)** with a subject beginning `[SECURITY] Mnemosyne`. Include the affected version or commit, expected and observed behavior, reproduction steps, impact and a minimal proof of concept using synthetic data. Do not disclose an unpatched vulnerability or put credentials, private memories or someone else's data in a public issue.
+Do not open a public issue for a suspected vulnerability, and do not disclose an unpatched vulnerability. Email **[28naem@gmail.com](mailto:28naem@gmail.com)** with a subject beginning `[SECURITY] Mnemosyne`. This is the established private reporting and maintainer contact.
+
+GitHub private vulnerability reporting and a dedicated security mailbox are not established reporting channels in this policy. Use the email above until the maintainer confirms additional channels and updates this policy.
+
+Include the affected version or commit, expected and observed behavior, reproduction steps, impact and a minimal proof of concept using synthetic data. Do not put credentials, private memories or someone else's data in the report. Reports stay private until a fix ships or a disclosure date is agreed. Reporters are credited unless they ask not to be named. There is no published response-time guarantee.
 
 ## Controller and access boundaries
 
@@ -26,4 +30,4 @@ The existing Qdrant path performs scoped explicit-point erasure and recall cache
 
 The host explicitly chooses providers, endpoints and processing budgets. Timeout and cancellation signals cannot stop work or billing at a remote service that ignores them. Optional local model provisioning downloads selected artifacts only when requested; cached inference can run offline. Follow the pinned runtime, patched dependency and license requirements in [LOCAL-MODELS.md](docs/LOCAL-MODELS.md).
 
-CI runs correctness, packaging and dependency checks. Most integration tests use isolated databases or mocked transports unless labeled otherwise. Passing them does not establish production isolation, semantic correctness or security against every threat. Preserve dependency notices and report new vulnerabilities through the private contact above.
+CI runs correctness, packaging and dependency checks. Most integration tests use isolated databases or mocked transports unless labeled otherwise. Passing them does not establish production isolation, semantic correctness or security against every threat. Preserve dependency notices and report new vulnerabilities through the private channels above. Release publishes the checked tarball with npm provenance. Only after the entire publish job succeeds, including MCP Registry publication, a later job generates a source-tree CycloneDX SBOM and attaches it when a GitHub Release for that tag already exists. An npm-success/MCP-failure run needs a successful retry before the SBOM job runs. See the [threat model](THREAT-MODEL.md) for supply-chain limits, including settings only the repository owner can turn on.

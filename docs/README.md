@@ -44,4 +44,4 @@ Memory scopes and evidence labels are host assertions, not proof of authenticity
 
 ## Contribute or report a problem
 
-See [contributing](../CONTRIBUTING.md) for checks and review expectations, [security](../SECURITY.md) for private vulnerability reporting, and the [code of conduct](../CODE_OF_CONDUCT.md) for participation. Report a reproducible problem through [GitHub issues](https://github.com/28naem-del/mnemosyne/issues). Keep private memories, credentials and production logs out of public reports.
+See [contributing](../CONTRIBUTING.md) for checks and review expectations, [security](../SECURITY.md) for private vulnerability reporting, the [threat model](../THREAT-MODEL.md) for what the poisoning suite measured, [governance](../GOVERNANCE.md) for how decisions are made, and the [code of conduct](../CODE_OF_CONDUCT.md) for participation. Report a reproducible problem through [GitHub issues](https://github.com/28naem-del/mnemosyne/issues). Keep private memories, credentials and production logs out of public reports.

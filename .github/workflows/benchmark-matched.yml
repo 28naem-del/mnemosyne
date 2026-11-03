@@ -82,6 +82,8 @@ jobs:
     name: Plan
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       embedder: ${{ steps.plan.outputs.embedder }}
@@ -91,8 +93,9 @@ jobs:
       max_parallel: ${{ steps.plan.outputs.max_parallel }}
     steps:
       - name: Checkout the split files
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           sparse-checkout: benchmarks/splits
 
       - name: Validate inputs and expand the job matrix
@@ -158,12 +161,16 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
@@ -171,7 +178,7 @@ jobs:
       - name: Restore the model cache
         if: needs.plan.outputs.embedder == 'true'
         id: models
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/mnemosyne-models
           key: benchmark-models-${{ hashFiles('src/local/embedding/model-assets.ts', 'src/local/reranking/model-assets.ts') }}
@@ -188,7 +195,7 @@ jobs:
 
       - name: Restore the LoCoMo cache
         if: needs.plan.outputs.needs_locomo == 'true'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: benchmarks/data/locomo10.json
           key: benchmark-corpus-locomo-${{ env.LOCOMO_SHA256 }}
@@ -201,7 +208,7 @@ jobs:
 
       - name: Restore the LongMemEval-S cache
         if: needs.plan.outputs.needs_lme == 'true'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: benchmarks/data/longmemeval_s_cleaned.json
           key: benchmark-corpus-longmemeval-s-${{ env.LME_SHA256 }}
@@ -218,6 +225,8 @@ jobs:
     needs: [plan, prepare]
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(needs.plan.outputs.max_parallel) }}
@@ -244,10 +253,12 @@ jobs:
           cat "$OUT/machine-${{ matrix.name }}.json"
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
@@ -259,7 +270,7 @@ jobs:
 
       - name: Restore the model cache
         if: needs.plan.outputs.embedder == 'true'
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/mnemosyne-models
           key: benchmark-models-${{ hashFiles('src/local/embedding/model-assets.ts', 'src/local/reranking/model-assets.ts') }}
@@ -281,7 +292,7 @@ jobs:
 
       - name: Restore and verify LoCoMo
         if: matrix.corpus == 'locomo'
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: benchmarks/data/locomo10.json
           key: benchmark-corpus-locomo-${{ env.LOCOMO_SHA256 }}
@@ -289,7 +300,7 @@ jobs:
 
       - name: Restore LongMemEval-S
         if: matrix.corpus == 'longmemeval'
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: benchmarks/data/longmemeval_s_cleaned.json
           key: benchmark-corpus-longmemeval-s-${{ env.LME_SHA256 }}
@@ -355,7 +366,7 @@ jobs:
 
       - name: Upload this slice
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: part-${{ matrix.name }}
           path: ${{ runner.temp }}/matched-out/
@@ -368,16 +379,20 @@ jobs:
     if: ${{ !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Paths
         run: |
           { echo "PARTS=$RUNNER_TEMP/parts"; echo "FINAL=$RUNNER_TEMP/final"; } >> "$GITHUB_ENV"
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
@@ -388,7 +403,7 @@ jobs:
           npm run build
 
       - name: Download every slice
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: part-*
           path: ${{ runner.temp }}/parts
@@ -497,7 +512,7 @@ jobs:
 
       - name: Upload the assembled results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: benchmark-matched-${{ github.run_id }}
           path: ${{ runner.temp }}/final/
