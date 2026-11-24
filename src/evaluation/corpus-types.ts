@@ -1,4 +1,4 @@
-import type { MemoryEmbedder, MemoryReranker } from '../local/index.js';
+import type { HybridRecallOptions, LocalMemoryOptions, MemoryEmbedder, MemoryReranker } from '../local/index.js';
 import type { MatchedSystem } from './matched-types.js';
 
 /** Public history and questions are separate from evaluator-only reference labels. */
@@ -40,6 +40,12 @@ export type CorpusCondition = 'no-memory' | 'full-context' | 'lexical' | 'bm25' 
 export type MatchedConditionId = `system:${string}`;
 /** Every key that can appear in `summaries` and on an attempt. */
 export type BenchmarkConditionId = CorpusCondition | MatchedConditionId;
+/** Engine keys a corpus run may override; see `CorpusBenchmarkOptions.engine`. */
+export interface CorpusEngineOptions {
+  memory?: Pick<LocalMemoryOptions, 'rrfK' | 'minSimilarity' | 'granularity' | 'minScores' | 'requireNamedMatch' | 'fuzzy' | 'indexMode' | 'cacheSize'>;
+  hybrid?: Pick<HybridRecallOptions, 'rrfK' | 'fusionWeights' | 'maxCandidates'>;
+}
+
 export interface CorpusBenchmarkOptions {
   topK?: number;
   maxContextUnits?: number;
@@ -109,6 +115,15 @@ export interface CorpusBenchmarkOptions {
   systems?: MatchedSystem[];
   /** Per-system wall-clock bound for loading one corpus. Defaults to the run timeout. */
   systemIngestTimeoutMs?: number;
+  /**
+   * Engine configuration merged over this runner's own, for tuning without a new
+   * option per knob. `memory` is spread into `createLocalMemory` for every engine
+   * condition (identity, clock and retrieval-mode keys are refused, so a condition
+   * still measures what its name says); `hybrid` is spread into every
+   * `recallHybrid` call. Absent = the runner exactly as before, and the settings
+   * block records it only when present.
+   */
+  engine?: CorpusEngineOptions;
   /**
    * Ordinal of this run's first corpus within the whole dataset.
    *
