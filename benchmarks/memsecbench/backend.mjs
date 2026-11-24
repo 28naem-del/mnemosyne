@@ -88,7 +88,7 @@ export function state(agent) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const json = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-  const read = req => new Promise((ok, no) => { let s = ''; req.on('data', c => { s += c; if (s.length > 1e6) no(new Error('body too large')); }); req.on('end', () => ok(s ? JSON.parse(s) : {})); req.on('error', no); });
+  const read = req => new Promise((ok, no) => { let s = ''; req.on('data', c => { s += c; if (s.length > 1e6) no(new Error('body too large')); }); req.on('end', () => { try { ok(s ? JSON.parse(s) : {}); } catch (error) { no(error); } }); req.on('error', no); });
   createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://x');
@@ -100,6 +100,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (req.method === 'POST' && url.pathname === '/recall') return json(res, 200, recall(body.agent, body));
       if (req.method === 'POST' && url.pathname === '/repair') return json(res, 200, repair(body.agent, body));
       json(res, 404, { error: 'unknown route' });
-    } catch (error) { json(res, 500, { error: String(error?.message ?? error) }); }
+    } catch { json(res, 500, { error: 'internal server error' }); }
   }).listen(PORT, '127.0.0.1', () => console.log(`[msb-backend] listening on 127.0.0.1:${PORT} retrieval=${RETRIEVAL}`));
 }

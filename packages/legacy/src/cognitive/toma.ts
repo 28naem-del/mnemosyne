@@ -79,7 +79,7 @@ export function detectAgentMention(
   }
 
   // Check for "X's knowledge" or "X's memories" pattern
-  const possessivePattern = /(\w+)'s (?:knowledge|memories|memory|info|data)/i;
+  const possessivePattern = /\b(\w+)'s (?:knowledge|memories|memory|info|data)/i;
   const possMatch = lower.match(possessivePattern);
   if (possMatch) {
     return resolveAgentId(possMatch[1], registry);

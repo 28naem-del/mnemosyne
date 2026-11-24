@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "origin": {
+    "repository": "28naem-del/mnemosyne",
+    "run": 41628045676,
+    "artifact": 13227436459,
+    "archiveSHA256": "0e4188071116c4abb716b631b2ad23c5838f6a09e4051142e21697dcce39f215",
+    "head": "e0daa2a0482068aa1040b6d70e7fae959a46cd4c",
+    "checkout": "77f06c377b62f6cb13cc5d54cf973623b4ca7ca3",
+    "tree": "3fd86258eb2ae0fd75428f1b49975d4b9f21f8e4",
+    "inputManifestSHA256": "6837de41171e64bedda4221bc9f29b0c5e3f576495f67a9203d41668247fc404"
+  },
+  "contract": {
+    "bin": {
+      "mnemosy": "dist/cli/index.js"
+    },
+    "dependencies": {
+      "@modelcontextprotocol/server": "^2.3.1",
+      "onnxruntime-node": "^1.29.0",
+      "uuid": "^14.0.2",
+      "zod": "^4.6.7"
+    },
+    "engines": {
+      "node": ">=22.16.0"
+    },
+    "license": "MIT",
+    "name": "mnemosy-ai",
+    "optionalDependencies": {
+      "hnswlib-node": "3.0.0",
+      "sqlite-vec": "^0.1.9"
+    },
+    "peerDependencies": {
+      "@huggingface/transformers": "3.8.1",
+      "ioredis": "^5.0.0 || ^6.0.0"
+    },
+    "peerDependenciesMeta": {
+      "@huggingface/transformers": {
+        "optional": true
+      },
+      "ioredis": {
+        "optional": true
+      }
+    },
+    "version": "3.0.0-rc.4"
+  },
+  "profiles": {
+    "core": {
+      "files": {
+        "package.json": "95b614cea1759a654069a4506b88c433297144138f51db7f49f50c1cfc38f6f8",
+        "package-lock.json": "9c975b5ea0950d69ffeea051dc771127287b359de596c82d9308053bd7645b6c",
+        "provenance.json": "222fc100cfe2d2598100c0353de7366d272e154abccc9a3663df34f0c94e4d87"
+      },
+      "registrySHA256": "c4eb1bf24e8736a07944bb13cb0a257c02320ea7881b90e9149b40615146e61c",
+      "packageRecords": 33,
+      "closureEdges": 36
+    },
+    "optional": {
+      "files": {
+        "package.json": "58c57d0f984954b1945de0705d6e33a792815e348e93b5147e291e3faea04704",
+        "package-lock.json": "3f9ff4da132bacf5310afdf6da0fd63e709c4b26cb0aa06201b0171e2af0b40c",
+        "provenance.json": "5e3cd75eb77680fd334674a0c70add679e787daa96be8c9e4334e6f3c85027c4"
+      },
+      "registrySHA256": "0187a7fb3e1a00e1400a7a0b5c0f52b9b4682724ba7c14498e9eadca72ee6c6b",
+      "packageRecords": 103,
+      "closureEdges": 126
+    }
+  }
+}

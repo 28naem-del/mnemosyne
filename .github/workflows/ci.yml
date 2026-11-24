@@ -15,16 +15,21 @@ jobs:
     name: Build, test, and pack (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Cache and artifact access use the Actions runtime token, not actions: write.
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         node: ['22.16.0', '24']
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -48,8 +53,14 @@ jobs:
           MNEMOSYNE_MODEL_CACHE: ${{ runner.temp }}/mnemosyne-models
         run: npm run check
 
+      - name: Typecheck, build, and test the legacy engine
+        run: npm run test:legacy
+
       - name: Security audit
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Check workflow security contracts
+        run: node --test scripts/*.test.mjs
 
       - name: Check documentation navigation
         run: npm run check:docs
@@ -69,27 +80,38 @@ jobs:
         run: |
           npm pack --json --ignore-scripts > "$RUNNER_TEMP/mnemosyne-pack.json"
           PACK_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/mnemosyne-pack.json")
-          MNEMOSYNE_SMOKE_DIR=$(mktemp -d "$RUNNER_TEMP/mnemosyne-package.XXXXXX")
-          trap 'rm -rf "$MNEMOSYNE_SMOKE_DIR"' EXIT
-          npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund "$PWD/$PACK_NAME"
-          node scripts/verify-package.mjs --source package.json \
-            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
-            --tarball "$PWD/$PACK_NAME"
+          MNEMOSYNE_SMOKE_ROOT=$(mktemp -d "$RUNNER_TEMP/mnemosyne-package.XXXXXX")
+          trap 'rm -rf "$MNEMOSYNE_SMOKE_ROOT"' EXIT
+          # Independent clean consumers; never generate/resolve locks in CI.
+          for PROFILE in core optional; do
+            MNEMOSYNE_SMOKE_DIR="$MNEMOSYNE_SMOKE_ROOT/$PROFILE"
+            node scripts/prepare-consumer.mjs --profile "$PROFILE" --source package.json \
+              --pack "$RUNNER_TEMP/mnemosyne-pack.json" --tarball "$PWD/$PACK_NAME" --install "$MNEMOSYNE_SMOKE_DIR"
+            npm ci --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --include=optional --no-audit --no-fund
+            node scripts/prepare-consumer.mjs --check --profile "$PROFILE" --source package.json \
+              --pack "$RUNNER_TEMP/mnemosyne-pack.json" --tarball "$PWD/$PACK_NAME" --install "$MNEMOSYNE_SMOKE_DIR"
+            if [ "$PROFILE" = optional ]; then
+              npm audit --prefix "$MNEMOSYNE_SMOKE_DIR" --omit=dev --audit-level=high
+            fi
+            node scripts/verify-package.mjs --source package.json \
+              --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
+              --tarball "$PWD/$PACK_NAME"
+          done
 
-          # Exercise the optional dependency tree without model downloads.
-          node --input-type=module - "$MNEMOSYNE_SMOKE_DIR/package.json" <<'NODE'
-          import { readFileSync, writeFileSync } from 'node:fs';
-          const file = process.argv[2];
-          const manifest = JSON.parse(readFileSync(file, 'utf8'));
-          manifest.dependencies['@huggingface/transformers'] = '3.8.1';
-          manifest.overrides = { ...manifest.overrides, '@huggingface/transformers@3.8.1': { sharp: '0.35.5' } };
-          writeFileSync(file, JSON.stringify(manifest, null, 2));
-          NODE
-          npm install --prefix "$MNEMOSYNE_SMOKE_DIR" --ignore-scripts --omit=dev --no-audit --no-fund
-          npm audit --prefix "$MNEMOSYNE_SMOKE_DIR" --omit=dev --audit-level=high
-          node scripts/verify-package.mjs --source package.json \
-            --pack "$RUNNER_TEMP/mnemosyne-pack.json" --install "$MNEMOSYNE_SMOKE_DIR" \
-            --tarball "$PWD/$PACK_NAME"
+      - name: Build and smoke-test the pinned Docker image
+        if: matrix.node == '24'
+        timeout-minutes: 7
+        shell: bash
+        run: |
+          # Real build, not a metadata-only pin check. No registry publication.
+          timeout --kill-after=15s 300s docker build --pull --tag mnemosyne-ci-smoke .
+          trap 'docker rm --force mnemosyne-ci-version mnemosyne-ci-help >/dev/null 2>&1 || true' EXIT
+          EXPECTED_VERSION=$(node -p "require('./package.json').version")
+          ACTUAL_VERSION=$(timeout --kill-after=5s 30s docker run --rm --network none --read-only --name mnemosyne-ci-version mnemosyne-ci-smoke --version)
+          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
+          timeout --kill-after=5s 30s docker run --rm --network none --read-only --name mnemosyne-ci-help mnemosyne-ci-smoke --help > "$RUNNER_TEMP/mnemosyne-docker-help.txt"
+          grep -F -- "Mnemosyne $EXPECTED_VERSION" "$RUNNER_TEMP/mnemosyne-docker-help.txt"
+          grep -F -- 'mnemosy mcp' "$RUNNER_TEMP/mnemosyne-docker-help.txt"
 
       - name: Run the runtime SDK example
         run: node --experimental-strip-types examples/runtime-learning.ts
@@ -128,16 +150,20 @@ jobs:
     name: Python client (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         python: ['3.10', '3.13']
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
 

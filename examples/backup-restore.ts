@@ -1,4 +1,5 @@
 /** Synthetic whole-database recovery; never opens an existing user database. */
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,5 +22,10 @@ try {
   const result = await restoreLocalBackup({ backupPath: backup.backupPath, targetPath: join(directory, 'restored.sqlite') });
   restored = createLocalMemory({ path: result.targetPath, workspaceId: 'second-workspace', agentId: 'bob' });
   if (restored.get(kept.id)?.text !== kept.text || verified.sha256 !== backup.sha256) throw new Error('Recovery fixture failed.');
-  console.log(JSON.stringify({ wholeDatabase: true, manifestVerified: true, secondWorkspaceRestored: true, networkCalls: 0 }));
+  // Encrypted bundle: in production the passphrase comes from a secret store (CLI: MNEMOSYNE_BACKUP_PASSPHRASE or --passphrase-file).
+  const encryption = { passphrase: randomBytes(32).toString('base64url') };
+  const sealed = await backupLocalDatabase({ sourcePath: source, backupPath: join(directory, 'archive-encrypted.mnemo-backup'), encryption });
+  const unsealed = await restoreLocalBackup({ backupPath: sealed.backupPath, targetPath: join(directory, 'restored-encrypted.sqlite'), encryption });
+  if (unsealed.sha256 !== sealed.database.sha256) throw new Error('Encrypted recovery fixture failed.');
+  console.log(JSON.stringify({ wholeDatabase: true, manifestVerified: true, secondWorkspaceRestored: true, encryptedRoundTrip: true, networkCalls: 0 }));
 } finally { restored?.close(); alice.close(); bob.close(); rmSync(directory, { recursive: true, force: true }); }

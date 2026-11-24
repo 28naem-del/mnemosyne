@@ -269,7 +269,7 @@ const server = createServer(async (req, res) => {
     return send(res, 404, { error: 'not found' });
   } catch (error) {
     console.error(`[pmb-server] ${req.method} ${url.pathname}: ${error?.stack ?? error}`);
-    return send(res, 500, { error: String(error?.message ?? error) });
+    return send(res, 500, { error: 'internal server error' });
   }
 });
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mnemosyne-memory-client"
-version = "3.0.0rc3"
+version = "3.0.0rc4"
 description = "Scoped Python client for the Mnemosyne memory service"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}

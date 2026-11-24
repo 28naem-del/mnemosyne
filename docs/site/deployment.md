@@ -24,4 +24,4 @@ The local engine does not automatically import, rename or delete an existing bac
 
 ## Export, recovery, and forgetting
 
-A scoped export is different from a whole-database backup. Inspect omitted-record counts when exporting, and use [recovery operations](/docs/reference/OPERATIONS.html) for a consistent complete snapshot. Backups contain plaintext memory content and require protected storage. Forgetting affects the live store; prior exports, backups and context already delivered elsewhere remain separate copies.
+A scoped export is different from a whole-database backup. Inspect omitted-record counts when exporting, and use [recovery operations](/docs/reference/OPERATIONS.html) for a consistent complete snapshot. Plain backups contain plaintext memory content and require protected storage; `--encrypt` backups are passphrase-encrypted ([recovery operations](/docs/reference/OPERATIONS.html#bundle-and-verification-contract)). Forgetting affects the live store; prior exports, backups and context already delivered elsewhere remain separate copies.

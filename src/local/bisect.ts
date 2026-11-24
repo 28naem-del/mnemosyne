@@ -360,6 +360,9 @@ function wantedRetrieval(source: BisectSource, options: BisectOptions): string {
   return String(options.storeOptions?.retrieval ?? source.retrieval?.mode ?? 'lexical');
 }
 
+/** Why an `hnsw` store is refused. Exported so the CLI, which can see a recorded hnsw index before opening one, refuses with the same reason. */
+export const HNSW_REFUSAL = 'bisect cannot reproduce an hnsw dense index: its approximate graph depends on insertion order, so a rebuilt store would not retrieve identically; open the store with indexMode: \'exact\' or \'sqlite-vec\'';
+
 interface ReexecutionPlan { mode: string; storeOptions: Partial<LocalMemoryOptions>; expected: BisectRetrievalConfig | null }
 
 /**
@@ -375,7 +378,7 @@ function reexecutionPlan(source: BisectSource, options: BisectOptions): Reexecut
   const expected = status ? retrievalConfig(status) : null;
   if (mode !== 'hybrid' || !status) return { mode, storeOptions: { ...options.storeOptions }, expected };
   if (status.index?.mode === 'hnsw' || status.index?.requested === 'hnsw') {
-    throw new Error('bisect cannot reproduce an hnsw dense index: its approximate graph depends on insertion order, so a rebuilt store would not retrieve identically; open the store with indexMode: \'exact\' or \'sqlite-vec\'');
+    throw new Error(HNSW_REFUSAL);
   }
   return {
     mode, expected,

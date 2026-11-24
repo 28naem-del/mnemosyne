@@ -275,41 +275,43 @@ export function getStrategy(intent: ExtendedIntent): SearchStrategy {
  * Pure string manipulation, no LLM.
  * Returns null if no rewrite is beneficial.
  */
+function stripQuestionSuffix(text: string): string {
+  let end = text.length;
+  while (end > 0 && text[end - 1] === "?") end--;
+  return text.slice(0, end);
+}
+
 export function rewriteForEmbedding(query: string, intent: ExtendedIntent): string | null {
   const lower = query.toLowerCase().trim();
 
   switch (intent) {
     case "factual": {
       // Strip question words and auxiliary verbs, keep nouns/entities
-      const stripped = lower
+      const stripped = stripQuestionSuffix(lower
         .replace(/^(?:what|where|who|which)\s+(?:(?:is|are|was|were|does|do)\s+)?/i, "")
-        .replace(/\b(?:is|are|was|were|does|do|did|use[sd]?|have|has|had)\b/gi, "")
-        .replace(/\?+$/, "")
+        .replace(/\b(?:is|are|was|were|does|do|did|use[sd]?|have|has|had)\b/gi, ""))
         .replace(/\s+/g, " ")
         .trim();
       return stripped && stripped !== lower ? stripped : null;
     }
     case "temporal": {
-      const core = lower
+      const core = stripQuestionSuffix(lower
         .replace(/^when\s+(?:did|was|were|is|are)\s+(?:we\s+|I\s+|you\s+)?/i, "")
-        .replace(/\b(?:last\s+(?:time|week|session)|yesterday|recently|ago)\b/gi, "")
-        .replace(/\?+$/, "")
+        .replace(/\b(?:last\s+(?:time|week|session)|yesterday|recently|ago)\b/gi, ""))
         .trim();
       return core ? `${core} timeline recent` : null;
     }
     case "diagnostic": {
-      const core = lower
+      const core = stripQuestionSuffix(lower
         .replace(/^why\s+(?:did|does|is|was|were|are)\s+(?:the\s+)?/i, "")
         .replace(/\b(?:fail|crash|break|not\s+work)\b/gi, "failure error")
-        .replace(/\bwhat\s+went\s+wrong\s+(?:with\s+)?/i, "")
-        .replace(/\?+$/, "")
+        .replace(/\bwhat\s+went\s+wrong\s+(?:with\s+)?/i, ""))
         .trim();
       return core !== lower ? core : null;
     }
     case "procedural": {
-      const core = lower
-        .replace(/^how\s+(?:to|do\s+(?:I|we|you)|can\s+(?:I|we|you))\s+/i, "")
-        .replace(/\?+$/, "")
+      const core = stripQuestionSuffix(lower
+        .replace(/^how\s+(?:to|do\s+(?:I|we|you)|can\s+(?:I|we|you))\s+/i, ""))
         .trim();
       return core ? `${core} steps guide` : null;
     }

@@ -556,7 +556,7 @@ describe('explicit backend availability', () => {
   it('an explicit sqlite-vec request throws when the extension cannot be loaded', () => {
     const db = memory({ indexMode: 'sqlite-vec', sqliteVecPath: BOGUS });
     seed(db);
-    expect(() => db.recall({ query: 'vintage car repair' })).toThrow(new RegExp(BOGUS.replace(/\//g, '\\/')));
+    expect(() => db.recall({ query: 'vintage car repair' })).toThrow(BOGUS);
   });
 
   it('auto degrades silently to the exact scan under the identical sqlite-vec failure', () => {

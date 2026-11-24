@@ -10,7 +10,7 @@ It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemo
 
 ## Use it as memory for your own agent
 
-- Install: `npm install mnemosy-ai` (`latest` is the stable 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install; the older 1.x engine stays installable as `mnemosy-ai@1`). The newest pre-release is 3.0.0-rc.3 on the `next` channel: `npm install mnemosy-ai@next` (or pin `mnemosy-ai@3.0.0-rc.3`); it is a breaking release, see [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md).
+- Install: `npm install mnemosy-ai` (`latest` is the stable 2.0.0; pin `mnemosy-ai@2.0.0` for a reproducible install; the older 1.x engine stays installable as `mnemosy-ai@1`). The newest pre-release is 3.0.0-rc.4 on the `next` channel: `npm install mnemosy-ai@next` (or pin `mnemosy-ai@3.0.0-rc.4`); it is a breaking release, see [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md).
 - MCP: see the server entry in the [README](README.md#install-and-connect-an-agent). Tools are named `memory_*`; `--read-only` removes mutation tools; `--allow-destructive` is required for forgetting.
 - SDK: `createLocalMemory` from `mnemosy-ai/local`; contracts in [docs/api.md](docs/api.md) and [docs/CONTEXT.md](docs/CONTEXT.md).
 - Trust and scope are controller assertions. A model talking to the MCP server cannot change its workspace, raise its own trust or record its own skill trials.
@@ -39,7 +39,8 @@ It is a separate project from [mnemosyne-oss/mnemosyne](https://github.com/mnemo
 
 - Do not commit secrets, `.env` files, API keys, database files, model weights or personal data. `package.json` `files` and `.npmignore` exclude them from the package; keep both lists in sync.
 - Do not run paid model calls from tests or examples. Every test and example runs offline with fixtures.
-- Do not change `scripts/public-identity.json` or the contact address without a maintainer decision.
+- Do not change `scripts/public-identity.json` or the contact address without a maintainer decision. `contact` is the public support address. An optional `securityContact` requires maintainer confirmation before it is advertised; current vulnerability reporting uses `contact` as described in [SECURITY.md](SECURITY.md).
+- Do not replace a pinned GitHub Action commit SHA with a floating tag. Dependabot updates those pins.
 - Do not publish. Releases go through `.github/workflows/publish.yml` from a tagged commit with trusted publishing.
 
 ## Contact

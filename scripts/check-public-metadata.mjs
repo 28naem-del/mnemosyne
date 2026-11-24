@@ -4,6 +4,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { maskHtmlRegions } from './prose-text.mjs';
+
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const support = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'docs/UPGRADE-STATUS.md',
   '.github/ISSUE_TEMPLATE/config.yml', '.github/ISSUE_TEMPLATE/bug_report.yml', '.github/ISSUE_TEMPLATE/feature_request.yml',
@@ -28,9 +30,27 @@ function decode(text) {
   });
 }
 
+// Extract contact text for an offline linter, never HTML for rendering.
+// Inline markup can split an address; block elements separate distinct text runs.
+// Recognize quoted attributes so a literal > inside a quote does not end a tag.
+function contactText(text) {
+  const blocks = new Set(['address', 'article', 'aside', 'blockquote', 'br', 'dd', 'div', 'dl', 'dt',
+    'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'header', 'hr', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'ul']);
+  const tags = /<\/?([a-z][\w:-]*)\b(?:[^<>"']|"[^"]*"|'[^']*')*>/gi;
+  const parts = [];
+  let cursor = 0;
+  for (const tag of text.matchAll(tags)) {
+    parts.push(text.slice(cursor, tag.index));
+    if (blocks.has(tag[1].toLowerCase())) parts.push('\n');
+    cursor = tag.index + tag[0].length;
+  }
+  parts.push(text.slice(cursor));
+  return decode(parts.join('')).replace(/[<>]/g, ' ');
+}
+
 function prose(text) {
-  return text.replace(/<!--[^]*?-->/g, '').replace(/<(script|style|pre|code)\b[^>]*>[^]*?<\/\1>/gi, '')
-    .replace(/^\s*(`{3,}|~{3,})[^\n]*\n[^]*?^\s*\1\s*$/gm, '').replace(/(`+)[^\n]*?\1/g, '');
+  return maskHtmlRegions(text, ['script', 'style', 'pre', 'code'], { markdown: true, inlineCode: 'mask' });
 }
 
 export function checkPublicMetadata(root = repository) {
@@ -43,6 +63,18 @@ export function checkPublicMetadata(root = repository) {
     for (const field of ['company', 'contact', 'site', 'repository']) {
       if (typeof identity[field] !== 'string' || !identity[field]) throw new Error(`public identity is missing ${field}`);
     }
+    // The public support address stays `contact`. A separate security mailbox may
+    // appear beside it. It does not satisfy the required support-contact check.
+    const securityContact = typeof identity.securityContact === 'string' && identity.securityContact && identity.securityContact !== identity.contact
+      ? identity.securityContact
+      : '';
+    const acceptedAddress = address => address === identity.contact || (securityContact !== '' && address === securityContact);
+    const expectAddress = (file, field, actual) => {
+      if (!acceptedAddress(actual)) {
+        const allowed = securityContact ? `${identity.contact} or ${securityContact}` : identity.contact;
+        errors.push(`${file}: ${field} must match public identity (${allowed})`);
+      }
+    };
     const pkg = JSON.parse(read('package.json'));
     same('package.json', 'author.name', pkg.author?.name, identity.company);
     same('package.json', 'author.email', pkg.author?.email, identity.contact);
@@ -63,7 +95,7 @@ export function checkPublicMetadata(root = repository) {
       same('python/pyproject.toml', key, value(urls, key), expected);
     }
 
-    const files = new Set([...support, 'docs/README.md', 'site/README.md',
+    const files = new Set([...support, 'site/.well-known/security.txt', 'docs/README.md', 'site/README.md',
       ...filesIn(join(root, 'docs/site'), '.md').map(file => relative(root, file)),
       ...filesIn(join(root, 'site'), '.html').map(file => relative(root, file)),
       ...filesIn(join(root, '.github/ISSUE_TEMPLATE'), '.yml').map(file => relative(root, file))]);
@@ -87,19 +119,21 @@ export function checkPublicMetadata(root = repository) {
         try {
           const [recipient, query = ''] = href.slice(7).split('?');
           const address = decodeURIComponent(recipient);
-          same(file, 'mailto recipient', address, identity.contact);
+          expectAddress(file, 'mailto recipient', address);
           contact ||= address === identity.contact;
           for (const [key, value] of new URLSearchParams(query)) {
-            if (/^(?:to|cc|bcc)$/i.test(key)) same(file, `mailto ${key}`, value, identity.contact);
+            if (/^(?:to|cc|bcc)$/i.test(key)) expectAddress(file, `mailto ${key}`, value);
           }
-          for (const visible of decode(label.replace(/<[^>]+>/g, '')).match(emailPattern) ?? []) same(file, 'displayed contact', visible, address);
+          for (const visible of contactText(label).match(emailPattern) ?? []) {
+            if (visible !== address) errors.push(`${file}: displayed contact must match public identity (${address})`);
+          }
         } catch { errors.push(`${file}: invalid encoded mailto recipient`); }
       }
       // Prose only: technical examples, source identifiers, licenses and vendor notices are out of scope.
-      const visible = decode(text.replace(/<[^>]+>/g, '').replace(/\]\([^)]*\)/g, ']'))
+      const visible = contactText(text.replace(/\]\([^)]*\)/g, ']'))
         .replace(/(\*{1,3}|_{1,3})([^\n]*?)\1/g, '$2');
       for (const address of visible.match(emailPattern) ?? []) {
-        same(file, 'public contact', address, identity.contact);
+        expectAddress(file, 'public contact', address);
         contact ||= address === identity.contact;
       }
       if (required && !contact) errors.push(`${file}: missing public support contact`);

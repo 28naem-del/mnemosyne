@@ -2,7 +2,7 @@
 
 Mnemosyne 2 has two storage paths. The local engine, MCP server and authenticated HTTP service use SQLite and BM25 retrieval by default. The existing `createMnemosyne()` API uses a separately configured vector service and embedding endpoint. Starting a local service does not connect optional legacy databases. It makes no model-provider calls by default; an explicit `--provider-config` enables hybrid queries that send query text to the configured embedding endpoint. See [semantic indexing and hybrid recall](RUNTIME.md#hybrid-retrieval) for provider setup and data flow.
 
-This guide describes the stable **2.0.0** (npm `latest`) and the **3.0.0-rc.3** pre-release (npm `next`); where they differ, it says so. Use the [quickstart](quickstart.md) for the npm installation or a fresh clone of the matching tag. With the npm package installed, replace `node dist/cli/index.js` below with `npx --no-install mnemosy`; the remaining flags are identical. Python registry publication remains separate.
+This guide describes the stable **2.0.0** (npm `latest`) and the **3.0.0-rc.4** pre-release (npm `next`); where they differ, it says so. Use the [quickstart](quickstart.md) for the npm installation or a fresh clone of the matching tag. With the npm package installed, replace `node dist/cli/index.js` below with `npx --no-install mnemosy`; the remaining flags are identical. Python registry publication remains separate.
 
 ## Build and run locally
 
@@ -159,7 +159,7 @@ node dist/cli/index.js operations --action restore --file ./backups/snapshot.mne
 
 Use new operator-owned private directories and substitute your actual database path. Existing outputs are refused; restore does not replace a running database or switch your application to it. A whole-database backup contains every workspace and agent, so this operator capability has no owner filter. See [whole-database recovery](OPERATIONS.md) for POSIX filesystem requirements, bounds, cancellation and an operator rehearsal.
 
-Do not copy only the main file from a live WAL database. Bundles and exports contain plaintext data, and a SHA-256 digest is not an authenticity signature. Keep them outside Git in protected storage. A backup predating an erasure cannot contain the later tombstone; reconcile your retained deletion policy before making a restored database available.
+Do not copy only the main file from a live WAL database. Plain bundles and exports contain plaintext data; `--encrypt` bundles are passphrase-encrypted ([encrypted bundles](OPERATIONS.md#encrypted-bundles)), which protects confidentiality and integrity under the passphrase but does not prove who made them. A SHA-256 digest is not an authenticity signature. Keep them outside Git in protected storage. A backup predating an erasure cannot contain the later tombstone; reconcile your retained deletion policy before making a restored database available.
 
 Forgetting purges content from the live local memory store and its searchable/derived state. It cannot erase prior exports, filesystem snapshots, external logs, or underlying storage-controller copies. Manage those copies separately. The legacy vector API has different storage semantics; consult its API documentation before operating on existing data.
 

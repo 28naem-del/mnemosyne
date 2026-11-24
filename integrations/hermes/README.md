@@ -12,7 +12,7 @@ projects share a name and nothing else.
 
 ## What it adds
 - One MCP server, `mnemosy`, started over stdio with
-  `npx -y -p mnemosy-ai@3.0.0-rc.3 mnemosy mcp`. Its 16 tools appear as
+  `npx -y -p mnemosy-ai@3.0.0-rc.4 mnemosy mcp`. Its 16 tools appear as
   `mcp__mnemosy__memory_*` (recall, context, store, correct, checkpoint, resume,
   inspect and others). `memory_forget` is not exposed.
 - One skill, `mnemosy-ai:mnemosy-memory`, telling the model when to recall,
@@ -29,17 +29,17 @@ Needs Node.js >= 22.16 and npm (`npx`) on `PATH`.
 The first start downloads the package with `npx`, which can take longer than
 Hermes's default 60 s MCP connect timeout, and a portable plugin cannot raise
 it. If the server fails to connect on first start, run
-`npx -y -p mnemosy-ai@3.0.0-rc.3 mnemosy --help` once to fill the npm cache, or
+`npx -y -p mnemosy-ai@3.0.0-rc.4 mnemosy --help` once to fill the npm cache, or
 use the `~/.hermes/config.yaml` route with `connect_timeout: 120` (see the
 project README).
 
 ## Disclosures
 - **Package download.** The first start runs `npx`, which downloads the pinned
-  `mnemosy-ai@3.0.0-rc.3` and its dependencies from the npm registry. These
+  `mnemosy-ai@3.0.0-rc.4` and its dependencies from the npm registry. These
   include native addons (`onnxruntime-node`; optional `sqlite-vec` and
   `hnswlib-node`) that npm installs as prebuilt binaries for your platform. No
   binary is committed in this plugin directory.
-- **Pre-release.** 3.0.0-rc.3 is a release candidate on the npm `next` channel.
+- **Pre-release.** 3.0.0-rc.4 is a release candidate on the npm `next` channel.
 - **Local data.** Memories are written to `memory.sqlite` in the plugin's
   profile-scoped data directory (`${PLUGIN_DATA}`), file mode `0600`. Each
   Hermes profile gets its own database. Apart from the optional model cache below, the server reads no other host files.

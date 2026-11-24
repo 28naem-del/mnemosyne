@@ -86,7 +86,14 @@ export class BM25Index {
       .replace(/[^\w\s.\-:/]/g, " ")  // keep dots, hyphens, colons, slashes for IPs/versions
       .split(/\s+/)
       .filter(t => t.length > 0)
-      .map(t => t.replace(/^[.\-:]+|[.\-:]+$/g, ""));  // trim leading/trailing special chars
+      .map(t => {
+        // Scan each edge once; a trailing quantifier retries every offset.
+        let start = 0, end = t.length;
+        const special = (c: string) => c === "." || c === "-" || c === ":";
+        while (start < end && special(t[start])) start++;
+        while (end > start && special(t[end - 1])) end--;
+        return t.slice(start, end);
+      });  // preserve empty tokens for punctuation-only input
   }
 
   /** Add a document to the in-memory inverted index */

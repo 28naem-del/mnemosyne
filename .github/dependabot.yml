@@ -11,3 +11,14 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 3
+    groups:
+      # init and analyze must run the same CodeQL Action version, so every update moves together.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

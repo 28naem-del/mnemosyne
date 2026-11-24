@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "mnemosy-ai": "file:../../mnemosyne/mnemosyne/mnemosy-ai-3.0.0-rc.4.tgz",
+    "@huggingface/transformers": "3.8.1"
+  },
+  "overrides": {
+    "@huggingface/transformers@3.8.1": {
+      "sharp": "0.35.5"
+    }
+  }
+}

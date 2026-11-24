@@ -30,6 +30,7 @@ beforeAll(() => {
   write(join(source, 'package.json'), JSON.stringify(declaration));
   for (const file of ['README.md', 'LICENSE', 'NOTICE.md', 'docs/deployment.md', 'docs/RUNTIME.md', 'docs/MIGRATION.md', 'docs/MAINTENANCE.md', 'docs/EVALUATION.md', 'docs/LONGMEMEVAL.md',
     'assets/mnemosyne-logo.svg', 'assets/social-preview.png', 'docs/README.md', 'ARCHITECTURE.md', 'SECURITY.md', 'CONTRIBUTING.md',
+    'THREAT-MODEL.md', 'GOVERNANCE.md', 'MAINTAINERS.md',
     'docs/LOCAL-MODELS.md', 'docs/evaluation/BENCHMARKS.md', 'docs/evaluation/EVIDENCE-PROTOCOL.md', 'examples/local-semantic.ts',
     'dist/providers/local-model-worker.js', 'dist/providers/local-model-spec.js', 'dist/providers/local-model-dependencies.js',
     'dist/evaluation/corpus-cli.js', 'dist/evaluation/evidence-benchmark.js',
@@ -87,9 +88,14 @@ describe('shared installed artifact verifier', () => {
   });
   it.each(['dist/operations/worker.js', 'docs/PROFILES.md', 'examples/agent-loop.ts', 'docs/BRIDGE.md', 'examples/gradual-migration.ts',
     'assets/social-preview.png', 'assets/mnemosyne-logo.svg', 'docs/README.md', 'SECURITY.md',
+    'THREAT-MODEL.md', 'GOVERNANCE.md', 'MAINTAINERS.md',
     'dist/providers/local-model-worker.js', 'dist/providers/local-model-dependencies.js', 'dist/evaluation/corpus-cli.js', 'docs/evaluation/BENCHMARKS.md'])('rejects an omitted required candidate asset %s', path => {
     const value = json(pack); value[0].files = value[0].files.filter((file: { path: string }) => file.path !== path); write(pack, JSON.stringify(value));
     const result = verify(); expect(result.status).toBe(1); expect(result.stderr).toContain(`missing ${path}`);
+  });
+  it.each(['THREAT-MODEL.md', 'GOVERNANCE.md', 'MAINTAINERS.md'])('rejects required policy document %s missing from the installed package', path => {
+    rmSync(installed(path));
+    const result = verify(); expect(result.status).toBe(1); expect(result.stderr).toContain(path);
   });
   it.each(['version', 'exports', 'bin'])('rejects installed %s drift from the source contract', field => {
     edit(installed('package.json'), value => { value[field] = field === 'version' ? '2.0.0-rc.6' : {}; });

@@ -19,4 +19,4 @@ contact_links:
 
   - name: Report a vulnerability privately
     url: https://github.com/28naem-del/mnemosyne/blob/main/SECURITY.md
-    about: Follow the private reporting instructions. Do not publish vulnerabilities, credentials or private memories in an issue.
+    about: Follow SECURITY.md and email 28naem@gmail.com privately. Do not publish vulnerabilities, credentials or private memories in an issue.

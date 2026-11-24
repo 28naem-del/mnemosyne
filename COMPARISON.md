@@ -5,7 +5,8 @@ tradeoffs, not a blanket feature/novelty scorecard.
 
 > Measured 2026-09-14/15 on mnemosy-ai 2.0.0-rc builds; 3.0 leaves default retrieval unchanged
 > (regression check: [docs/BENCHMARKS-TRUST.md §6](docs/BENCHMARKS-TRUST.md#6-retrieval-regression-check-locomo-and-longmemeval-s-before-and-after)).
-> Not re-run on 3.0 as of 2026-10-29.
+> Not re-run on 3.0 as of 2026-10-29. Zep Cloud was measured separately on 2026-10-29 on the
+> 3.0.0-rc.2 tree: [Zep Cloud, 29 October 2026](#zep-cloud-29-october-2026).
 
 ## At a glance: full product against full product
 
@@ -27,8 +28,9 @@ included, follow.
 - **Speed.** p95 retrieval as measured, local and not like-for-like (our reranked p95 includes a
   cross-encoder pass): LoCoMo K = 10, 244 ms reranked, 57 ms fast mode (no reranker), 196 ms Mem0 OSS;
   LongMemEval-S K = 20, 1896 ms reranked, 60 ms fast mode, 210 ms Mem0 OSS.
-- **Zep and Graphiti.** Not in these tables. No Zep or Graphiti run had been published as of
-  2026-10-29; no number is claimed until one is.
+- **Zep and Graphiti.** Zep Cloud is not in these tables. It was measured in a separate matched
+  run on 29 October 2026, LoCoMo only, published with its disclosure in
+  [Zep Cloud, 29 October 2026](#zep-cloud-29-october-2026). Graphiti was not run.
 - **What retrieval tables don't measure.** These tables score whether the evidence comes back, not
   what the memory does with it afterwards. The 3.0 suites cover that: exact replay of past beliefs,
   `bisect` finding the records that push known expected records out of the top k, the poisoning gate
@@ -50,9 +52,15 @@ from a vendor:
   `add()` default in mem0ai 3.1.8), on two whole LoCoMo conversations. Report:
   [`reports/matched-run-2026-09-15-llm-extraction.md`](reports/matched-run-2026-09-15-llm-extraction.md).
 
-Both `reports/` links above are **repository paths, deliberately not shipped in the npm package**:
-the raw artifacts behind them are 76 MB uncompressed (2.9 MB gzipped) of per-question benchmark
-records, which do not belong in a package tarball. Every number a reader needs is reproduced on this
+A third run added Zep Cloud on 29 October 2026, on the 3.0.0-rc.2 tree, with the same harness:
+
+- **29 October 2026, Zep Cloud** — LoCoMo, the same 1,986 questions, with Mnemosyne and Mem0 OSS
+  rerun in the same loop. Report: [`reports/matched-run-2026-10-29-zep.md`](reports/matched-run-2026-10-29-zep.md).
+
+The `reports/` links above are **repository paths, deliberately not shipped in the npm package**:
+the raw artifacts behind the 14 September run are 76 MB uncompressed (2.9 MB gzipped) of
+per-question benchmark records, and those behind the Zep run are 4.3 MB gzipped, which do not
+belong in a package tarball. Every number a reader needs is reproduced on this
 page, and this page *is* in the package. If you installed from npm, the reports, their SHA-256
 fingerprints and the generators that produce them are at
 <https://github.com/28naem-del/mnemosyne/tree/main/reports>.
@@ -91,7 +99,7 @@ should know that.
 | Mnemosyne hybrid, fast mode (no reranker) | 62.99 | 69.82 | 57.15 | 0.4606 | 57 ms |
 | **Mnemosyne hybrid + rerank (full product)** | **73.57** | 80.08 | 67.80 | **0.6240** | 244 ms |
 | Mem0 OSS (extraction off) | 63.72 | 70.93 | 57.54 | 0.4756 | 196 ms |
-| Zep | not run — `ZEP_API_KEY` is not set | | | | |
+| Zep | not in this run — `ZEP_API_KEY` was not set; measured on 29 October, [below](#zep-cloud-29-october-2026) | | | | |
 | Graphiti | not run — this harness reaches it only through Zep Cloud | | | | |
 
 recall at the other depths, same run: overlap 33.73 / 46.84, BM25 44.95 / 57.98, fast mode 54.68 /
@@ -146,6 +154,25 @@ Mem0's LLM-extraction path, and only **+0.78** over Mem0's extraction-off path i
 conversations, extraction was not consistently better than no extraction: +3.16 in part A,
 **−1.16** in part B, at roughly 65× the ingest time; it did lift MRR in both.
 
+## Zep Cloud, 29 October 2026
+
+| LoCoMo retrieval recall | @5 | @10 | @20 |
+|---|---:|---:|---:|
+| Mnemosyne (hybrid + rerank) | 67.2 | 73.6 | 77.7 |
+| Mem0 OSS | 55.1 | 63.7 | 71.9 |
+| Zep Cloud | 41.9 | 52.8 | 61.2 |
+
+- Run by the Mnemosyne maintainers on 29 October 2026 with the repository's matched harness: same chunks, questions, K and packing budget. Code and raw outputs are public for reproduction.
+- Zep Cloud ran on its free plan with default settings and episode search (`zep-cloud@3.28.0`). Paid tiers and Zep's fact/edge retrieval were not tested. Mem0 OSS ran with extraction off.
+- LoCoMo only. LongMemEval-S was not run because its estimated cost at Zep's overage pricing (about $207) exceeded this run's budget. The full configuration and limitations are in the run report.
+
+Run report, with every table, the full disclosure and limitations, and the raw outputs:
+[`reports/matched-run-2026-10-29-zep.md`](reports/matched-run-2026-10-29-zep.md). It also prints
+where Zep does better: it beats our zero-model BM25 baseline on recall at K = 10 and K = 20, and a
+diagnostic that re-sorted Zep's results by Zep's own score roughly doubled its MRR without changing
+its recall. The Mnemosyne and Mem0 OSS rows in that run reproduce the 14 September recall numbers
+above, including Mem0's wins over our fast mode.
+
 ## Exactly what each competitor was
 
 Mem0's full mode strings, carried on the raw reports rather than hand-typed:
@@ -167,17 +194,26 @@ LLM fact-extraction write path is switched off; `extraction=llm` is the `add()` 
 3.1.8. The extraction model (`openai/gpt-4o-mini` over OpenRouter) was our choice, not part of Mem0's
 default configuration.
 
-**Zep — not run in these reports.** `ZEP_API_KEY` was not set when they were made. The harness reaches Zep only through Zep Cloud, which
-needs an account and a `ZEP_API_KEY`. When the run was made (14 September 2026) we found no working
-self-hosted alternative: Zep Community Edition was marked deprecated upstream and its compose file
-pointed at `zepai/zep:latest`, which we could not pull from Docker Hub (details in the 14 September
-report). That may have changed since. No Zep number appears anywhere in these reports — the cell
-carries the reason, never an estimate.
+**Zep — not in the 14–15 September reports; measured on 29 October.** `ZEP_API_KEY` was not set
+when the September reports were made. The harness reaches Zep only through Zep Cloud, which needs an
+account and a `ZEP_API_KEY`. In September we found no working self-hosted alternative: Zep Community
+Edition was marked deprecated upstream and its compose file pointed at `zepai/zep:latest`, which we
+could not pull from Docker Hub (details in the 14 September report). On 29 October Zep Cloud was run
+through the same unmodified adapter on a free-plan key. Its mode string, from the raw reports:
+
+```
+zep           zep-cloud@3.28.0, extraction=graphiti(vendor-side LLM, not ours),
+              retrieval=graph-search(scope=episodes), endpoint=hosted, embedder=vendor-side(unknown),
+              ingest=graph.add once per conversation (phase 1), episodes reused by the K=5/10/20
+              passes (replay client, 0 extra graph.add), account=free
+```
 
 **Graphiti — not run.** This repository has no standalone Graphiti adapter:
 `benchmarks/competitors/package.json` pins `mem0ai` and `@getzep/zep-cloud` and nothing else, so
-Graphiti is reachable from this harness only *through* Zep Cloud, so it did not run either. That is
-a limit of this harness, not a statement about Graphiti. No Graphiti number is estimated into a table.
+Graphiti is reachable from this harness only *through* Zep Cloud. In the 29 October run Graphiti
+was Zep's vendor-side extraction engine, but only Zep's episode search was scored; Zep's fact and
+edge retrieval, the part that would test Graphiti's graph output, was not. That is a limit of this
+harness, not a statement about Graphiti. No Graphiti number is estimated into a table.
 
 ## What these numbers are not
 

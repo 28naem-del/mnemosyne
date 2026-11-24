@@ -2,6 +2,7 @@
 import { closeSync, constants, existsSync, fstatSync, openSync, readSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { MemoryRuntime, type EnqueueInput, type RunJobsOptions, type SkillDefinition, type SkillTrialInput } from '../runtime/index.js';
 import { LocalSourceConnector, readLocalText, type LocalSourceOptions } from '../connectors/index.js';
@@ -14,6 +15,7 @@ import type { MemorySnapshot, StoreMemoryInput } from '../local/types.js';
 import { serveMemoryStdio, VERSION } from '../mcp/server.js';
 import { runMemoryDemo } from '../evaluation/demo.js';
 import { requireExistingDatabase, runMigrationCommand } from './migration.js';
+import { bisectRetrievalRequest, selectBisectRetrieval } from './bisect-retrieval.js';
 import { MemoryMaintenance } from '../maintenance/index.js';
 import { parseJsonWithSpans } from '../migration/json-spans.js';
 import { MemoryAgent } from '../agent/index.js';
@@ -26,9 +28,13 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy evaluate --file FILE [--out FILE] [--limit 20] [--json JSON]
                    [--provider-config FILE]  Evaluate supplied LongMemEval v1 retrieval
   mnemosy benchmark-agent --file FILE --provider-config FILE --out FILE [--json JSON]
-  mnemosy operations --action backup --db DATABASE --out BUNDLE
-  mnemosy operations --action verify --file BUNDLE
-  mnemosy operations --action restore --file BUNDLE --out NEW_DATABASE
+  mnemosy operations --action backup --db DATABASE --out BUNDLE [--encrypt [--passphrase-file FILE]]
+  mnemosy operations --action verify --file BUNDLE [--passphrase-file FILE]
+  mnemosy operations --action restore --file BUNDLE --out NEW_DATABASE [--passphrase-file FILE]
+                   Whole-database recovery. --encrypt (scrypt + AES-256-GCM) also carries
+                   DATABASE.consolidation.key and restores it beside NEW_DATABASE; plain bundles
+                   never carry it. Passphrase from MNEMOSYNE_BACKUP_PASSPHRASE or a 0600
+                   --passphrase-file, never argv
                    Run a matched reader experiment; explicit configured model calls
   mnemosy agent [scope] --action context|turn|capture-events|work|status [--json JSON]
   mnemosy agent [scope] --action turn --session NAME --key TURN_ID --text TEXT
@@ -44,7 +50,10 @@ const HELP = `Mnemosyne ${VERSION} — portable agent memory
   mnemosy replay [scope] --known-at ISO --diff ISO [--json '{"knownAt":"ISO"}']
                    Belief diff between two cut points, with each change's source
   mnemosy bisect [scope] --file TASKS.json --task ID [--limit K] [--exact]
-                   Delta-debug memory to the minimal record set behind a retrieval failure
+                   [--retrieval auto|lexical|hybrid]
+                   Delta-debug memory to the minimal record set behind a retrieval failure;
+                   auto (default) re-executes hybrid when the store has stored vectors
+                   for the bundled model, else lexical; an hnsw dense index is refused
   mnemosy consolidate [scope] --propose [--out DIFF] | --apply [--file DIFF] | --rollback PASS_ID | --verify-chain
                    Outcome-gated, reversible consolidation; --demo [--db NEW_FILE] runs it offline
   mnemosy correct [scope] --id ID --text TEXT --source URI --reason TEXT
@@ -314,6 +323,43 @@ function configuredEmbedder(path: string | undefined) {
   return createCompatibleEmbedder({ ...config, dimensions: config.dimensions });
 }
 
+const PASSPHRASE_ENV = 'MNEMOSYNE_BACKUP_PASSPHRASE';
+const PASSPHRASE_SOURCES = `set ${PASSPHRASE_ENV} or pass --passphrase-file FILE`;
+
+/** Reads a backup passphrase from the environment or a private file; never from argv, never echoed. */
+function backupPassphrase(values: CliValues): Buffer | undefined {
+  const file = values['passphrase-file'] as string | undefined, env = process.env[PASSPHRASE_ENV];
+  if (file !== undefined && env !== undefined) throw new Error(`Use either ${PASSPHRASE_ENV} or --passphrase-file, not both.`);
+  let secret: Buffer | undefined;
+  if (file !== undefined) {
+    const fd = openSync(resolve(file), constants.O_RDONLY | constants.O_NONBLOCK);
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile()) throw new Error('--passphrase-file must be a regular file.');
+      // POSIX only: Windows has no comparable mode bits, so the file's ACL is the operator's responsibility there.
+      if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) throw new Error('--passphrase-file must not be readable or writable by group or others (chmod 600).');
+      if (stat.size > 4098) throw new Error('--passphrase-file exceeds 4096 bytes.');
+      const buffer = Buffer.alloc(4099); let size = 0;
+      for (;;) { const read = readSync(fd, buffer, size, buffer.length - size, null); if (!read) break; size += read; if (size > 4098) throw new Error('--passphrase-file exceeds 4096 bytes.'); }
+      let end = size; if (buffer[end - 1] === 0x0a) end--; if (end > 0 && buffer[end - 1] === 0x0d && buffer[end] === 0x0a) end--;
+      secret = Buffer.from(buffer.subarray(0, end)); buffer.fill(0);
+    } finally { closeSync(fd); }
+  } else if (env !== undefined) secret = Buffer.from(env, 'utf8');
+  if (secret !== undefined && (!secret.length || secret.length > 4096)) throw new Error('The backup passphrase must be 1 to 4096 bytes.');
+  return secret;
+}
+
+/** S07: a database with receipts but no key beside it cannot pin or roll back its consolidation chain. */
+function consolidationReceiptCount(path: string): number {
+  try {
+    const db = new DatabaseSync(path, { readOnly: true, allowExtension: false, timeout: 100 });
+    try { return Number(db.prepare("SELECT count(*) AS n FROM local_ledger WHERE event = 'consolidation'").get()?.n ?? 0); } finally { db.close(); }
+  } catch { return 0; }
+}
+function warnMissingSigningKey(receipts: number, keyFile: string): void {
+  if (receipts > 0) process.stderr.write(`Mnemosyne: warning: ${receipts} consolidation receipt(s) but no consolidation key file at ${keyFile}. --verify-chain cannot pin them, and --rollback would create a new key that refuses them. Restore the key from its protected backup, or restore an encrypted bundle that carries it (docs/OPERATIONS.md#the-consolidation-signing-key).\n`);
+}
+
 function signalController() {
   const controller = new AbortController();
   const stop = () => controller.abort();
@@ -356,7 +402,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     record: { type: 'string' }, 'read-only': { type: 'boolean' },
     classic: { type: 'boolean' },
     'as-of': { type: 'string' }, 'known-at': { type: 'string' }, diff: { type: 'string' },
-    hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' },
+    hash: { type: 'boolean' }, records: { type: 'boolean' }, task: { type: 'string' }, exact: { type: 'boolean' }, retrieval: { type: 'string' },
     propose: { type: 'boolean' }, apply: { type: 'boolean' }, rollback: { type: 'string' }, 'verify-chain': { type: 'boolean' }, demo: { type: 'boolean' },
     'allow-destructive': { type: 'boolean' }, 'include-untrusted': { type: 'boolean' },
     'provider-config': { type: 'string' }, 'token-file': { type: 'string' }, port: { type: 'string' },
@@ -370,7 +416,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     collection: { type: 'string' }, 'logical-path': { type: 'string' }, 'qdrant-text-field': { type: 'string' },
     infer: { type: 'boolean' }, holds: { type: 'boolean' }, 'min-support': { type: 'string' }, review: { type: 'string' },
     accept: { type: 'boolean' }, reject: { type: 'boolean' }, reviewer: { type: 'string' },
+    encrypt: { type: 'boolean' }, 'passphrase-file': { type: 'string' }, 'include-signing-key': { type: 'boolean' },
+    // Parsed only to refuse it with a clear message: argv is visible to other processes and shell history.
+    passphrase: { type: 'string' },
   } });
+  if (values.passphrase !== undefined) throw new Error(`--passphrase is not accepted: a secret on the command line leaks through the process list and shell history. ${PASSPHRASE_SOURCES[0].toUpperCase()}${PASSPHRASE_SOURCES.slice(1)} (mode 0600).`);
   if (values.version) { process.stdout.write(`${VERSION}\n`); return; }
   if (values.help || !positionals.length) { process.stdout.write(HELP); return; }
   if (positionals.length !== 1) throw new Error('Specify exactly one command.');
@@ -379,16 +429,34 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (command === 'migrate') { runMigrationCommand(values); return; }
   if (command === 'operations') {
     const action = values.action ?? 'verify';
-    const allowed = ['action', 'json', 'read-only', 'no-capture', 'no-recall', ...(action === 'backup' ? ['db', 'out'] : action === 'restore' ? ['file', 'out'] : ['file'])];
+    if (action === 'backup' && !values.encrypt) {
+      if (values['include-signing-key']) throw new Error('--include-signing-key needs --encrypt: a plain backup never carries the consolidation signing key.');
+      if (values['passphrase-file'] !== undefined) throw new Error('--passphrase-file applies to an encrypted backup; add --encrypt.');
+    }
+    const allowed = ['action', 'json', 'read-only', 'no-capture', 'no-recall', ...(action === 'backup' ? ['db', 'out', 'encrypt', 'passphrase-file', 'include-signing-key'] : action === 'restore' ? ['file', 'out', 'passphrase-file'] : ['file', 'passphrase-file'])];
     if (Object.entries(values).some(([key, value]) => value !== undefined && !allowed.includes(key))) throw new Error('Operations work on a whole database; scoped and unrelated options are unsupported.');
     const limits = z.object({ maxBytes: z.number().int().min(4096).max(4294967296).optional(), timeoutMs: z.number().int().min(1).max(3600000).optional() }).strict().parse(jsonInput(values.json));
-    const { backupLocalDatabase, verifyLocalBackup, restoreLocalBackup } = await import('../operations/index.js');
+    // A plain backup ignores any passphrase in the environment: encryption is never implicit.
+    const secret = action === 'backup' && !values.encrypt ? undefined : backupPassphrase(values);
+    if (action === 'backup' && values.encrypt && !secret) throw new Error(`--encrypt needs a passphrase: ${PASSPHRASE_SOURCES}; never put it on the command line.`);
+    const encryption = secret ? { encryption: { passphrase: secret } } : {};
+    const { backupLocalDatabase, verifyLocalBackup, restoreLocalBackup, MemoryOperationError } = await import('../operations/index.js');
     const stop = signalController();
     try {
-      if (action === 'backup') print(await backupLocalDatabase({ ...limits, sourcePath: required(values.db, '--db'), backupPath: required(values.out, '--out'), signal: stop.signal }));
-      else if (action === 'restore') print(await restoreLocalBackup({ ...limits, backupPath: required(values.file, '--file'), targetPath: required(values.out, '--out'), signal: stop.signal }));
-      else print(await verifyLocalBackup({ ...limits, backupPath: required(values.file, '--file'), signal: stop.signal }));
-    } finally { stop.dispose(); }
+      if (action === 'backup') {
+        const input = { ...limits, sourcePath: required(values.db, '--db'), backupPath: required(values.out, '--out'), signal: stop.signal };
+        if (values['include-signing-key'] && !existsSync(`${resolve(input.sourcePath)}.consolidation.key`)) throw new Error(`--include-signing-key: there is no consolidation key file at ${resolve(input.sourcePath)}.consolidation.key.`);
+        print(secret ? await backupLocalDatabase({ ...input, encryption: { passphrase: secret }, ...(values['include-signing-key'] ? { includeSigningKey: true } : {}) }) : await backupLocalDatabase(input));
+      } else if (action === 'restore') {
+        const restored = await restoreLocalBackup({ ...limits, backupPath: required(values.file, '--file'), targetPath: required(values.out, '--out'), signal: stop.signal, ...encryption });
+        print(restored);
+        const keyFile = `${restored.targetPath}.consolidation.key`;
+        if (!existsSync(keyFile)) warnMissingSigningKey(consolidationReceiptCount(restored.targetPath), keyFile);
+      } else print(await verifyLocalBackup({ ...limits, backupPath: required(values.file, '--file'), signal: stop.signal, ...encryption }));
+    } catch (error) {
+      if (error instanceof MemoryOperationError && error.code === 'passphrase-required') throw new Error(`This bundle is encrypted: ${PASSPHRASE_SOURCES}.`);
+      throw error;
+    } finally { stop.dispose(); secret?.fill(0); }
     return;
   }
   if (command === 'benchmark-agent') {
@@ -465,6 +533,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const health = command === 'health' ? healthCommand(values) : undefined;
   const agentOptions = command === 'agent' ? agentCommand(values) : undefined;
   const dependencyOptions = command === 'dependencies' ? dependenciesCommand(values) : undefined;
+  const bisectRetrieval = command === 'bisect' ? bisectRetrievalRequest(values.retrieval) : undefined;
   if (health) requireExistingDatabase(resolve(required(values.db, '--db')));
   const memory = createLocalMemory({ path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') });
   const runtime = new MemoryRuntime(memory, { captureEnabled: !values['no-capture'], recallEnabled: !values['no-recall'] });
@@ -553,16 +622,27 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       case 'bisect': {
         if (!runtime.recallEnabled) throw new Error('Runtime recall is disabled.');
         // Loaded here, not at module scope: a caller who never bisects never pays for it.
-        const { bisect } = await import('../local/bisect.js');
+        const { bisect, HNSW_REFUSAL } = await import('../local/bisect.js');
         const task = bisectTask(values);
-        // Its own read handle, on the deterministic lexical path and with the
-        // ledger off: the oracles must re-run retrieval the same way every time,
-        // and an audit has no business writing recall entries into what it audits.
+        const store = { path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'), agentId: required(values.agent, '--agent') };
+        // Oracle B re-executes whatever path the auditor retrieves with, so the
+        // auditor is opened on the store's own path: read off its stored vectors
+        // under --retrieval auto (the default), or named explicitly.
+        const selection = selectBisectRetrieval(bisectRetrieval ?? 'auto', store, HNSW_REFUSAL);
+        // Its own read handle, with the ledger off: an audit has no business
+        // writing recall entries into what it audits. Hybrid must not degrade to
+        // lexical without saying so, so a missing model is an error here.
         const auditor = createLocalMemory({
-          path: resolve(required(values.db, '--db')), workspaceId: required(values.workspace, '--workspace'),
-          agentId: required(values.agent, '--agent'), retrieval: 'lexical', ledger: false,
+          ...store, retrieval: selection.mode, ledger: false, ...(selection.mode === 'hybrid' ? { requireEmbedder: true } : {}),
         });
-        try { print(bisect(auditor, task, { exact: values.exact === true })); } finally { auditor.close(); }
+        try {
+          if (selection.mode === 'hybrid') {
+            try { void auditor.retrieval; } catch (error) {
+              throw new Error(`bisect needs the hybrid retriever (${selection.requested}: ${selection.signal}), but the bundled embedding model did not load: ${error instanceof Error ? error.message : String(error)}. Run npm run setup:embedder, or pass --retrieval lexical to bisect the lexical path instead.`);
+            }
+          }
+          print({ ...bisect(auditor, task, { exact: values.exact === true }), retrievalSelection: selection });
+        } finally { auditor.close(); }
         break;
       }
       case 'consolidate': {
@@ -578,6 +658,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
           const pinnedKeyIds = existsSync(keyFile) ? [createConsolidationSigner({ keyFile }).keyId] : [];
           const chain = verifyConsolidationChain(memory, pinnedKeyIds.length ? { pinnedKeyIds } : {});
           if (!chain.ok) process.exitCode = 1;
+          if (!pinnedKeyIds.length) warnMissingSigningKey(chain.receipts, keyFile);
           print({ ...chain, pinnedKeyIds, pinning: pinnedKeyIds.length ? `receipts must be signed by ${keyFile}` : 'none: this store has no consolidation key file, so foreign-key receipts are reported only as keyChanges' }); break;
         }
         // This store's Ed25519 key, created 0600 next to the database on first use (docs/CONSOLIDATION-SIGNING.md).

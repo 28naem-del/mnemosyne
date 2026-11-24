@@ -13,7 +13,7 @@ This ledger records implemented behavior, reproducible evidence and remaining wo
 | Skill promotion | Candidate requirements persist; the recommended policy requires two distinct tasks and two verifier identities, while the compatibility default remains one of each. Failed prerequisites or trials retire skills. | Independent evidence supplied by a real host verifier; labels alone do not prove independence. |
 | Evidence retention | A diagnostic measures valid retention separately from obsolete exposure and checks actual compiled context. | Unrelated source edits can still retire correct guidance; alternative sufficient evidence is unsupported. |
 | Integration surfaces | SDK, MCP, HTTP, CLI, Python, explicit event/tool adapters and export importers are implemented. | Six validated native framework integrations; generic protocol support is not equivalent coverage. |
-| Operations | Scoped bearer credentials, revocation, explicit authority controls and consistent backup/restore are available. | Built-in encryption, enterprise identity and bidirectional synchronization. |
+| Operations | Scoped bearer credentials, revocation, explicit authority controls and consistent backup/restore are available. | Database encryption at rest (backup bundles can be encrypted), enterprise identity and bidirectional synchronization. |
 | Distribution | Candidate versions align; exported modules and installed artifacts have verification paths. | GitHub source, npm and PyPI publication are separate release actions. |
 
 ## Paired retrieval evidence

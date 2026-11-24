@@ -21,6 +21,8 @@ npm run test:python
 
 `--ignore-scripts` skips the build of the optional `hnswlib-node` native addon, so `npm rebuild hnswlib-node` builds it, and the two `setup:` scripts fetch the pinned local embedding and reranking models (they need the build first); CI provisions the same three. Tests that need one of them are tagged `[env:hnsw]`, `[env:model]` or `[env:reranker]` and skip when it is missing, and `npm test` then fails its post-test check with the command that provides it. On a host meant to run without them, `MNEMOSYNE_ALLOW_BARE_TEST_ENV=1 npm test` reports the gap as a warning instead. The Python client tests require Python ≥3.10. `npm run check` typechecks, builds, tests and checks the examples. `npm test` builds before running Vitest. `npm run test:watch` performs an initial build; rebuild when changing code exercised through subprocesses. Use `npm run test:coverage` for coverage. No lint or formatter command is configured.
 
+A development container in [`.devcontainer`](https://github.com/28naem-del/mnemosyne/blob/main/.devcontainer/devcontainer.json) runs that same setup on Node.js 24 and Python 3.12 after the container is created. The first create needs the network for `npm ci` and the pinned model downloads.
+
 ## Find the right module
 
 | Area | Source | Contract |
@@ -47,4 +49,4 @@ Before submission, run the relevant checks, `npm run check` and `npm run check:d
 
 Keep source data separate from private grading labels. Preserve failures, overflows and exclusions in reported denominators. Record dataset licenses, revisions, runtime fingerprints, context budgets and provider settings. Retrieval coverage, synthetic lifecycle checks, mocked protocol tests and live generated-answer evaluation measure different things; label them separately. Agent-improvement claims need held-out tasks, matched compute and meaningful baselines.
 
-Source contributions are distributed under the project's [MIT license](LICENSE). Retain applicable third-party notices and authorship. Follow the [code of conduct](CODE_OF_CONDUCT.md). Use [GitHub issues](https://github.com/28naem-del/mnemosyne/issues) for non-sensitive discussion and [28naem@gmail.com](mailto:28naem@gmail.com) for private security reports, integration enquiries or maintainer contact.
+Source contributions are distributed under the project's [MIT license](LICENSE). Retain applicable third-party notices and authorship. Follow the [code of conduct](CODE_OF_CONDUCT.md). Decisions and maintainers are recorded in [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md). Use [GitHub issues](https://github.com/28naem-del/mnemosyne/issues) for non-sensitive discussion. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md): [28naem@gmail.com](mailto:28naem@gmail.com). Maintainer and integration contact remains [28naem@gmail.com](mailto:28naem@gmail.com). The [threat model](THREAT-MODEL.md) is the place to read what the poisoning suite measured.
