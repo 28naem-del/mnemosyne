@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { setImmediate } from 'node:timers/promises';
 import { createLocalMemory, type LocalMemory, type MemoryEmbedder, type MemoryRecord } from '../local/index.js';
 import { GRANULARITY_DEFAULTS } from '../local/granularity.js';
-import type { BenchmarkConditionId, CorpusAttempt, CorpusBenchmarkOptions, CorpusBenchmarkReport, CorpusDataset, CorpusSummary, EvaluationLabel, EvaluationTurn, EvidenceScore, MatchedConditionId } from './corpus-types.js';
+import type { BenchmarkConditionId, CorpusAttempt, CorpusBenchmarkOptions, CorpusBenchmarkReport, CorpusEngineOptions, CorpusDataset, CorpusSummary, EvaluationLabel, EvaluationTurn, EvidenceScore, MatchedConditionId } from './corpus-types.js';
 import { checkRetrievedIds, matchedConditionId, type MatchedSession, type MatchedSystem } from './matched-types.js';
 export * from './corpus-types.js';
 export * from './corpus-adapters.js';
@@ -152,9 +152,36 @@ function summary(rows: CorpusAttempt[]): CorpusSummary {
     meanContextUnits: rows.length ? rows.reduce((sum, row) => sum + row.contextUnits, 0) / rows.length : 0, p50RetrievalMs: p(0.5), p95RetrievalMs: p(0.95) };
 }
 
+const ENGINE_MEMORY_KEYS = ['rrfK', 'minSimilarity', 'granularity', 'minScores', 'requireNamedMatch', 'fuzzy', 'indexMode', 'cacheSize'] as const;
+const ENGINE_HYBRID_KEYS = ['rrfK', 'fusionWeights', 'maxCandidates'] as const;
+
+/**
+ * Checks the engine overrides before any corpus loads. Values are validated by
+ * constructing a throwaway engine with them, because inside the corpus loop a
+ * rejected option would only surface as every row failing.
+ */
+function engineOptions(value: CorpusBenchmarkOptions['engine']): CorpusEngineOptions | undefined {
+  if (value === undefined) return undefined;
+  const plain = (entry: unknown): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry);
+  if (!plain(value) || Object.keys(value).some(key => key !== 'memory' && key !== 'hybrid')) throw new Error('Engine options take only "memory" and "hybrid".');
+  const { memory, hybrid } = value as CorpusEngineOptions;
+  if (memory !== undefined && (!plain(memory) || Object.keys(memory).some(key => !(ENGINE_MEMORY_KEYS as readonly string[]).includes(key)))) throw new Error(`Engine memory options must be an object with keys from ${ENGINE_MEMORY_KEYS.join(', ')}.`);
+  if (hybrid !== undefined && (!plain(hybrid) || Object.keys(hybrid).some(key => !(ENGINE_HYBRID_KEYS as readonly string[]).includes(key)))) throw new Error(`Engine hybrid options must be an object with keys from ${ENGINE_HYBRID_KEYS.join(', ')}.`);
+  if (hybrid?.rrfK !== undefined && (!Number.isSafeInteger(hybrid.rrfK) || hybrid.rrfK < 1 || hybrid.rrfK > 1000)) throw new Error('Engine hybrid rrfK must be an integer 1-1000.');
+  if (hybrid?.maxCandidates !== undefined && (!Number.isSafeInteger(hybrid.maxCandidates) || hybrid.maxCandidates < 1 || hybrid.maxCandidates > 10000)) throw new Error('Engine hybrid maxCandidates must be an integer 1-10000.');
+  if (hybrid?.fusionWeights !== undefined) {
+    const weights = hybrid.fusionWeights as unknown;
+    if (!plain(weights) || Object.keys(weights).some(key => key !== 'lexical' && key !== 'dense')) throw new Error('Engine hybrid fusionWeights takes only "lexical" and "dense".');
+    for (const [key, weight] of Object.entries(weights)) if (typeof weight !== 'number' || !Number.isFinite(weight) || weight < 0 || weight > 1000) throw new Error(`Engine hybrid fusionWeights.${key} must be a number 0-1000.`);
+  }
+  try { createLocalMemory({ ...memory, path: ':memory:', workspaceId: 'corpus-evaluation', agentId: 'retriever', retrieval: 'lexical' }).close(); }
+  catch (error) { throw new Error(`Invalid engine memory options: ${error instanceof Error ? error.message : 'rejected'}`); }
+  return { ...(memory ? { memory } : {}), ...(hybrid ? { hybrid } : {}) };
+}
+
 /** No generation or judge path. Optional embeddings use only explicit caller callbacks. */
 export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBenchmarkOptions = {}): Promise<CorpusBenchmarkReport> {
-  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'granularity', 'rerankContext', 'rerankContextTopN', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs', 'corpusIndexBase', 'temporalRouting'];
+  const optionKeys = ['topK', 'maxContextUnits', 'chunkBytes', 'maxQuestions', 'maxTurnsPerCorpus', 'maxCorpusBytes', 'maxTotalBytes', 'maxCandidates', 'timeoutMs', 'signal', 'embedder', 'queryEmbedder', 'reranker', 'rerankTopN', 'includeBm25', 'includeHybridWithoutRerank', 'hybridLexicalScoring', 'granularity', 'rerankContext', 'rerankContextTopN', 'maxEmbeddingCalls', 'maxEmbeddingInputBytes', 'countContext', 'accountingId', 'systems', 'systemIngestTimeoutMs', 'corpusIndexBase', 'temporalRouting', 'engine'];
   if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !optionKeys.includes(key))) throw new Error('Unknown corpus evaluation option.');
   if (options.includeBm25 !== undefined && typeof options.includeBm25 !== 'boolean') throw new Error('includeBm25 must be boolean.');
   if (options.includeHybridWithoutRerank !== undefined && typeof options.includeHybridWithoutRerank !== 'boolean') throw new Error('includeHybridWithoutRerank must be boolean.');
@@ -172,6 +199,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
   if (options.rerankContext !== undefined && (!Number.isSafeInteger(options.rerankContext) || options.rerankContext < 0 || options.rerankContext > 4)) throw new Error('Invalid rerank context radius.');
   if (options.rerankContextTopN !== undefined && (!Number.isSafeInteger(options.rerankContextTopN) || options.rerankContextTopN < 1 || options.rerankContextTopN > 1000)) throw new Error('Invalid rerank context top-n.');
   if (options.countContext !== undefined && typeof options.countContext !== 'function') throw new Error('Invalid context counter.');
+  const engine = engineOptions(options.engine);
   const started = performance.now(), implementationSha256 = implementationFingerprint();
   const settings = { topK: integer(options.topK, 20, 1, 100), maxContextUnits: integer(options.maxContextUnits, 8192, 1, 16_777_216),
     chunkBytes: integer(options.chunkBytes, 4096, 128, 16000), maxQuestions: integer(options.maxQuestions, 5000, 1, 10000), maxTurnsPerCorpus: integer(options.maxTurnsPerCorpus, 100000, 1, 1000000),
@@ -196,7 +224,10 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
     hybridWithoutRerankCondition: options.includeHybridWithoutRerank ? 'enabled' : 'disabled',
     // The matched-run roster. Every system in the table ran in this loop, on these
     // chunks, against this scorer; the list is part of the settings a reader checks.
-    matchedSystems: systems.map(system => system.id).join(',') || 'none' };
+    matchedSystems: systems.map(system => system.id).join(',') || 'none',
+    // Only when supplied, so a run without engine overrides keeps the settings
+    // block (and therefore its merge key) it always had.
+    ...(engine ? { engine: JSON.stringify(engine) } : {}) };
   if (options.countContext && (!options.accountingId || typeof options.countContext !== 'function')) throw new Error('Custom counter requires an accounting identity.');
   if (typeof settings.accountingId !== 'string' || !settings.accountingId.trim() || settings.accountingId.length > 256) throw new Error('Invalid accounting identity.');
   if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) throw new Error('Invalid cancellation signal.');
@@ -269,8 +300,9 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
         const validFrom = temporal ? new Map(chunks.map(chunk => [chunk.id, temporalInstant(chunk.turn.date)] as const)) : undefined;
         const newest = validFrom && [...validFrom.values()].filter((at): at is string => at !== undefined).sort().at(-1);
         const clock = newest ? new Date(Date.parse(newest) + 86_400_000).toISOString() : fixedTime;
-        memory = createLocalMemory({ path: ':memory:', workspaceId: 'corpus-evaluation', agentId: 'retriever', retrieval: 'lexical', now: () => new Date(clock),
-          ...(settings.rerankContext ? { granularity: { rerankContext: settings.rerankContext, rerankContextTopN: settings.rerankContextTopN } } : {}) });
+        const granularity = settings.rerankContext ? { ...engine?.memory?.granularity, rerankContext: settings.rerankContext, rerankContextTopN: settings.rerankContextTopN } : engine?.memory?.granularity;
+        memory = createLocalMemory({ ...engine?.memory, path: ':memory:', workspaceId: 'corpus-evaluation', agentId: 'retriever', retrieval: 'lexical', now: () => new Date(clock),
+          ...(granularity ? { granularity } : {}) });
         for (let offset = 0; offset < chunks.length; offset += 256) {
           check(); const records: MemoryRecord[] = chunks.slice(offset, offset + 256).map(chunk => ({ id: chunk.id, workspaceId: 'corpus-evaluation', agentId: 'retriever', visibility: 'private', status: 'active', createdAt: fixedTime, updatedAt: fixedTime, ...(validFrom?.get(chunk.id) === undefined ? {} : { validFrom: validFrom.get(chunk.id)! }), dependencies: [], text: chunk.turn.speaker ? `${chunk.turn.speaker}: ${chunk.text}` : chunk.text, kind: 'observation', trust: 'observed', source: { uri: `benchmark://history/${chunk.id}`, ...(chunk.turn.role ? { author: chunk.turn.role } : {}) },
             // The session key is the turn date the corpus already carries, so no
@@ -356,7 +388,7 @@ export async function runCorpusBenchmark(input: CorpusDataset, options: CorpusBe
               ? memory!.recall({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: condition === 'bm25' ? 'bm25' : 'overlap' })
               // `hybrid-norerank` is the same fused ranking with the cross-encoder
               // withheld, so the pair is a within-run measurement of the reranker.
-              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap', granularity: settings.granularity, ...(condition === 'hybrid-temporal' ? { temporalRouting: 'auto' as const } : {}) }, { embedder: queryEmbedder!, maxCandidates: settings.maxCandidates, ...(options.reranker && (condition === 'hybrid' || condition === 'hybrid-temporal') ? { reranker: options.reranker, rerankTopN: settings.rerankTopN } : {}), timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
+              : await memory!.recallHybrid({ query: question.query, limit: settings.topK, maxCandidates: settings.maxCandidates, lexicalScoring: options.hybridLexicalScoring ?? 'overlap', granularity: settings.granularity, ...(condition === 'hybrid-temporal' ? { temporalRouting: 'auto' as const } : {}) }, { embedder: queryEmbedder!, maxCandidates: settings.maxCandidates, ...engine?.hybrid, ...(options.reranker && (condition === 'hybrid' || condition === 'hybrid-temporal') ? { reranker: options.reranker, rerankTopN: settings.rerankTopN } : {}), timeoutMs: Math.max(1, Math.min(60000, Math.floor(deadline - performance.now()))), signal: options.signal })).map(hit => { const chunk = lookup.get(hit.memory.id); if (!chunk) throw new Error('Unknown retrieval identity.'); return chunk; });
             row.retrievalMs = performance.now() - retrievalStarted;
             check(); row.retrieval = score(hits, label); row.retrievedChunks = hits.length;
             const packingStarted = performance.now(); let selected: Chunk[] = [];
